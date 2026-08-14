@@ -1,6 +1,45 @@
 version: '3.8'
 
 services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./uploads:/app/backend/uploads
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - postgres
+      - litellm
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    volumes:
+      - ./litellm_config.yaml:/app/litellm_config.yaml
+    command: [ "--config", "/app/litellm_config.yaml", "--port", "4000" ]
+    restart: unless-stopped
+    depends_on:
+      - postgres
+
   redis:
     image: redis:7-alpine
     ports:
@@ -8,6 +47,7 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --save 60 1 --loglevel warning
+    restart: unless-stopped
 
   postgres:
     image: postgres:15-alpine
@@ -19,6 +59,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
 
 volumes:
   redis_data:
