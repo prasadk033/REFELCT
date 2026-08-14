@@ -120,7 +120,7 @@ LiteLLM Proxy → PostgreSQL (dashboard/spend data)
 
 ### 1. Redis
 ```bash
-docker compose up -d
+sudo docker-compose up -d
 # OR if Redis is running natively:
 redis-server
 ```
@@ -135,7 +135,7 @@ proxy-env/bin/litellm --config litellm_config.yaml --port 4000
 ```bash
 cd backend
 source ../venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 4. React Frontend
