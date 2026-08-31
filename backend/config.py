@@ -55,10 +55,42 @@ class Config:
         ""
     )
 
+    # PostgreSQL — Application database
+    APP_DATABASE_URL = os.getenv(
+        "APP_DATABASE_URL",
+        "postgresql://reflect:ReflectPostgres2026@localhost:5432/reflect"
+    )
+
     # Agent configuration
     MAX_AGENT_RETRIES = int(
         os.getenv("MAX_AGENT_RETRIES", 3)
     )
+
+    # JWT for session tokens
+    JWT_SECRET_KEY = os.getenv(
+        "JWT_SECRET_KEY",
+        "reflect-jwt-secret-change-in-production"
+    )
+    JWT_ALGORITHM = "HS256"
+    JWT_EXPIRATION_HOURS = 72
+
+    # Google OAuth
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
+    # TurboOCR
+    TURBOOCR_API_URL = os.getenv("TURBOOCR_API_URL", "")
+    TURBOOCR_API_KEY = os.getenv("TURBOOCR_API_KEY", "")
+
+    # Storage type: "local" or "s3"
+    STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")
+
+    # MinIO / S3-compatible object storage
+    MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
+    MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "")
+    MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "")
+    MINIO_BUCKET = os.getenv("MINIO_BUCKET", "reflect-uploads")
+    MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
 
 config = Config()

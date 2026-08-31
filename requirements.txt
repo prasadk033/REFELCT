@@ -8,5 +8,14 @@ python-docx
 litellm
 python-dotenv
 requests
-streamlit
 python-multipart
+sqlalchemy
+psycopg2-binary
+python-jose[cryptography]
+google-auth
+google-auth-oauthlib
+httpx
+aiofiles
+pdfplumber
+Pillow
+boto3
