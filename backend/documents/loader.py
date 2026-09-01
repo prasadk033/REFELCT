@@ -66,8 +66,35 @@ class DocumentLoader:
         elif ext in ('.docx', '.doc'):
             return self._load_docx(str(path))
 
+        elif ext in ('.jpg', '.jpeg', '.png', '.webp'):
+            return self._load_image(str(path))
+
         else:
-            raise ValueError(f"Unsupported document type: {ext}. Supported types: PDF, TXT, DOCX.")
+            raise ValueError(f"Unsupported document type: {ext}. Supported types: PDF, TXT, DOCX, JPG, PNG.")
+
+    def _load_image(self, file_path: str) -> List[Document]:
+        """Extract text from an image using TurboOCR."""
+        from documents.turboocr import turbo_ocr
+        path = Path(file_path)
+        extracted = ""
+        try:
+            with open(path, "rb") as f:
+                img_bytes = f.read()
+            if turbo_ocr.is_available:
+                res = turbo_ocr.extract_from_image(img_bytes, path.name)
+                if res.get("success") and res.get("text"):
+                    extracted = res["text"]
+                elif res.get("error"):
+                    logger.warning(f"TurboOCR extraction error on {path.name}: {res['error']}")
+        except Exception as e:
+            logger.warning(f"Image OCR failed for {file_path}: {e}")
+
+        if not extracted or not extracted.strip():
+            extracted = f"[Image Source: {path.name} — Visual architectural reference (No text detected)]"
+
+        return [Document(content=extracted, meta={"file_path": file_path, "type": "image"})]
+
+
 
     def _load_docx(self, file_path: str) -> List[Document]:
         """Extract text from a DOCX file using python-docx."""

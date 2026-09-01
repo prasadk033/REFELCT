@@ -52,8 +52,10 @@ export default function ProjectShell({ children, project }) {
           </button>
 
           <button
-            className={`p-nav-item ${isBrief ? 'active' : ''}`}
-            onClick={() => projectId && navigate(`/projects/${projectId}/brief`)}
+            className={`p-nav-item ${isBrief ? 'active' : ''} ${!project?.card_count ? 'disabled' : ''}`}
+            onClick={() => project?.card_count > 0 && navigate(`/projects/${projectId}/brief`)}
+            title={!project?.card_count ? "Workspace locked until Brief Cards are generated" : ""}
+            style={!project?.card_count ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
           >
             <span className="p-nav-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">

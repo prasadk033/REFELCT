@@ -99,8 +99,8 @@ services:
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@reflect.local
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: prasad.k@datai2i.com
+      PGADMIN_DEFAULT_PASSWORD: TempPgAdmin123!
       PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
       - "5050:80"

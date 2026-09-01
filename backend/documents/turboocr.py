@@ -46,71 +46,48 @@ class TurboOCR:
 
     def extract_from_image(self, image_data: bytes, filename: str = "image.png") -> Dict[str, Any]:
         """
-        Send extracted image bytes to TurboOCR /ocr/raw.
-
-        Used for images embedded inside PDF documents.
-
-        Returns:
-            {"success": bool, "text": str | None, "error": str | None}
+        Send image bytes directly to TurboOCR /ocr/raw.
         """
         if not self._available:
             return self._not_configured()
 
         endpoint = f"{self.api_url}/ocr/raw"
         try:
-            files = {"file": (filename, io.BytesIO(image_data), _mime_for(filename))}
-            with httpx.Client(timeout=60.0) as client:
-                response = client.post(endpoint, files=files, headers=self._auth_headers())
+            headers = {"Content-Type": _mime_for(filename), **self._auth_headers()}
+            with httpx.Client(timeout=httpx.Timeout(4.0, connect=2.0)) as client:
+                response = client.post(endpoint, content=image_data, headers=headers)
 
             return self._parse_response(response, filename)
 
         except Exception as e:
-            msg = f"TurboOCR /ocr/raw request failed for {filename}: {e}"
-            logger.error(msg)
+            msg = f"TurboOCR /ocr/raw unavailable or timed out for {filename}: {e}"
+            logger.info(msg)
             return {"success": False, "text": None, "error": msg}
 
     def extract_from_pdf(self, pdf_data: bytes, filename: str = "document.pdf") -> Dict[str, Any]:
         """
         Send a full PDF to TurboOCR /ocr/pdf.
-
-        Supports multi-page PDFs up to 2000 pages.
-        Useful for scanned PDFs where Haystack text extraction yields nothing.
-
-        Returns:
-            {"success": bool, "text": str | None, "error": str | None}
         """
         if not self._available:
             return self._not_configured()
 
         endpoint = f"{self.api_url}/ocr/pdf"
         try:
-            files = {"file": (filename, io.BytesIO(pdf_data), "application/pdf")}
-            with httpx.Client(timeout=120.0) as client:  # PDFs may take longer
-                response = client.post(endpoint, files=files, headers=self._auth_headers())
+            headers = {"Content-Type": "application/pdf", **self._auth_headers()}
+            with httpx.Client(timeout=httpx.Timeout(6.0, connect=2.0)) as client:
+                response = client.post(endpoint, content=pdf_data, headers=headers)
 
             return self._parse_response(response, filename)
 
         except Exception as e:
-            msg = f"TurboOCR /ocr/pdf request failed for {filename}: {e}"
-            logger.error(msg)
+            msg = f"TurboOCR /ocr/pdf unavailable or timed out for {filename}: {e}"
+            logger.info(msg)
             return {"success": False, "text": None, "error": msg}
 
     def extract_text(self, image_data: bytes, filename: str = "image.png") -> Dict[str, Any]:
-        """
-        Backwards-compatible wrapper — routes to extract_from_image.
-        """
         return self.extract_from_image(image_data=image_data, filename=filename)
 
     def extract_batch(self, images: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Process multiple images through TurboOCR.
-
-        Args:
-            images: List of {"data": bytes, "filename": str}
-
-        Returns:
-            List of extraction results.
-        """
         results = []
         for img in images:
             result = self.extract_from_image(
@@ -128,18 +105,26 @@ class TurboOCR:
             try:
                 result = response.json()
             except Exception:
-                # Some OCR APIs return plain text
                 result = {"text": response.text}
 
-            extracted = (
-                result.get("text")
-                or result.get("extracted_text")
-                or result.get("content")
-                or result.get("result")
-                or ""
-            )
-            if isinstance(extracted, list):
-                extracted = "\n".join(str(t) for t in extracted)
+            # Handle {"results": [{"text": "..."}, ...]}
+            if isinstance(result, dict) and isinstance(result.get("results"), list):
+                lines = [
+                    item.get("text", "")
+                    for item in result["results"]
+                    if isinstance(item, dict) and item.get("text")
+                ]
+                extracted = "\n".join(lines)
+            else:
+                extracted = (
+                    result.get("text")
+                    or result.get("extracted_text")
+                    or result.get("content")
+                    or result.get("result")
+                    or ""
+                )
+                if isinstance(extracted, list):
+                    extracted = "\n".join(str(t) for t in extracted)
 
             logger.info(f"TurboOCR extracted {len(extracted)} chars from {filename}")
             return {"success": True, "text": extracted.strip() or None, "error": None}

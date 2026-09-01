@@ -49,6 +49,35 @@ export default function GlobalShell({ children }) {
             <span className="g-nav-text">Overview</span>
           </button>
 
+          {/* Dynamic Sidebar Projects Section */}
+          <div className="g-sidebar-projects-section">
+            <div className="g-sidebar-section-header">
+              <span className="g-sidebar-section-title">Projects</span>
+              <span className="g-sidebar-projects-count">{sidebarProjects.length}</span>
+            </div>
+
+            <div className="g-sidebar-projects-list">
+              {sidebarProjects.length === 0 ? (
+                <span className="g-sidebar-empty">No projects yet</span>
+              ) : (
+                sidebarProjects.map(p => {
+                  const isActive = currentPath.includes(p.id)
+                  return (
+                    <button
+                      key={p.id}
+                      className={`g-sidebar-project-item ${isActive ? 'active' : ''}`}
+                      onClick={() => navigate(`/projects/${p.id}`)}
+                      title={p.name}
+                    >
+                      <span className="g-sidebar-proj-dot" />
+                      <span className="g-sidebar-proj-name">{p.name}</span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>
+
           <button
             className={`g-nav-item ${currentPath === '/settings' ? 'active' : ''}`}
             onClick={() => navigate('/settings')}
@@ -62,35 +91,6 @@ export default function GlobalShell({ children }) {
             <span className="g-nav-text">Settings</span>
           </button>
         </nav>
-
-        {/* Dynamic Sidebar Projects Section */}
-        <div className="g-sidebar-projects-section">
-          <div className="g-sidebar-section-header">
-            <span className="g-sidebar-section-title">Projects</span>
-            <span className="g-sidebar-projects-count">{sidebarProjects.length}</span>
-          </div>
-
-          <div className="g-sidebar-projects-list">
-            {sidebarProjects.length === 0 ? (
-              <span className="g-sidebar-empty">No projects yet</span>
-            ) : (
-              sidebarProjects.map(p => {
-                const isActive = currentPath.includes(p.id)
-                return (
-                  <button
-                    key={p.id}
-                    className={`g-sidebar-project-item ${isActive ? 'active' : ''}`}
-                    onClick={() => navigate(`/projects/${p.id}`)}
-                    title={p.name}
-                  >
-                    <span className="g-sidebar-proj-dot" />
-                    <span className="g-sidebar-proj-name">{p.name}</span>
-                  </button>
-                )
-              })
-            )}
-          </div>
-        </div>
 
         {/* Plan Widget */}
         <div className="g-plan-widget">

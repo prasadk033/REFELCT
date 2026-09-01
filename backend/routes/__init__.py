@@ -68,7 +68,55 @@ def list_projects(
         .order_by(Project.updated_at.desc())
         .all()
     )
-    return [_project_to_response(db, p) for p in projects]
+    if not projects:
+        return []
+
+    project_ids = [p.id for p in projects]
+
+    # Batch fetch source counts in a single query
+    source_counts = dict(
+        db.query(Source.project_id, func.count(Source.id))
+        .filter(Source.project_id.in_(project_ids))
+        .group_by(Source.project_id)
+        .all()
+    )
+
+    # Batch fetch card counts in a single query
+    card_counts = dict(
+        db.query(Card.project_id, func.count(Card.id))
+        .filter(Card.project_id.in_(project_ids))
+        .group_by(Card.project_id)
+        .all()
+    )
+
+    # Batch fetch latest completed brief version per project
+    briefs = (
+        db.query(Brief.project_id, Brief.version)
+        .filter(Brief.project_id.in_(project_ids), Brief.status == "completed")
+        .order_by(Brief.version.desc())
+        .all()
+    )
+    brief_versions = {}
+    for pid, ver in briefs:
+        if pid not in brief_versions:
+            brief_versions[pid] = ver
+
+    return [
+        ProjectResponse(
+            id=p.id,
+            name=p.name,
+            project_type=p.project_type,
+            location=p.location,
+            client=p.client,
+            description=p.description,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+            source_count=source_counts.get(p.id, 0),
+            brief_version=brief_versions.get(p.id),
+            card_count=card_counts.get(p.id, 0),
+        )
+        for p in projects
+    ]
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

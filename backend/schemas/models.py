@@ -72,6 +72,10 @@ class SourceResponse(BaseModel):
     file_size: Optional[int] = None
     upload_timestamp: datetime
     processing_status: str
+    approval_status: Optional[str] = "pending_review"
+    version: Optional[int] = None
+    extracted_text: Optional[str] = None
+    ocr_text: Optional[str] = None
     ocr_status: Optional[str] = None
     processing_error: Optional[str] = None
 
@@ -79,12 +83,16 @@ class SourceResponse(BaseModel):
         from_attributes = True
 
 
+class SourceContentUpdate(BaseModel):
+    extracted_text: str
+
+
 # --- Briefs ---
 
 class BriefResponse(BaseModel):
     id: str
     project_id: str
-    version: int
+    version: Optional[int] = None
     content: Optional[Dict[str, Any]] = None
     raw_content: Optional[str] = None
     project_metadata: Optional[Dict[str, Any]] = None
@@ -97,7 +105,7 @@ class BriefResponse(BaseModel):
 
 class BriefVersionResponse(BaseModel):
     id: str
-    version: int
+    version: Optional[int] = None
     status: str
     created_at: datetime
     source_ids: List[str] = Field(default_factory=list)
@@ -114,18 +122,20 @@ class BriefSummary(BaseModel):
     facts: int = 0
     requirements: int = 0
     actions: int = 0
+    others: int = 0
 
 
 # --- Cards ---
 
 class CardCreate(BaseModel):
-    card_type: str = Field(default="REQUIREMENT", description="FACT, REQUIREMENT, CONSTRAINT, OBJECTIVE, QUESTION, CONFLICT, ACTION, CLARIFICATION")
+    card_type: str = Field(default="REQUIREMENT", description="FACT, REQUIREMENT, QUESTION, CONFLICT, OTHER, ACTION, CLARIFICATION")
     title: str = Field(..., min_length=1)
     content: str = Field(..., min_length=1, description="Brief information")
     source_document: Optional[str] = None
     evidence: Optional[str] = None
     ai_suggestion: Optional[str] = None
     section: Optional[str] = None
+    version: Optional[int] = None
 
 class CardUpdate(BaseModel):
     card_type: Optional[str] = None
@@ -136,6 +146,7 @@ class CardUpdate(BaseModel):
     ai_suggestion: Optional[str] = None
     section: Optional[str] = None
     status: Optional[str] = None
+    version: Optional[int] = None
 
 class CardResponse(BaseModel):
     id: str
@@ -149,6 +160,7 @@ class CardResponse(BaseModel):
     evidence: Optional[str] = None
     ai_suggestion: Optional[str] = None
     section: Optional[str] = None
+    version: Optional[int] = None
     created_by: str
     status: str
     created_at: datetime
@@ -156,6 +168,7 @@ class CardResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 
 # --- Processing ---

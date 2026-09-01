@@ -32,6 +32,7 @@ def list_cards(
     card_type: Optional[str] = Query(None, description="Filter by card type"),
     status: Optional[str] = Query(None, description="Filter by status"),
     brief_id: Optional[str] = Query(None, description="Filter by brief version"),
+    version: Optional[int] = Query(None, description="Filter by project version"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -45,6 +46,8 @@ def list_cards(
         query = query.filter(Card.status == status)
     if brief_id:
         query = query.filter(Card.brief_id == brief_id)
+    if version is not None:
+        query = query.filter(Card.version == version)
 
     cards = query.order_by(Card.created_at.desc()).all()
     return [CardResponse.model_validate(c) for c in cards]
@@ -67,6 +70,7 @@ def create_card(
         .order_by(Brief.version.desc())
         .first()
     )
+    card_version = body.version if body.version is not None else (latest_brief.version if latest_brief and latest_brief.version is not None else 0)
 
     card = Card(
         id=str(uuid.uuid4()),
@@ -79,6 +83,7 @@ def create_card(
         evidence=body.evidence or "Manual Input",
         ai_suggestion=body.ai_suggestion,
         section=body.section,
+        version=card_version,
         created_by="ARCHITECT",
         status="accepted",  # Architect-created cards are automatically accepted
     )

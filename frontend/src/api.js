@@ -89,11 +89,44 @@ export async function listSources(projectId) {
   return apiFetch(`/api/projects/${projectId}/sources`);
 }
 
+export async function extractSources(projectId) {
+  return apiFetch(`/api/projects/${projectId}/sources/extract`, {
+    method: "POST",
+  });
+}
+
+export async function reparseSource(projectId, sourceId) {
+  return apiFetch(`/api/projects/${projectId}/sources/${sourceId}/reparse`, {
+    method: "POST",
+  });
+}
+
+export async function updateSourceContent(projectId, sourceId, extractedText) {
+  return apiFetch(`/api/projects/${projectId}/sources/${sourceId}/content`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ extracted_text: extractedText }),
+  });
+}
+
+export async function approveSource(projectId, sourceId) {
+  return apiFetch(`/api/projects/${projectId}/sources/${sourceId}/approve`, {
+    method: "POST",
+  });
+}
+
+export async function approveAllSources(projectId) {
+  return apiFetch(`/api/projects/${projectId}/sources/approve-all`, {
+    method: "POST",
+  });
+}
+
 export async function deleteSource(projectId, sourceId) {
   return apiFetch(`/api/projects/${projectId}/sources/${sourceId}`, {
     method: "DELETE",
   });
 }
+
 
 // ── Briefs ──────────────────────────────────────────────────────────────────
 

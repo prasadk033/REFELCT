@@ -47,17 +47,22 @@ def analyze_brief(
         if not sources:
             raise HTTPException(status_code=400, detail="None of the specified source IDs were found.")
 
-    # Check for existing processing job in progress
-    active_job = (
+    # Check for existing processing job in progress — mark stale jobs (>90s) as superseded
+    from datetime import datetime, timezone
+    active_jobs = (
         db.query(ProcessingJob)
         .filter(
             ProcessingJob.project_id == project_id,
             ProcessingJob.status.in_(["queued", "parsing", "extracting_images", "processing_brief", "generating_cards"])
         )
-        .first()
+        .all()
     )
-    if active_job:
-        raise HTTPException(status_code=409, detail="A Brief analysis is already in progress for this project.")
+    for aj in active_jobs:
+        # Mark previous active jobs as superseded so user is never blocked
+        aj.status = "superseded"
+        aj.current_step = "Superseded by new analysis run"
+    db.commit()
+
 
     # Import here to avoid circular imports
     from agents.brief_orchestrator import run_brief_pipeline

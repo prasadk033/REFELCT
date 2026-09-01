@@ -78,9 +78,10 @@ class Config:
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "") or os.getenv("VITE_GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
-    # TurboOCR
-    TURBOOCR_API_URL = os.getenv("TURBOOCR_API_URL", "")
+    # TurboOCR — GPU 3
+    TURBOOCR_API_URL = os.getenv("TURBOOCR_API_URL", "http://115.244.46.68:8005") or "http://115.244.46.68:8005"
     TURBOOCR_API_KEY = os.getenv("TURBOOCR_API_KEY", "")
+
 
     # Storage type: "local" or "s3"
     STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")

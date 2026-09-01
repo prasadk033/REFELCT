@@ -93,11 +93,13 @@ class Source(Base):
     id = Column(String, primary_key=True)  # UUID
     project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
     file_name = Column(String, nullable=False)
-    file_type = Column(String, nullable=False)  # pdf, docx, txt
+    file_type = Column(String, nullable=False)  # pdf, docx, txt, jpg, png, etc.
     file_size = Column(Integer, nullable=True)
     storage_path = Column(String, nullable=False)
     upload_timestamp = Column(DateTime, default=datetime.utcnow)
-    processing_status = Column(String, default="uploaded")  # uploaded, parsing, parsed, failed
+    processing_status = Column(String, default="uploaded")  # uploaded, parsing, extracted, approved, failed
+    approval_status = Column(String, default="pending_review")  # pending_review, approved, reparse_needed
+    version = Column(Integer, nullable=True, default=None)  # None until assigned to completed Brief cycle (0 for V0, 1 for V1, etc.)
     extracted_text = Column(Text, nullable=True)
     ocr_text = Column(Text, nullable=True)
     ocr_status = Column(String, nullable=True)  # None, processing, completed, failed, skipped
@@ -113,7 +115,7 @@ class Brief(Base):
 
     id = Column(String, primary_key=True)  # UUID
     project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
-    version = Column(Integer, nullable=False, default=1)
+    version = Column(Integer, nullable=True, default=None)  # Explicitly assigned: 0 for V0, 1 for V1, etc.
     content = Column(JSON, nullable=True)  # The 8-section brief document as structured JSON
     raw_content = Column(Text, nullable=True)  # Raw LLM output text
     project_metadata = Column(JSON, nullable=True)  # Project context passed to the prompt
@@ -146,14 +148,15 @@ class Card(Base):
     brief_id = Column(String, ForeignKey("briefs.id"), nullable=True, index=True)
     source_id = Column(String, nullable=True)  # Reference to source if traceable
     source_document = Column(String, nullable=True)  # Name of source file and page/section
-    card_type = Column(String, nullable=False)  # FACT, REQUIREMENT, CONSTRAINT, OBJECTIVE, QUESTION, CONFLICT, ACTION, CLARIFICATION
+    card_type = Column(String, nullable=False)  # FACT, REQUIREMENT, QUESTION, CONFLICT, OTHER, ACTION, CLARIFICATION
     title = Column(String, nullable=False)
     content = Column(Text, nullable=False)  # Brief information
     evidence = Column(Text, nullable=True)  # Source excerpt / verbatim evidence
     ai_suggestion = Column(Text, nullable=True)  # AI suggested content / recommendation
     section = Column(String, nullable=True)  # Which brief section this card relates to
+    version = Column(Integer, nullable=True, default=None)  # Project version (0 for V0, 1 for V1, etc.)
     created_by = Column(String, nullable=False, default="AI")  # AI or ARCHITECT
-    status = Column(String, nullable=False, default="provisional")  # provisional (suggested), accepted, rejected
+    status = Column(String, nullable=False, default="provisional")  # provisional, accepted, rejected, edited
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -182,7 +185,7 @@ class ActivityLog(Base):
     id = Column(String, primary_key=True)  # UUID
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     project_id = Column(String, ForeignKey("projects.id"), nullable=True, index=True)
-    event_type = Column(String, nullable=False)  # project_created, document_uploaded, analysis_started, analysis_completed, cards_generated, questions_identified, conflicts_identified, card_accepted, card_rejected, card_created, card_updated, card_deleted
+    event_type = Column(String, nullable=False)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -212,23 +215,38 @@ def log_activity(db: SessionLocal, user_id: str, event_type: str, title: str, de
         return None
 
 
-# ── Database Initialization ─────────────────────────────────────────────────
-
 def init_db():
-    """Create all tables if they don't exist and run safe migrations."""
-    from sqlalchemy import text
+    """Create all tables if they don't exist and run safe migrations on SQLite & PostgreSQL."""
+    from sqlalchemy import inspect, text
     try:
         Base.metadata.create_all(bind=engine)
-        # Ensure new columns exist on cards table
+        inspector = inspect(engine)
+        
         with engine.connect() as conn:
-            try:
-                conn.execute(text("ALTER TABLE cards ADD COLUMN IF NOT EXISTS source_document VARCHAR;"))
-                conn.execute(text("ALTER TABLE cards ADD COLUMN IF NOT EXISTS source_id VARCHAR;"))
-                conn.execute(text("ALTER TABLE cards ADD COLUMN IF NOT EXISTS ai_suggestion TEXT;"))
-                conn.commit()
-            except Exception as mig_err:
-                logger.debug(f"Column migration notice: {mig_err}")
+            # Check sources table columns
+            if "sources" in inspector.get_table_names():
+                source_cols = [c["name"] for c in inspector.get_columns("sources")]
+                if "approval_status" not in source_cols:
+                    conn.execute(text("ALTER TABLE sources ADD COLUMN approval_status VARCHAR DEFAULT 'pending_review';"))
+                if "version" not in source_cols:
+                    conn.execute(text("ALTER TABLE sources ADD COLUMN version INTEGER DEFAULT 1;"))
+            
+            # Check cards table columns
+            if "cards" in inspector.get_table_names():
+                card_cols = [c["name"] for c in inspector.get_columns("cards")]
+                if "version" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN version INTEGER DEFAULT 1;"))
+                if "source_document" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN source_document VARCHAR;"))
+                if "source_id" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN source_id VARCHAR;"))
+                if "ai_suggestion" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN ai_suggestion TEXT;"))
+            
+            conn.commit()
         logger.info("Database tables created/verified successfully.")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
+
+

@@ -43,7 +43,7 @@ class LiteLLMGenerator:
             }
         ]
 
-        timeout_val = self.kwargs.pop("timeout", 20.0)
+        timeout_val = self.kwargs.pop("timeout", 75.0)
         start_time = time.time()
 
         try:
@@ -55,6 +55,7 @@ class LiteLLMGenerator:
                 api_key=self.api_key or "sk-datai2i-a100-qwen35-27b-8x3f9z",
                 custom_llm_provider="openai",
                 timeout=timeout_val,
+                num_retries=0,
                 **self.kwargs
             )
 
