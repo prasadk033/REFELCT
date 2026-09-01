@@ -48,7 +48,7 @@ def _make_s3_client():
             endpoint_url=endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
-            config=BotoConfig(signature_version="s3v4"),
+            config=BotoConfig(signature_version="s3v4", connect_timeout=2, read_timeout=3, retries={"max_attempts": 1}),
             use_ssl=config.MINIO_SECURE,
         )
         logger.info(f"MinIO S3 client initialised → {endpoint}")
@@ -98,11 +98,7 @@ class FileStore:
 
     def __init__(self):
         self.storage_type = config.STORAGE_TYPE  # "local" or "s3"
-        if self.storage_type == "s3":
-            logger.info("FileStore using MinIO/S3 storage")
-            _ensure_bucket()
-        else:
-            logger.info("FileStore using local filesystem storage")
+        logger.info(f"FileStore initialized with mode: {self.storage_type}")
 
     def save_upload(self, project_id: str, source_id: str, file_name: str, file_data) -> str:
         """
@@ -112,7 +108,13 @@ class FileStore:
         key = f"{project_id}/{source_id}/{file_name}"
 
         if self.storage_type == "s3":
-            return self._s3_upload(key, file_data, file_name)
+            try:
+                return self._s3_upload(key, file_data, file_name)
+            except Exception as e:
+                logger.warning(f"S3/MinIO upload failed ({e}). Falling back to local filesystem storage.")
+                if hasattr(file_data, "seek"):
+                    file_data.seek(0)
+                return self._local_save(key, project_id, source_id, file_name, file_data)
         else:
             return self._local_save(key, project_id, source_id, file_name, file_data)
 
@@ -121,10 +123,18 @@ class FileStore:
         For local storage: returns the absolute filesystem path.
         For S3: downloads the file to a temp path and returns that path.
         """
+        local_path = UPLOADS_BASE / storage_path
+        if local_path.exists():
+            return str(local_path)
+
         if self.storage_type == "s3":
-            return self._s3_download_temp(storage_path)
+            try:
+                return self._s3_download_temp(storage_path)
+            except Exception as e:
+                logger.warning(f"S3 download failed ({e}). Checking local uploads path.")
+                return str(local_path)
         else:
-            return str(UPLOADS_BASE / storage_path)
+            return str(local_path)
 
     def file_exists(self, storage_path: str) -> bool:
         """Check if a file exists in storage."""

@@ -17,7 +17,7 @@ class Config:
     # CORS — comma-separated list of allowed origins
     CORS_ORIGINS = [
         origin.strip()
-        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174").split(",")
     ]
 
     # Redis — agent/workflow runtime state
@@ -75,7 +75,7 @@ class Config:
     JWT_EXPIRATION_HOURS = 72
 
     # Google OAuth
-    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "") or os.getenv("VITE_GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
     # TurboOCR

@@ -3,9 +3,8 @@ from typing import Dict, Any, List, Optional
 
 import litellm
 from dotenv import load_dotenv
+from config import config
 from haystack import component
-
-load_dotenv()
 
 
 @component
@@ -17,16 +16,13 @@ class LiteLLMGenerator:
 
     def __init__(self, model_name: Optional[str] = None, **kwargs):
         # Must match the model_name configured in litellm_config.yaml
-        self.model = model_name or "qwen"
+        self.model = model_name or config.LLM_MODEL
 
         # LiteLLM Proxy URL
-        self.api_base = os.getenv(
-            "LITELLM_API_BASE",
-            "http://localhost:4000"
-        )
+        self.api_base = config.LITELLM_API_BASE
 
         # Authentication key for LiteLLM Proxy
-        self.api_key = os.getenv("LITELLM_MASTER_KEY")
+        self.api_key = config.LITELLM_MASTER_KEY
 
         self.kwargs = kwargs
 
@@ -47,7 +43,7 @@ class LiteLLMGenerator:
             }
         ]
 
-        timeout_val = self.kwargs.pop("timeout", 180.0)
+        timeout_val = self.kwargs.pop("timeout", 20.0)
         start_time = time.time()
 
         try:
@@ -55,8 +51,8 @@ class LiteLLMGenerator:
                 # OpenAI-compatible interface exposed by LiteLLM Proxy
                 model=self.model,
                 messages=messages,
-                api_base=f"{self.api_base}/v1",
-                api_key=self.api_key,
+                api_base=f"{self.api_base.rstrip('/')}/v1" if not self.api_base.rstrip('/').endswith("/v1") else self.api_base.rstrip('/'),
+                api_key=self.api_key or "sk-datai2i-a100-qwen35-27b-8x3f9z",
                 custom_llm_provider="openai",
                 timeout=timeout_val,
                 **self.kwargs

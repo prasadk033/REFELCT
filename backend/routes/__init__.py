@@ -42,7 +42,19 @@ def create_project(
     db.refresh(project)
     logger.info(f"Created project: {project.id} ({project.name})")
 
+    # Record activity
+    from db import log_activity
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="project_created",
+        title="Project created",
+        description=f"Created project '{project.name}'",
+        project_id=project.id,
+    )
+
     return _project_to_response(db, project)
+
 
 
 @router.get("", response_model=list[ProjectResponse])

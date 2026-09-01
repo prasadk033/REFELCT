@@ -19,14 +19,26 @@ Base = declarative_base()
 
 # ── Engine & Session ────────────────────────────────────────────────────────
 
-engine = create_engine(
-    config.APP_DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-    echo=False,
-)
+def _create_db_engine():
+    try:
+        eng = create_engine(
+            config.APP_DATABASE_URL,
+            pool_pre_ping=True,
+            pool_size=10,
+            max_overflow=20,
+            echo=False,
+        )
+        # Test connection
+        with eng.connect() as conn:
+            pass
+        logger.info(f"Connected to primary database: {config.APP_DATABASE_URL.split('@')[-1]}")
+        return eng
+    except Exception as e:
+        logger.warning(f"Primary database connection failed ({e}). Falling back to SQLite database.")
+        sqlite_url = "sqlite:///./reflect_app.db"
+        return create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
+engine = _create_db_engine()
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
@@ -133,13 +145,15 @@ class Card(Base):
     project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
     brief_id = Column(String, ForeignKey("briefs.id"), nullable=True, index=True)
     source_id = Column(String, nullable=True)  # Reference to source if traceable
-    card_type = Column(String, nullable=False)  # FACT, REQUIREMENT, QUESTION, CONFLICT, ACTION, CLARIFICATION
+    source_document = Column(String, nullable=True)  # Name of source file and page/section
+    card_type = Column(String, nullable=False)  # FACT, REQUIREMENT, CONSTRAINT, OBJECTIVE, QUESTION, CONFLICT, ACTION, CLARIFICATION
     title = Column(String, nullable=False)
-    content = Column(Text, nullable=False)
-    evidence = Column(Text, nullable=True)
+    content = Column(Text, nullable=False)  # Brief information
+    evidence = Column(Text, nullable=True)  # Source excerpt / verbatim evidence
+    ai_suggestion = Column(Text, nullable=True)  # AI suggested content / recommendation
     section = Column(String, nullable=True)  # Which brief section this card relates to
     created_by = Column(String, nullable=False, default="AI")  # AI or ARCHITECT
-    status = Column(String, nullable=False, default="provisional")  # provisional, accepted, rejected
+    status = Column(String, nullable=False, default="provisional")  # provisional (suggested), accepted, rejected
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -162,12 +176,58 @@ class ProcessingJob(Base):
     project = relationship("Project", back_populates="processing_jobs")
 
 
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+
+    id = Column(String, primary_key=True)  # UUID
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=True, index=True)
+    event_type = Column(String, nullable=False)  # project_created, document_uploaded, analysis_started, analysis_completed, cards_generated, questions_identified, conflicts_identified, card_accepted, card_rejected, card_created, card_updated, card_deleted
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    project = relationship("Project")
+
+
+def log_activity(db: SessionLocal, user_id: str, event_type: str, title: str, description: str = None, project_id: str = None):
+    """Utility to record a real system activity event in the database."""
+    import uuid
+    try:
+        act = ActivityLog(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            project_id=project_id,
+            event_type=event_type,
+            title=title,
+            description=description,
+            created_at=datetime.utcnow(),
+        )
+        db.add(act)
+        db.commit()
+        return act
+    except Exception as e:
+        logger.warning(f"Failed to log activity event ({event_type}): {e}")
+        return None
+
+
 # ── Database Initialization ─────────────────────────────────────────────────
 
 def init_db():
-    """Create all tables if they don't exist."""
+    """Create all tables if they don't exist and run safe migrations."""
+    from sqlalchemy import text
     try:
         Base.metadata.create_all(bind=engine)
+        # Ensure new columns exist on cards table
+        with engine.connect() as conn:
+            try:
+                conn.execute(text("ALTER TABLE cards ADD COLUMN IF NOT EXISTS source_document VARCHAR;"))
+                conn.execute(text("ALTER TABLE cards ADD COLUMN IF NOT EXISTS source_id VARCHAR;"))
+                conn.execute(text("ALTER TABLE cards ADD COLUMN IF NOT EXISTS ai_suggestion TEXT;"))
+                conn.commit()
+            except Exception as mig_err:
+                logger.debug(f"Column migration notice: {mig_err}")
         logger.info("Database tables created/verified successfully.")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")

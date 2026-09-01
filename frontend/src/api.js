@@ -1,6 +1,8 @@
 // All API calls to the FastAPI backend.
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE !== undefined 
+  ? import.meta.env.VITE_API_BASE 
+  : (import.meta.env.DEV ? "http://localhost:8000" : "");
 
 function authHeaders() {
   const token = localStorage.getItem("reflect_token");
@@ -87,6 +89,12 @@ export async function listSources(projectId) {
   return apiFetch(`/api/projects/${projectId}/sources`);
 }
 
+export async function deleteSource(projectId, sourceId) {
+  return apiFetch(`/api/projects/${projectId}/sources/${sourceId}`, {
+    method: "DELETE",
+  });
+}
+
 // ── Briefs ──────────────────────────────────────────────────────────────────
 
 export async function analyzeBrief(projectId, sourceIds = null) {
@@ -157,36 +165,15 @@ export async function rejectCard(cardId) {
   return apiFetch(`/api/cards/${cardId}/reject`, { method: "POST" });
 }
 
-// ── Legacy ──────────────────────────────────────────────────────────────────
+// ── Activities ──────────────────────────────────────────────────────────────
 
-export async function uploadAndAnalyze(file) {
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(`${API_BASE}/upload-and-analyze`, {
-    method: "POST",
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Upload failed (${res.status})`);
-  }
-  return res.json();
+export async function listActivities(projectId = null, limit = 20) {
+  const params = new URLSearchParams();
+  if (projectId) params.set("project_id", projectId);
+  if (limit) params.set("limit", limit);
+  const qs = params.toString();
+  return apiFetch(`/api/activities${qs ? "?" + qs : ""}`);
 }
 
-export async function getStatus(sessionId) {
-  const res = await fetch(`${API_BASE}/status/${sessionId}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Status fetch failed (${res.status})`);
-  }
-  return res.json();
-}
 
-export async function getResult(sessionId) {
-  const res = await fetch(`${API_BASE}/result/${sessionId}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Result fetch failed (${res.status})`);
-  }
-  return res.json();
-}
+

@@ -27,11 +27,11 @@ from storage import file_store
 logger = logging.getLogger(__name__)
 
 
-def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
+def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user_id: str = None):
     """
-    Execute the full Brief processing pipeline.
+    Execute the full Brief processing pipeline with multi-document isolation.
 
-    This runs as a background task. All state is persisted to PostgreSQL.
+    This runs as a background task. All state is persisted to PostgreSQL/SQLite.
     """
     db = SessionLocal()
     loader = DocumentLoader()
@@ -44,6 +44,8 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
             _update_job(db, job_id, "failed", "Error", "Project not found")
             return
 
+        effective_user_id = user_id or project.user_id
+
         # Get sources
         sources = db.query(Source).filter(Source.id.in_(source_ids)).all()
         if not sources:
@@ -55,23 +57,23 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
         logger.info(f"[{project_id}] Parsing {len(sources)} source documents")
 
         combined_texts = []
+        source_text_map = {}
         all_images = []
 
         for source in sources:
             abs_path = file_store.get_absolute_path(source.storage_path)
             try:
-                # Update source status
                 source.processing_status = "parsing"
                 db.commit()
 
                 text, images = loader.extract_text_combined(abs_path)
 
-                # Store extracted text on the source record
                 source.extracted_text = text
                 source.processing_status = "parsed"
                 db.commit()
 
                 if text:
+                    source_text_map[source.id] = text
                     combined_texts.append(f"--- Source: {source.file_name} ---\n{text}")
 
                 all_images.extend([
@@ -86,7 +88,6 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
                 source.processing_status = "failed"
                 source.processing_error = str(e)
                 db.commit()
-                # Continue with other sources
                 continue
 
         if not combined_texts:
@@ -105,7 +106,6 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
                     filename=img["filename"],
                 )
 
-                # Update source OCR status
                 source_obj = db.query(Source).filter(Source.id == img["source_id"]).first()
                 if source_obj:
                     if result["success"] and result["text"]:
@@ -114,10 +114,11 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
                         ocr_texts.append(
                             f"--- Image OCR from {img['source_name']} (page {img.get('page', '?')}) ---\n{result['text']}"
                         )
+                        if img["source_id"] in source_text_map:
+                            source_text_map[img["source_id"]] += f"\n\n--- OCR Images ---\n{result['text']}"
                     else:
                         source_obj.ocr_status = "failed"
                         source_obj.processing_error = result.get("error", "OCR failed")
-                        logger.warning(f"[{project_id}] OCR failed for {img['filename']}: {result.get('error')}")
                     db.commit()
         elif all_images:
             logger.info(f"[{project_id}] {len(all_images)} images found but TurboOCR not configured, skipping")
@@ -131,8 +132,6 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
         if ocr_texts:
             full_content += "\n\n--- IMAGE TEXT EXTRACTION ---\n\n" + "\n\n".join(ocr_texts)
 
-        logger.info(f"[{project_id}] Total extracted content: {len(full_content)} chars")
-
         # ── Step 4: Format Project Context ───────────────────────────────────
         project_context = format_project_context(
             project_name=project.name,
@@ -142,16 +141,15 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
             description=project.description,
         )
 
-        # ── Step 5: Generate Brief ───────────────────────────────────────────
-        _update_job(db, job_id, "processing_brief", "Processing Brief")
-        logger.info(f"[{project_id}] Generating Brief")
+        # ── Step 5: Generate Brief Overview ───────────────────────────────────
+        _update_job(db, job_id, "processing_brief", "Synthesizing Brief Overview")
+        logger.info(f"[{project_id}] Generating Brief Synthesis")
 
         brief_result = brief_agent.generate_brief(
             source_content=full_content,
             project_context=project_context,
         )
 
-        # Determine version number
         latest_brief = (
             db.query(Brief)
             .filter(Brief.project_id == project_id)
@@ -160,7 +158,6 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
         )
         new_version = (latest_brief.version + 1) if latest_brief else 1
 
-        # Create Brief record
         brief_id = str(uuid.uuid4())
         brief = Brief(
             id=brief_id,
@@ -180,7 +177,6 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
         )
         db.add(brief)
 
-        # Link contributing sources
         for source in sources:
             bs = BriefSource(
                 id=str(uuid.uuid4()),
@@ -191,7 +187,6 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
 
         db.commit()
 
-        # Update job with brief_id
         job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
         if job:
             job.brief_id = brief_id
@@ -201,50 +196,108 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str):
             _update_job(db, job_id, "failed", "Error", f"Brief generation failed: {brief_result.get('error', 'Unknown error')}")
             return
 
-        # ── Step 6: Generate Cards ───────────────────────────────────────────
-        _update_job(db, job_id, "generating_cards", "Generating Cards")
-        logger.info(f"[{project_id}] Generating Cards from Brief V{new_version}")
+        # ── Step 6: Generate Cards (Document-Wise Deduplication) ───────────────
+        _update_job(db, job_id, "generating_cards", "Generating Document Brief Cards")
+        logger.info(f"[{project_id}] Generating Cards per source document for Brief V{new_version}")
 
-        brief_content_str = json.dumps(brief_result["content"]) if brief_result["content"] else brief_result.get("raw_content", "")
-
-        cards_data = brief_agent.generate_cards(
-            brief_content=brief_content_str,
-            project_context=project_context,
-        )
-
-        # Store cards in database
-        card_count = 0
-        for card_data in cards_data:
-            try:
-                card = Card(
-                    id=str(uuid.uuid4()),
-                    project_id=project_id,
-                    brief_id=brief_id,
-                    card_type=card_data.get("card_type", "FACT").upper(),
-                    title=card_data.get("title", "Untitled"),
-                    content=card_data.get("content", ""),
-                    evidence=card_data.get("evidence"),
-                    section=card_data.get("section"),
-                    created_by="AI",
-                    status="provisional",
-                )
-                db.add(card)
-                card_count += 1
-            except Exception as e:
-                logger.warning(f"[{project_id}] Failed to create card: {e}")
-                continue
+        # Deduplication: Remove any previous provisional AI cards for the specific sources being analyzed
+        # to ensure re-analyzing a document updates its cards without creating duplicate cards or wiping out other documents!
+        for source in sources:
+            deleted_count = db.query(Card).filter(
+                Card.project_id == project_id,
+                (Card.source_id == source.id) | (Card.source_document == source.file_name),
+                Card.status == "provisional"
+            ).delete(synchronize_session=False)
+            if deleted_count:
+                logger.info(f"[{project_id}] Replaced {deleted_count} previous provisional cards for source {source.file_name}")
 
         db.commit()
-        logger.info(f"[{project_id}] Created {card_count} cards for Brief V{new_version}")
 
-        # ── Step 7: Complete ─────────────────────────────────────────────────
+        total_new_cards = 0
+        total_questions = 0
+        total_conflicts = 0
+
+        # Generate cards for each source individually to ensure 100% strict document attribution
+        for source in sources:
+            src_text = source_text_map.get(source.id, "")
+            if not src_text:
+                continue
+
+            single_source_input = (
+                f"DOCUMENT: {source.file_name}\n\n"
+                f"DOCUMENT CONTENT:\n{src_text}\n\n"
+                f"BRIEF OVERVIEW CONTEXT:\n{json.dumps(brief_result.get('content', {}), indent=2)}"
+            )
+
+            cards_data = brief_agent.generate_cards(
+                brief_content=single_source_input,
+                project_context=project_context,
+            )
+
+            for card_data in cards_data:
+                try:
+                    card_title = card_data.get("title", "Untitled").strip()
+                    card_content = card_data.get("content", "").strip()
+                    if not card_title or not card_content:
+                        continue
+
+                    card_type = card_data.get("card_type", "REQUIREMENT").upper()
+                    card_evidence = card_data.get("evidence") or "Not clear / Not provided"
+                    card_suggestion = card_data.get("ai_suggestion")
+
+                    card = Card(
+                        id=str(uuid.uuid4()),
+                        project_id=project_id,
+                        brief_id=brief_id,
+                        source_id=source.id,
+                        source_document=source.file_name,
+                        card_type=card_type,
+                        title=card_title,
+                        content=card_content,
+                        evidence=card_evidence,
+                        ai_suggestion=card_suggestion,
+                        section=card_data.get("section"),
+                        created_by="AI",
+                        status="provisional",
+                    )
+                    db.add(card)
+                    total_new_cards += 1
+
+                    if card_type == "QUESTION":
+                        total_questions += 1
+                    elif card_type in ("CONFLICT", "TENSION"):
+                        total_conflicts += 1
+
+                except Exception as e:
+                    logger.warning(f"[{project_id}] Failed to create card: {e}")
+                    continue
+
+            # Update source processing status
+            source.processing_status = "completed"
+            db.commit()
+
+        db.commit()
+        logger.info(f"[{project_id}] Created {total_new_cards} cards ({total_questions} Qs, {total_conflicts} Conflicts) for Brief V{new_version}")
+
+        # ── Step 7: Complete & Record Activity ─────────────────────────────────
         _update_job(db, job_id, "completed", "Ready for Review")
 
-        # Update project timestamp
         project.updated_at = datetime.utcnow()
         db.commit()
 
-        logger.info(f"[{project_id}] Brief pipeline completed. Brief V{new_version}, {card_count} cards.")
+        # Log completion activity
+        from db import log_activity
+        doc_names = ", ".join([s.file_name for s in sources])
+        log_activity(
+            db=db,
+            user_id=effective_user_id,
+            event_type="analysis_completed",
+            title="AI analysis completed",
+            description=f"Generated {total_new_cards} Brief Cards ({total_questions} Questions, {total_conflicts} Conflicts) from {doc_names}",
+            project_id=project_id,
+        )
+
+        logger.info(f"[{project_id}] Brief pipeline completed successfully.")
 
     except Exception as e:
         logger.error(f"[{project_id}] Brief pipeline failed: {e}", exc_info=True)
@@ -263,3 +316,4 @@ def _update_job(db, job_id: str, status: str, step: str, error: str = None):
         job.error = error
         job.updated_at = datetime.utcnow()
         db.commit()
+

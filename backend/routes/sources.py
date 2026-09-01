@@ -84,7 +84,19 @@ async def upload_source(
 
     logger.info(f"Uploaded source {source.id}: {source.file_name} to project {project_id}")
 
+    # Record activity
+    from db import log_activity
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="document_uploaded",
+        title="Document uploaded",
+        description=f"{source.file_name} added to workspace",
+        project_id=project_id,
+    )
+
     return SourceResponse.model_validate(source)
+
 
 
 @router.get("/{project_id}/sources", response_model=list[SourceResponse])
@@ -109,3 +121,30 @@ def list_sources(
     )
 
     return [SourceResponse.model_validate(s) for s in sources]
+
+
+@router.delete("/{project_id}/sources/{source_id}")
+def delete_source(
+    project_id: str,
+    source_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.user_id == user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    source = db.query(Source).filter(
+        Source.id == source_id,
+        Source.project_id == project_id
+    ).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    db.delete(source)
+    db.commit()
+    return {"message": "Source deleted successfully"}
+

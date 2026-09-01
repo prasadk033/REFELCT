@@ -77,11 +77,24 @@ def analyze_brief(
 
     logger.info(f"Starting Brief analysis for project {project_id}, job {job_id}")
 
+    # Record activity
+    from db import log_activity
+    doc_names = ", ".join([s.file_name for s in sources])
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="analysis_started",
+        title="Analysis started",
+        description=f"Analysing {len(sources)} document(s): {doc_names}",
+        project_id=project_id,
+    )
+
     # Run in background
     source_ids = [s.id for s in sources]
-    background_tasks.add_task(run_brief_pipeline, project_id, source_ids, job_id)
+    background_tasks.add_task(run_brief_pipeline, project_id, source_ids, job_id, user.id)
 
     return ProcessingStatusResponse.model_validate(job)
+
 
 
 @router.get("/{project_id}/brief/status", response_model=ProcessingStatusResponse)
@@ -176,7 +189,7 @@ def list_brief_versions(
     return results
 
 
-@router.get("/{project_id}/brief/{brief_id}", response_model=BriefResponse)
+@router.get("/{project_id}/brief/v/{brief_id}", response_model=BriefResponse)
 def get_brief_version(
     project_id: str,
     brief_id: str,

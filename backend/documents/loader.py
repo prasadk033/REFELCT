@@ -41,8 +41,23 @@ class DocumentLoader:
         ext = path.suffix.lower()
 
         if ext == '.pdf':
-            result = self.pdf_converter.run(sources=[str(path)])
-            return result["documents"]
+            try:
+                result = self.pdf_converter.run(sources=[str(path)])
+                docs = result.get("documents", [])
+                if docs and any(d.content and d.content.strip() for d in docs):
+                    return docs
+            except Exception as e:
+                logger.warning(f"PyPDF conversion failed ({e}). Attempting text fallback.")
+
+            # Fallback for plain-text or non-standard documents
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                if content.strip():
+                    return [Document(content=content, meta={"file_path": str(path), "type": "pdf_text_fallback"})]
+            except Exception:
+                pass
+            return []
 
         elif ext == '.txt':
             result = self.txt_converter.run(sources=[str(path)])

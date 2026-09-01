@@ -75,7 +75,9 @@ def create_card(
         card_type=body.card_type.upper(),
         title=body.title,
         content=body.content,
-        evidence=body.evidence,
+        source_document=body.source_document or "Architect Direct Input",
+        evidence=body.evidence or "Manual Input",
+        ai_suggestion=body.ai_suggestion,
         section=body.section,
         created_by="ARCHITECT",
         status="accepted",  # Architect-created cards are automatically accepted
@@ -85,6 +87,17 @@ def create_card(
     db.refresh(card)
 
     logger.info(f"Architect created card {card.id} in project {project_id}")
+
+    from db import log_activity
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="card_created",
+        title="Brief Card created",
+        description=f"Added card '{card.title}' ({card.card_type})",
+        project_id=project_id,
+    )
+
     return CardResponse.model_validate(card)
 
 
@@ -110,6 +123,17 @@ def update_card(
     db.refresh(card)
 
     logger.info(f"Updated card {card_id}")
+
+    from db import log_activity
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="card_updated",
+        title="Brief Card edited",
+        description=f"Updated '{card.title}'",
+        project_id=card.project_id,
+    )
+
     return CardResponse.model_validate(card)
 
 
@@ -120,10 +144,24 @@ def delete_card(
     db: Session = Depends(get_db),
 ):
     card = _get_user_card(db, card_id, user.id)
+    project_id = card.project_id
+    card_title = card.title
+
     db.delete(card)
     db.commit()
 
     logger.info(f"Deleted card {card_id}")
+
+    from db import log_activity
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="card_deleted",
+        title="Brief Card deleted",
+        description=f"Deleted '{card_title}'",
+        project_id=project_id,
+    )
+
     return {"detail": "Card deleted"}
 
 
@@ -140,6 +178,17 @@ def accept_card(
     db.refresh(card)
 
     logger.info(f"Accepted card {card_id}")
+
+    from db import log_activity
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="card_accepted",
+        title="Brief Card accepted",
+        description=f"Accepted '{card.title}' into Project Knowledge",
+        project_id=card.project_id,
+    )
+
     return CardResponse.model_validate(card)
 
 
@@ -156,7 +205,19 @@ def reject_card(
     db.refresh(card)
 
     logger.info(f"Rejected card {card_id}")
+
+    from db import log_activity
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="card_rejected",
+        title="Brief Card rejected",
+        description=f"Rejected '{card.title}'",
+        project_id=card.project_id,
+    )
+
     return CardResponse.model_validate(card)
+
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
