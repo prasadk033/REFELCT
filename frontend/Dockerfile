@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-ARG VITE_GOOGLE_CLIENT_ID=740869050290-4qmim2uqsgf6r1ljh7r2o306fdgspc5h.apps.googleusercontent.com
+ARG VITE_GOOGLE_CLIENT_ID=873884087071-6bvmorueu2ldkr4auttmso74m4vl211o.apps.googleusercontent.com
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 RUN npm run build
 
