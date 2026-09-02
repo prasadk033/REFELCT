@@ -43,7 +43,7 @@ class LiteLLMGenerator:
             }
         ]
 
-        timeout_val = self.kwargs.pop("timeout", 75.0)
+        timeout_val = self.kwargs.pop("timeout", 300.0)
         start_time = time.time()
 
         try:
