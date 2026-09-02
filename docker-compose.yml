@@ -6,7 +6,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5174:80"
+      - "5173:80"
     restart: unless-stopped
     depends_on:
       - backend
@@ -42,7 +42,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6380:6379"
+      - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --save 60 1 --loglevel warning
@@ -103,7 +103,7 @@ services:
       PGADMIN_DEFAULT_PASSWORD: TempPgAdmin123!
       PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
-      - "5051:80"
+      - "5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     restart: unless-stopped
