@@ -191,7 +191,7 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
                 "client": project.client,
                 "description": project.description,
             },
-            status="completed" if brief_result.get("success") else "failed",
+            status="generating_cards" if brief_result.get("success") else "failed",
             previous_version_id=latest_brief.id if latest_brief else None,
         )
         db.add(brief)
@@ -403,6 +403,10 @@ Return ONLY JSON list.
         logger.info(f"[{project_id}] Created {total_new_cards} cards for Brief V{new_version}")
 
         # ── Step 7: Complete & Record Activity ─────────────────────────────────
+        brief = db.query(Brief).filter(Brief.id == brief_id).first()
+        if brief:
+            brief.status = "completed"
+            
         _update_job(db, job_id, "completed", "Ready for Review")
 
         project.updated_at = datetime.utcnow()
@@ -424,6 +428,14 @@ Return ONLY JSON list.
 
     except Exception as e:
         logger.error(f"[{project_id}] Brief pipeline failed: {e}", exc_info=True)
+        try:
+            if 'brief_id' in locals():
+                failed_brief = db.query(Brief).filter(Brief.id == brief_id).first()
+                if failed_brief and failed_brief.status != "completed":
+                    failed_brief.status = "failed"
+                db.commit()
+        except Exception:
+            pass
         _update_job(db, job_id, "failed", "Error", str(e))
 
     finally:
