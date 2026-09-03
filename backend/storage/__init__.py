@@ -107,19 +107,15 @@ class FileStore:
         """
         key = f"{project_id}/{source_id}/{file_name}"
 
-        # Read data once to allow both local caching and S3 upload
         if hasattr(file_data, "read"):
             data = file_data.read()
         else:
             data = file_data
 
-        # Always save to local cache for instant zero-latency extraction
-        self._local_save(key, project_id, source_id, file_name, data)
-
         if self.storage_type == "s3":
-            # Offload remote MinIO WAN upload to background thread so user response is instant
-            import threading
-            threading.Thread(target=self._s3_upload, args=(key, data, file_name), daemon=True).start()
+            self._s3_upload(key, data, file_name)
+        else:
+            self._local_save(key, project_id, source_id, file_name, data)
 
         return key
 
@@ -128,53 +124,40 @@ class FileStore:
         For local storage: returns the absolute filesystem path.
         For S3: downloads the file to a temp path and returns that path.
         """
-        local_path = UPLOADS_BASE / storage_path
-        if local_path.exists():
-            return str(local_path)
-
         if self.storage_type == "s3":
-            try:
-                return self._s3_download_temp(storage_path)
-            except Exception as e:
-                logger.warning(f"S3 download failed ({e}). Checking local uploads path.")
-                return str(local_path)
+            return self._s3_download_temp(storage_path)
         else:
+            local_path = UPLOADS_BASE / storage_path
             return str(local_path)
 
     def file_exists(self, storage_path: str) -> bool:
         """Check if a file exists in storage."""
-        local_path = UPLOADS_BASE / storage_path
-        if local_path.exists():
-            return True
         if self.storage_type == "s3":
             try:
                 _s3().head_object(Bucket=_s3_bucket, Key=storage_path)
                 return True
             except Exception:
                 return False
-        return False
+        else:
+            local_path = UPLOADS_BASE / storage_path
+            return local_path.exists()
 
     def delete_file(self, storage_path: str) -> bool:
         """Delete a file from storage."""
-        # Delete local copy instantly
-        try:
-            path = UPLOADS_BASE / storage_path
-            if path.exists():
-                path.unlink()
-                logger.info(f"Deleted local file: {storage_path}")
-        except Exception as e:
-            logger.error(f"Failed to delete local file {storage_path}: {e}")
-
-        # Async S3 deletion in background
         if self.storage_type == "s3":
-            import threading
-            def _async_s3_del():
-                try:
-                    _s3().delete_object(Bucket=_s3_bucket, Key=storage_path)
-                    logger.info(f"Deleted S3 object: {storage_path}")
-                except Exception as err:
-                    logger.warning(f"Failed to delete S3 object {storage_path}: {err}")
-            threading.Thread(target=_async_s3_del, daemon=True).start()
+            try:
+                _s3().delete_object(Bucket=_s3_bucket, Key=storage_path)
+                logger.info(f"Deleted S3 object: {storage_path}")
+            except Exception as err:
+                logger.warning(f"Failed to delete S3 object {storage_path}: {err}")
+        else:
+            try:
+                path = UPLOADS_BASE / storage_path
+                if path.exists():
+                    path.unlink()
+                    logger.info(f"Deleted local file: {storage_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete local file {storage_path}: {e}")
 
         return True
 

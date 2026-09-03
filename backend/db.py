@@ -20,7 +20,6 @@ Base = declarative_base()
 # ── Engine & Session ────────────────────────────────────────────────────────
 
 def _create_db_engine():
-    try:
         eng = create_engine(
             config.APP_DATABASE_URL,
             pool_pre_ping=True,
@@ -33,10 +32,6 @@ def _create_db_engine():
             pass
         logger.info(f"Connected to primary database: {config.APP_DATABASE_URL.split('@')[-1]}")
         return eng
-    except Exception as e:
-        logger.warning(f"Primary database connection failed ({e}). Falling back to SQLite database.")
-        sqlite_url = "sqlite:///./reflect_app.db"
-        return create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
 engine = _create_db_engine()
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

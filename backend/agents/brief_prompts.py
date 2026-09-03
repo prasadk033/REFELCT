@@ -102,6 +102,14 @@ The AI is reading and organizing the project information.
 
 The AI is NOT designing the project.
 
+CRITICAL GUARDRAILS:
+- Use ONLY the approved extracted source material provided as input.
+- Do not use the original source document directly.
+- Do not re-extract or OCR any document.
+- Do not invent facts, dimensions, requirements, materials, preferences, client decisions, or design decisions.
+- If information is not present or supported by the approved extracted source material, do not fabricate it.
+- Every card must be supported by evidence from the approved source material.
+
 ==================================================
 2. CARD TYPES
 ==================================================
@@ -580,9 +588,9 @@ Use exactly this structure:
 
 [
   {{
-    "title": "Four Bedroom Requirement",
+    "card_point": "Four Bedroom Requirement",
     "card_type": "REQUIREMENT",
-    "content": "The residence is required to include four bedrooms.",
+    "summary": "The residence is required to include four bedrooms.",
     "source_document": "Client_Brief.pdf — Page 4",
     "evidence": "The residence should include four bedrooms.",
     "ai_suggestion": "Review and confirm that this requirement is accurately represented."

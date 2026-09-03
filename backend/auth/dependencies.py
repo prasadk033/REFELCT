@@ -20,11 +20,6 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> User:
     If Google OAuth is not configured (GOOGLE_CLIENT_ID is empty),
     falls back to a dev user for local development.
     """
-    # Dev mode fallback: if no Google credentials configured, use dev user
-    if not config.GOOGLE_CLIENT_ID:
-        dev_user = create_dev_user()
-        return dev_user
-
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header required")
 

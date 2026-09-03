@@ -64,13 +64,16 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         # Fetch all approved project sources
         all_approved_sources = (
             db.query(Source)
-            .filter(Source.project_id == project_id)
+            .filter(
+                Source.project_id == project_id,
+                Source.approval_status == "approved"
+            )
             .order_by(Source.upload_timestamp.asc())
             .all()
         )
 
         if not all_approved_sources:
-            _update_job(db, job_id, "failed", "Error", "No project documents found")
+            _update_job(db, job_id, "failed", "Error", "No approved project documents found. Please extract, review, and approve documents first.")
             return
 
         # Identify newly added / pending sources for this version cycle
@@ -90,62 +93,23 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         _update_job(db, job_id, "parsing", f"Parsing Version {new_version} Documents")
         print(f"\n[REFLECT] 🚀 Starting Brief Synthesis Pipeline | Project: {project.name} (ID: {project_id[:8]}...) | Target: Version {new_version}")
         print(f"[REFLECT] 📂 Batch: {len(pending_batch)} new document(s) | Prior History: {len(historical_sources)} existing document(s)")
-        logger.info(f"[{project_id}] Parsing {len(pending_batch)} pending documents for Version {new_version}")
+        logger.info(f"[{project_id}] Verifying {len(pending_batch)} pending documents for Version {new_version}")
 
         source_text_map = {}
-        all_images = []
 
         for source in pending_batch:
-            if not source.extracted_text or source.processing_status in ("uploaded", "failed", "parsing"):
-                abs_path = file_store.get_absolute_path(source.storage_path)
-                try:
-                    source.processing_status = "parsing"
-                    db.commit()
+            if not source.extracted_text or source.extracted_text.strip() == "":
+                error_msg = f"Document '{source.file_name}' lacks extracted data. It must go through the extraction/review/approval stage."
+                logger.error(f"[{project_id}] {error_msg}")
+                _update_job(db, job_id, "failed", "Error", error_msg)
+                return
 
-                    text, images = loader.extract_text_combined(abs_path)
-                    source.extracted_text = text or f"[{source.file_name} — No readable text found]"
-                    source.processing_status = "extracted"
-                    db.commit()
-                    print(f"[REFLECT] 📄 Extracted text from '{source.file_name}' ({len(source.extracted_text)} chars)")
-
-                    all_images.extend([
-                        {**img, "source_id": source.id, "source_name": source.file_name}
-                        for img in images
-                    ])
-                except Exception as e:
-                    logger.error(f"[{project_id}] Failed to extract {source.file_name}: {e}")
-                    print(f"[REFLECT] ⚠️ Extraction failed for '{source.file_name}': {e}")
-                    source.processing_status = "failed"
-                    source.processing_error = str(e)
-                    db.commit()
-                    continue
-            else:
-                print(f"[REFLECT] 📄 Using approved extracted text for '{source.file_name}' ({len(source.extracted_text)} chars)")
-
-            source_text_map[source.id] = source.extracted_text or ""
+            print(f"[REFLECT] 📄 Using approved extracted text for '{source.file_name}' ({len(source.extracted_text)} chars)")
+            source_text_map[source.id] = source.extracted_text
 
         # Also populate source_text_map for historical sources
         for h_src in historical_sources:
             source_text_map[h_src.id] = h_src.extracted_text or ""
-
-        # ── Step 2: TurboOCR for Images in Pending Batch ─────────────────────
-        ocr_texts = []
-        if all_images and turbo_ocr.is_available:
-            _update_job(db, job_id, "extracting_images", "Extracting Image Information")
-            print(f"[REFLECT] 🖼️ Running TurboOCR on {len(all_images)} image(s)...")
-            for img in all_images:
-                result = turbo_ocr.extract_text(
-                    image_data=img["data"],
-                    filename=img["filename"],
-                )
-                source_obj = db.query(Source).filter(Source.id == img["source_id"]).first()
-                if source_obj and result["success"] and result["text"]:
-                    source_obj.ocr_status = "completed"
-                    source_obj.ocr_text = (source_obj.ocr_text or "") + "\n" + result["text"]
-                    if img["source_id"] in source_text_map:
-                        source_text_map[img["source_id"]] += f"\n\n--- OCR Images ---\n{result['text']}"
-                    db.commit()
-                    print(f"[REFLECT] 🔍 OCR Extracted {len(result['text'])} chars from '{img['filename']}'")
 
         # ── Step 3: Combine Texts with Context Isolation ─────────────────────
         combined_texts = []
@@ -167,23 +131,18 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             description=project.description,
         )
 
-        # ── Step 5: Generate Brief Overview ───────────────────────────────────
-        _update_job(db, job_id, "processing_brief", f"Synthesizing Brief Overview (V{new_version})")
-        print(f"[REFLECT] 🤖 Qwen LLM: Synthesizing Brief Overview (V{new_version})...")
-        logger.info(f"[{project_id}] Generating Brief Overview Synthesis for V{new_version}")
-
-        brief_result = brief_agent.generate_brief(
-            source_content=full_content,
-            project_context=project_context,
-        )
+        # ── Step 5: Create Brief Version Container ───────────────────────────
+        _update_job(db, job_id, "processing_brief", f"Creating Brief Version (V{new_version})")
+        print(f"[REFLECT] 📝 Creating Brief Version (V{new_version}) container...")
+        logger.info(f"[{project_id}] Creating Brief Version Container for V{new_version}")
 
         brief_id = str(uuid.uuid4())
         brief = Brief(
             id=brief_id,
             project_id=project_id,
             version=new_version,
-            content=brief_result.get("content"),
-            raw_content=brief_result.get("raw_content"),
+            content={}, # No narrative generated
+            raw_content="{}",
             project_metadata={
                 "project_name": project.name,
                 "project_type": project.project_type,
@@ -191,7 +150,7 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
                 "client": project.client,
                 "description": project.description,
             },
-            status="generating_cards" if brief_result.get("success") else "failed",
+            status="generating_cards",
             previous_version_id=latest_brief.id if latest_brief else None,
         )
         db.add(brief)
@@ -208,7 +167,7 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         # Assign version to the pending batch sources now that Brief is being recorded
         for source in pending_batch:
             source.version = new_version
-            source.approval_status = "approved"
+            # Source approval status is already enforced to be 'approved' by our query
             source.processing_status = "completed"
 
         db.commit()
@@ -217,10 +176,6 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         if job:
             job.brief_id = brief_id
             db.commit()
-
-        if not brief_result.get("success"):
-            _update_job(db, job_id, "failed", "Error", f"Brief generation failed: {brief_result.get('error', 'Unknown error')}")
-            return
 
         # ── Step 6: Generate Cards for the New Version ────────────────────────
         _update_job(db, job_id, "generating_cards", f"Generating Version {new_version} Brief Cards")
@@ -263,8 +218,8 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             doc_cards_count = 0
             for card_data in cards_data:
                 try:
-                    card_title = card_data.get("title", "Untitled").strip()
-                    card_content = card_data.get("content", "").strip()
+                    card_title = card_data.get("card_point", card_data.get("title", "Untitled")).strip()
+                    card_content = card_data.get("summary", card_data.get("content", "")).strip()
                     if not card_title or not card_content:
                         continue
 
@@ -347,9 +302,9 @@ Identify any:
 Output a JSON array of 1-3 cards:
 [
   {{
-    "title": "...",
+    "card_point": "...",
     "card_type": "QUESTION",
-    "content": "...",
+    "summary": "...",
     "source_document": "Cross-Document Analysis",
     "evidence": "...",
     "ai_suggestion": "..."
@@ -377,8 +332,8 @@ Return ONLY JSON list.
                             source_id=pending_batch[0].id if pending_batch else None,
                             source_document=c_data.get("source_document") or "Cross-Document Analysis",
                             card_type=c_type,
-                            title=c_data.get("title", "Cross-Document Clarification"),
-                            content=c_data.get("content", ""),
+                            title=c_data.get("card_point", c_data.get("title", "Cross-Document Clarification")),
+                            content=c_data.get("summary", c_data.get("content", "")),
                             evidence=c_data.get("evidence", "Cross-document comparison"),
                             ai_suggestion=c_data.get("ai_suggestion"),
                             section="Design Verification",

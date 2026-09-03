@@ -30,11 +30,6 @@ loader = DocumentLoader()
 
 # Project root = one level up from backend/main.py
 PROJECT_ROOT = Path(__file__).parent.parent
-UPLOADS_DIR = PROJECT_ROOT / "uploads"
-UPLOADS_DIR.mkdir(exist_ok=True)
-
-
-ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx"}
 
 
 # ── Database Initialization ─────────────────────────────────────────────────
@@ -46,8 +41,8 @@ def on_startup():
         init_db()
         logger.info("Database initialized successfully.")
     except Exception as e:
-        logger.warning(f"Database initialization skipped or failed: {e}")
-        logger.warning("Application will continue without persistent database.")
+        logger.error(f"Database initialization failed: {e}")
+        raise  # Fail fast in production if DB is down
 
 
 # ── Mount API Routers ────────────────────────────────────────────────────────
@@ -67,6 +62,7 @@ app.include_router(activities_router)
 
 # ── Auth Endpoints ───────────────────────────────────────────────────────────
 from schemas.models import GoogleLoginRequest, DevLoginRequest, AuthResponse, UserResponse
+from auth.dependencies import get_current_user
 
 
 @app.post("/api/auth/google", response_model=AuthResponse)
@@ -95,6 +91,9 @@ def google_login(body: GoogleLoginRequest):
 @app.post("/api/auth/dev", response_model=AuthResponse)
 def dev_login(body: DevLoginRequest = None):
     """Development login — creates a dev user without Google OAuth."""
+    if config.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=403, detail="Dev login disabled in production")
+
     from auth import create_dev_user, create_jwt_token
 
     if body is None:
@@ -116,35 +115,10 @@ def dev_login(body: DevLoginRequest = None):
 
 @app.get("/api/auth/me", response_model=UserResponse)
 def get_current_user_profile(
-    authorization: str = None,
+    user = Depends(get_current_user)
 ):
     """Get current authenticated user's profile."""
-    from auth import decode_jwt_token
-    from db import SessionLocal, User as UserModel
-
-    if not authorization:
-        # Dev mode
-        if not config.GOOGLE_CLIENT_ID:
-            from auth import create_dev_user
-            user = create_dev_user()
-            return UserResponse(id=user.id, email=user.email, name=user.name, picture=user.picture)
-        raise HTTPException(status_code=401, detail="Authorization required")
-
-    parts = authorization.split(" ") if authorization else []
-    token = parts[1] if len(parts) == 2 else authorization
-
-    payload = decode_jwt_token(token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    db = SessionLocal()
-    try:
-        user = db.query(UserModel).filter(UserModel.id == payload["sub"]).first()
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        return UserResponse(id=user.id, email=user.email, name=user.name, picture=user.picture)
-    finally:
-        db.close()
+    return UserResponse(id=user.id, email=user.email, name=user.name, picture=user.picture)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
