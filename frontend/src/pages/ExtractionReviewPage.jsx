@@ -476,62 +476,19 @@ export default function ExtractionReviewPage() {
 
       {/* ANALYSIS IN-PROGRESS BLOCKING OVERLAY */}
       {analyzing && (
-        <div className="bui-modal-overlay" style={{ background: 'rgba(5, 7, 12, 0.85)', backdropFilter: 'blur(6px)', zIndex: 1000 }}>
-          <div className="bui-modal" style={{ maxWidth: '480px', textAlign: 'center', padding: '36px 28px', background: '#ffffff', borderRadius: '12px', color: '#0f172a' }}>
-            <div style={{ marginBottom: '20px' }}>
-              <span className="bui-spinner" style={{ width: '40px', height: '40px', borderWidth: '3px', margin: '0 auto', borderColor: '#000000', borderTopColor: 'transparent' }} />
-            </div>
-            <h2 style={{ fontSize: '20px', color: '#0f172a', fontWeight: 700, marginBottom: '8px' }}>
-              Generating Project Brief Cards
-            </h2>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px', lineHeight: 1.5 }}>
-              Analyzing verified project information, extracting architectural parameters, and formulating candidate Brief Cards.
-            </p>
-
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 16px', textAlign: 'left', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ color: '#000000', fontWeight: 700 }}>✦</span>
-                <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{analysisStep}</span>
-              </div>
-            </div>
-
-            {analysisStep === 'Ready for Review' ? (
-              <button
-                style={{
-                  width: '100%',
-                  background: '#000000',
-                  color: '#ffffff',
-                  border: '1px solid #000000',
-                  padding: '12px 20px',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  marginTop: '8px',
-                  transition: 'all 0.15s'
-                }}
-                onClick={() => navigate(`/projects/${projectId}/brief`)}
-              >
-                Open Brief Workspace →
-              </button>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-                  Please wait — your Brief Workspace will be ready in just a moment.
-                </span>
-                <button
-                  type="button"
-                  className="bui-btn bui-btn-outline"
-                  style={{ marginTop: '8px', fontSize: '11px', padding: '4px 12px', color: '#64748b', borderColor: '#cbd5e1' }}
-                  onClick={() => setAnalyzing(false)}
-                >
-                  Run in background (Dismiss)
-                </button>
-              </div>
-            )}
+        <div className="bui-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#94a3b8', fontSize: '18px', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 3s linear infinite' }}>
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>Churning...</span>
           </div>
         </div>
       )}
+
 
       {/* ANALYSIS ERROR MODAL */}
       {analysisError && (

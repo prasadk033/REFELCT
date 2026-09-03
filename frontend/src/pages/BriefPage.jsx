@@ -924,22 +924,23 @@ export default function BriefPage() {
                 {/* Inspector Actions */}
                 <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '14px', display: 'flex', gap: '8px' }}>
                   <button
-                    style={{ flex: 1, background: '#000000', color: '#ffffff', border: '1px solid #000000', padding: '9px', borderRadius: '6px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}
+                    style={{ background: '#ffffff', color: '#10b981', border: '1px solid #10b981', padding: '7px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                     onClick={() => handleStatusChange(selectedCard.id, 'accepted')}
                   >
                     ✓ Accept
                   </button>
                   <button
-                    style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', padding: '9px 14px', borderRadius: '6px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}
+                    style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', padding: '7px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                     onClick={() => setEditingCard(selectedCard)}
                   >
                     ✎ Edit
                   </button>
                   <button
-                    style={{ background: '#ffffff', border: '1px solid #fecaca', color: '#dc2626', padding: '9px 12px', borderRadius: '6px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}
+                    style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#dc2626', padding: '7px 12px', borderRadius: '6px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     onClick={() => handleStatusChange(selectedCard.id, 'rejected')}
+                    title="Reject Card"
                   >
-                    ✕ Reject
+                    ✕
                   </button>
                 </div>
               </div>
