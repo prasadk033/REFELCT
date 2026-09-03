@@ -408,7 +408,7 @@ export default function BriefPage() {
   // Available Versions (0, 1, 2...)
   const availableVersions = useMemo(() => {
     const set = new Set(cards.map(c => c.version !== null && c.version !== undefined ? Number(c.version) : 0))
-    return Array.from(set).sort((a, b) => a - b)
+    return Array.from(set).sort((a, b) => b - a)
   }, [cards])
 
   // Types breakdown

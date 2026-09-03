@@ -23,7 +23,7 @@ export default function ExtractionReviewPage() {
   const [isSaved, setIsSaved] = useState(true)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
-  
+  const [reparsing, setReparsing] = useState(false)
   // Analysis Blocking & Progress States
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisStep, setAnalysisStep] = useState('Initiating Brief analysis...')
@@ -118,6 +118,7 @@ export default function ExtractionReviewPage() {
     if (!selectedSource) return
     try {
       setActionLoading(true)
+      setReparsing(true)
       showToast(`Reparsing ${selectedSource.file_name}...`)
       const reparsed = await reparseSource(projectId, selectedSource.id)
       setSources(prev => prev.map(s => s.id === reparsed.id ? reparsed : s))
@@ -128,6 +129,7 @@ export default function ExtractionReviewPage() {
       showToast('Reparse failed: ' + err.message)
     } finally {
       setActionLoading(false)
+      setReparsing(false)
     }
   }
 
@@ -273,13 +275,6 @@ export default function ExtractionReviewPage() {
           >
             Project Overview →
           </button>
-          <button
-            className={`extract-btn-analyse-all ${allApproved ? 'ready' : 'disabled'}`}
-            onClick={handleAnalyseAll}
-            disabled={actionLoading || analyzing || !allApproved}
-          >
-            {analyzing ? 'Launching Analysis...' : 'Generate Brief'}
-          </button>
         </div>
       </header>
 
@@ -367,6 +362,20 @@ export default function ExtractionReviewPage() {
               </div>
             )}
           </div>
+
+          {sources.length > 0 && (
+            <div className="extract-sidebar-footer" style={{ padding: '20px', borderTop: '1px solid #e2e8f0', marginTop: 'auto' }}>
+              <button
+                className={`extract-btn-analyse-all ${allApproved ? 'ready' : 'disabled'}`}
+                onClick={handleAnalyseAll}
+                disabled={actionLoading || analyzing || !allApproved}
+                style={{ width: '100%', padding: '12px', fontSize: '14px', borderRadius: '8px' }}
+              >
+                {analyzing ? 'Launching Analysis...' : 'Generate Brief'}
+              </button>
+              {!allApproved && <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>Approve all sources to unlock</p>}
+            </div>
+          )}
         </aside>
 
         {/* Main Content Area: Single Selected Source Inspection & Editor */}
@@ -388,10 +397,10 @@ export default function ExtractionReviewPage() {
                     <button
                       className="extract-btn-action-reparse"
                       onClick={handleReparseSingle}
-                      disabled={actionLoading}
+                      disabled={actionLoading || reparsing}
                       title="Re-extract raw text from file"
                     >
-                      ↻ Reparse
+                      {reparsing ? '↻ Reparsing...' : '↻ Reparse'}
                     </button>
                     
                     {!isSaved && (
@@ -449,6 +458,7 @@ export default function ExtractionReviewPage() {
                     setEditingText(e.target.value)
                     setIsSaved(false)
                   }}
+                  disabled={reparsing}
                   placeholder="Extracted text will appear here. You can clean or edit the text directly before approving."
                   rows={20}
                 />
