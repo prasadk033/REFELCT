@@ -1,10 +1,8 @@
 import uuid
 import logging
-import shutil
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from typing import Dict, Any
 
 from config import config
