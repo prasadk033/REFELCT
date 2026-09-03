@@ -5,41 +5,6 @@ Pipeline:
   Uploaded Source → Extract Text / OCR → Understand Meaning → Classify → Synthesize → Card
 """
 
-BRIEF_SYSTEM_PROMPT = """You are helping an architect read and analyze client brief documents for a project. You are reading, not designing.
-
-PROJECT CONTEXT:
-{project_context}
-
-SOURCE MATERIAL:
-{source_content}
-
-CRITICAL RULES:
-1. Grounding: Do NOT invent information that is not supported by the uploaded document. If information is unclear or missing, explicitly mark it as "Not clear / Not provided" instead of generating an assumption.
-2. Fact Extraction: Capture every load-bearing parameter, named party, date, budget, area, regulation, deliverable, and constraint.
-3. No Hallucinations or Presumptions: Match your grammar strictly to the evidence in the source text.
-4. Output structured Brief synthesis focusing solely on the project brief.
-
-Return a valid JSON object with the following structure:
-{{
-  "project_metadata": {{
-    "project_name": "",
-    "project_type": "",
-    "location": "",
-    "client": "",
-    "brief_date": "",
-    "target_completion": "",
-    "budget": "",
-    "site_area": ""
-  }},
-  "summary": "Brief executive summary of what was provided in the documents.",
-  "key_parameters": [
-    "List of major parameters and constraints found in the document"
-  ]
-}}
-
-Return ONLY the raw JSON without markdown code fences.
-"""
-
 
 CARD_GENERATION_PROMPT = """You are an expert architectural project analyst for the REFLECT platform.
 
@@ -54,13 +19,16 @@ REFLECT — FINAL BRIEF CARD GENERATION LOGIC
 IMPORTANT:
 The Brief Card taxonomy MUST use the following card types:
 
-1. FACT
-2. REQUIREMENT
-3. QUESTION
-4. CONFLICT
-5. OTHER
-6. ACTION
-7. CLARIFICATION
+1. PROJECT_PARAMETER
+2. CLIENT_INFO
+3. FACT
+4. REQUIREMENT
+5. QUESTION
+6. CONFLICT
+7. ACTION
+8. CLARIFICATION
+9. INSIGHT
+10. OTHER
 
 If a point does not clearly belong to the specific categories, classify it as: OTHER.
 Do NOT force information into the wrong category.
@@ -316,6 +284,41 @@ Client_Brief.pdf — Page 2
 
 Evidence:
 “Surrounding neighborhood is low-density residential with mature trees.”
+
+==================================================
+PROJECT_PARAMETER
+
+Use PROJECT_PARAMETER for core facts establishing the project baseline.
+
+Examples:
+- Site area and constraints
+- Project location and zoning
+- Target budget limits
+- Target timeline and milestones
+- Total built area
+
+--------------------------------------------------
+
+CLIENT_INFO
+
+Use CLIENT_INFO for information about the client's identity, lifestyle, preferences, family, or aesthetic vision.
+
+Examples:
+- Family size and ages
+- Hobbies and lifestyle habits
+- Preference for natural materials
+- Desire for a "calm and minimal" aesthetic
+- Accessibility needs
+
+--------------------------------------------------
+
+INSIGHT
+
+Use INSIGHT for valuable architectural observations, context, or inferred knowledge that doesn't fit strictly into a requirement or fact.
+
+Examples:
+- The site's topography will heavily influence the foundation strategy.
+- The client's preference for large gatherings suggests an open-plan living area is critical.
 
 ==================================================
 3. CARD CONTENT MUST BE MEANINGFUL
@@ -599,13 +602,16 @@ Use exactly this structure:
 
 Allowed card_type values:
 
+PROJECT_PARAMETER
+CLIENT_INFO
 FACT
 REQUIREMENT
 QUESTION
 CONFLICT
-OTHER
 ACTION
 CLARIFICATION
+INSIGHT
+OTHER
 
 No other card_type values are allowed.
 
@@ -616,7 +622,7 @@ No other card_type values are allowed.
 Before returning each Card, verify:
 
 1. Is this based on actual source information?
-2. Is the Card type one of the approved types (FACT, REQUIREMENT, QUESTION, CONFLICT, OTHER, ACTION, CLARIFICATION)?
+2. Is the Card type one of the approved types (PROJECT_PARAMETER, CLIENT_INFO, FACT, REQUIREMENT, QUESTION, CONFLICT, ACTION, CLARIFICATION, INSIGHT, OTHER)?
 3. Is the title meaningful?
 4. Does the content explain actual project information?
 5. Is the content synthesized rather than copied raw text?

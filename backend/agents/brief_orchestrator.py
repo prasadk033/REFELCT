@@ -186,7 +186,7 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         total_questions = 0
         total_conflicts = 0
 
-        VALID_CARD_TYPES = {"FACT", "REQUIREMENT", "QUESTION", "CONFLICT", "OTHER", "ACTION", "CLARIFICATION"}
+        VALID_CARD_TYPES = {"FACT", "REQUIREMENT", "QUESTION", "CONFLICT", "OTHER", "ACTION", "CLARIFICATION", "PROJECT_PARAMETER", "CLIENT_INFO", "INSIGHT"}
 
         # Generate cards for each document in the pending batch
         for source in pending_batch:
