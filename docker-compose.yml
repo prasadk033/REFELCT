@@ -6,7 +6,12 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
       - "5173:80"
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./certbot/www:/var/www/certbot:ro
     restart: unless-stopped
     depends_on:
       - backend
@@ -16,7 +21,24 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     ports:
-      - "8000:8000"
+      # Bound to loopback interface on host to prevent direct unencrypted HTTP access
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - postgres
+      - litellm
+      - minio
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: python worker.py
     env_file:
       - .env
     volumes:
@@ -42,7 +64,8 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # Bound to loopback interface to prevent unauthorized external access
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --save 60 1 --loglevel warning
@@ -51,13 +74,18 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: litellm
-      POSTGRES_USER: litellm
-      POSTGRES_PASSWORD: LiteLLMPostgres2026
+      POSTGRES_DB: ${POSTGRES_DB:-litellm}
+      POSTGRES_USER: ${POSTGRES_USER:-litellm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REFLECT_DB_USER: ${REFLECT_DB_USER:-reflect}
+      REFLECT_DB_PASSWORD: ${REFLECT_DB_PASSWORD}
+      REFLECT_DB_NAME: ${REFLECT_DB_NAME:-reflect}
     ports:
-      - "5432:5432"
+      # Bound to loopback interface to prevent external database scans
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     restart: unless-stopped
 
@@ -67,8 +95,8 @@ services:
       - "9000:9000"   # S3 API
       - "9001:9001"   # Web Console
     environment:
-      MINIO_ROOT_USER: reflect-minio-access
-      MINIO_ROOT_PASSWORD: reflect-minio-secret-2026
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
@@ -84,13 +112,17 @@ services:
     image: minio/mc:latest
     depends_on:
       - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-reflect-uploads}
     entrypoint: >
       /bin/sh -c "
         sleep 5;
-        mc alias set local http://minio:9000 reflect-minio-access reflect-minio-secret-2026;
-        mc mb --ignore-existing local/reflect-uploads;
-        mc anonymous set none local/reflect-uploads;
-        echo 'MinIO bucket reflect-uploads ready.';
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+        mc mb --ignore-existing local/$${MINIO_BUCKET};
+        mc anonymous set none local/$${MINIO_BUCKET};
+        echo 'MinIO bucket ready.';
         exit 0;
       "
     restart: "no"
@@ -99,11 +131,11 @@ services:
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
-      PGADMIN_DEFAULT_EMAIL: prasad.k@datai2i.com
-      PGADMIN_DEFAULT_PASSWORD: TempPgAdmin123!
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@reflect.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
       PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
-      - "5050:80"
+      - "127.0.0.1:5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     restart: unless-stopped

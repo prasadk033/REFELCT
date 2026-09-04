@@ -66,10 +66,13 @@ class Config:
         os.getenv("MAX_AGENT_RETRIES", 3)
     )
 
+    # Worker Queue Configuration: "distributed" (Redis RQ) or "inprocess" (FastAPI background)
+    WORKER_MODE = os.getenv("WORKER_MODE", "distributed").lower()
+
     # JWT for session tokens
     JWT_SECRET_KEY = os.getenv(
         "JWT_SECRET_KEY",
-        "reflect-jwt-secret-change-in-production"
+        "bad0fb023d83c360548fbea90b0c013a48547e28113c239c50206883054edea5"
     )
     JWT_ALGORITHM = "HS256"
     JWT_EXPIRATION_HOURS = 72

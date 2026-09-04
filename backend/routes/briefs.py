@@ -94,9 +94,28 @@ def analyze_brief(
         project_id=project_id,
     )
 
-    # Run in background
+    # Dispatch to background: distributed worker queue (production) or inprocess background_tasks (local fallback)
     source_ids = [s.id for s in sources]
-    background_tasks.add_task(run_brief_pipeline, project_id, source_ids, job_id, user.id)
+    from config import config
+
+    if config.WORKER_MODE == "distributed":
+        try:
+            from tasks.queue import enqueue_brief_job
+            enqueue_brief_job(project_id, source_ids, job_id, user.id)
+            logger.info(f"Dispatched job {job_id} to distributed Redis worker queue.")
+        except Exception as e:
+            logger.error(f"Failed to dispatch job {job_id} to distributed Redis worker: {e}")
+            job.status = "failed"
+            job.current_step = "Queue Error"
+            job.error_message = f"Distributed worker queue unavailable: {str(e)}"
+            db.commit()
+            raise HTTPException(
+                status_code=503,
+                detail=f"Background worker queue unavailable: {str(e)}. Ensure Redis and Worker containers are running."
+            )
+    else:
+        logger.info(f"Running job {job_id} via in-process background task.")
+        background_tasks.add_task(run_brief_pipeline, project_id, source_ids, job_id, user.id)
 
     return ProcessingStatusResponse.model_validate(job)
 
