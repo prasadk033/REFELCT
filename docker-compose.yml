@@ -23,10 +23,10 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=${DOCKER_REDIS_URL:-redis://redis:6379}
-      - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${POSTGRES_DB:-litellm}}
-      - APP_DATABASE_URL=${DOCKER_APP_DATABASE_URL:-postgresql://${REFLECT_DB_USER:-reflect}:${REFLECT_DB_PASSWORD:-ReflectPostgres2026}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
-      - MINIO_ENDPOINT=${DOCKER_MINIO_ENDPOINT:-http://minio:9000}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${POSTGRES_DB:-litellm}}
+      - APP_DATABASE_URL=${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
     volumes:
       - ./uploads:/app/uploads
     restart: unless-stopped
@@ -44,10 +44,10 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=${DOCKER_REDIS_URL:-redis://redis:6379}
-      - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${POSTGRES_DB:-litellm}}
-      - APP_DATABASE_URL=${DOCKER_APP_DATABASE_URL:-postgresql://${REFLECT_DB_USER:-reflect}:${REFLECT_DB_PASSWORD:-ReflectPostgres2026}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
-      - MINIO_ENDPOINT=${DOCKER_MINIO_ENDPOINT:-http://minio:9000}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${POSTGRES_DB:-litellm}}
+      - APP_DATABASE_URL=${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
     volumes:
       - ./uploads:/app/uploads
     restart: unless-stopped
