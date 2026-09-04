@@ -19,8 +19,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     ports:
-      # Bound to loopback interface on host to prevent direct unencrypted HTTP access
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
     env_file:
       - .env
     environment:
