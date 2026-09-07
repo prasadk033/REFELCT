@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, listSources, uploadSource, deleteSource, extractSources, analyzeBrief, listCards, getBriefStatus, deleteProject } from '../api.js'
+import { getProject, listSources, uploadSource, deleteSource, extractSources, analyzeBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 
 
@@ -265,6 +265,27 @@ export default function ProjectOverviewPage() {
     }
   }
 
+  async function handleResetVersion(ver) {
+    if (!window.confirm(`Reset Version ${ver} to re-generate Brief Cards? All documents in Version ${ver} will return to pending.`)) return
+    try {
+      await resetVersion(projectId, ver)
+      showToast(`Version ${ver} reset to pending.`)
+      await loadProjectData()
+    } catch (err) {
+      showToast(`Reset failed: ${err.message}`)
+    }
+  }
+
+  async function handleResetSourceVersion(sourceId) {
+    try {
+      await resetSourceVersion(projectId, sourceId)
+      showToast('Document moved back to pending.')
+      await loadProjectData()
+    } catch (err) {
+      showToast(`Reset failed: ${err.message}`)
+    }
+  }
+
   // Real Counts & Status Breakdown
   const totalCards = cards.length
   const pendingCards = cards.filter(c => {
@@ -442,13 +463,26 @@ export default function ProjectOverviewPage() {
                   </span>
                 </button>
               ) : (
-                /* 5. All documents completed: View Brief Workspace */
-                <button
-                  className="pov-btn-analyse"
-                  onClick={() => navigate(`/projects/${projectId}/brief`)}
-                >
-                  <span>View Brief Workspace →</span>
-                </button>
+                /* 5. All documents completed: View Brief Workspace + Re-generate option */
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    className="pov-btn-analyse"
+                    onClick={() => navigate(`/projects/${projectId}/brief`)}
+                  >
+                    <span>View Brief Workspace →</span>
+                  </button>
+                  {completedVersions.length > 0 && (
+                    <button
+                      type="button"
+                      className="bui-btn bui-btn-outline"
+                      style={{ padding: '11px 18px', fontSize: '13px', color: '#0f172a', borderColor: '#cbd5e1', borderRadius: '8px', fontWeight: 600, background: '#ffffff', cursor: 'pointer' }}
+                      onClick={() => handleResetVersion(completedVersions[0])}
+                      title={`Re-generate Brief Cards for latest Version ${completedVersions[0]}`}
+                    >
+                      ↻ Re-generate (Version {completedVersions[0]})
+                    </button>
+                  )}
+                </div>
               )}
 
               <span className="pov-analyse-subtext">
@@ -626,9 +660,20 @@ export default function ProjectOverviewPage() {
                           {groupDocs.length} Document{groupDocs.length !== 1 ? 's' : ''}
                         </span>
                       </div>
-                      <span style={{ fontSize: '11.5px', color: '#059669', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        ✓ Complete
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '11.5px', color: '#059669', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          ✓ Complete
+                        </span>
+                        <button
+                          type="button"
+                          className="bui-btn bui-btn-outline"
+                          style={{ padding: '3px 10px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1', background: '#ffffff', cursor: 'pointer' }}
+                          onClick={() => handleResetVersion(ver)}
+                          title={`Reset Version ${ver} documents to re-generate Brief Cards`}
+                        >
+                          ↻ Re-generate Cards
+                        </button>
+                      </div>
                     </div>
 
                     <table className="pov-sources-table" style={{ margin: 0 }}>
@@ -669,6 +714,15 @@ export default function ProjectOverviewPage() {
                                 title="Inspect extracted text"
                               >
                                 📄 View
+                              </button>
+                              <button
+                                type="button"
+                                className="bui-btn bui-btn-outline"
+                                style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#cbd5e1' }}
+                                onClick={() => handleResetSourceVersion(s.id)}
+                                title="Move document back to pending to re-generate cards"
+                              >
+                                ↩ Reset to Pending
                               </button>
                               <button
                                 type="button"

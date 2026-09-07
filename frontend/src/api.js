@@ -133,6 +133,18 @@ export async function deleteSource(projectId, sourceId) {
   });
 }
 
+export async function resetSourceVersion(projectId, sourceId) {
+  return apiFetch(`/api/projects/${projectId}/sources/${sourceId}/reset-version`, {
+    method: "POST",
+  });
+}
+
+export async function resetVersion(projectId, version) {
+  return apiFetch(`/api/projects/${projectId}/versions/${version}/reset`, {
+    method: "POST",
+  });
+}
+
 
 // ── Briefs ──────────────────────────────────────────────────────────────────
 

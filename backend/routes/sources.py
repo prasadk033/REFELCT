@@ -433,3 +433,74 @@ def delete_source(
     )
 
     return {"message": "Source deleted successfully"}
+
+
+@router.post("/{project_id}/sources/{source_id}/reset-version", response_model=SourceResponse)
+def reset_source_version(
+    project_id: str,
+    source_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Move a document back to pending (version = None, extracted/approved) so it can be re-synthesized.
+    """
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.user_id == user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    source = db.query(Source).filter(
+        Source.id == source_id,
+        Source.project_id == project_id
+    ).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    source.version = None
+    if source.processing_status == "completed":
+        source.processing_status = "extracted"
+
+    db.commit()
+    db.refresh(source)
+    return SourceResponse.model_validate(source)
+
+
+@router.post("/{project_id}/versions/{version}/reset", response_model=list[SourceResponse])
+def reset_version(
+    project_id: str,
+    version: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Reset all sources in a version back to pending so that Brief Cards can be cleanly re-generated.
+    Also deletes any partial cards or briefs for this version.
+    """
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.user_id == user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    sources = db.query(Source).filter(
+        Source.project_id == project_id,
+        Source.version == version
+    ).all()
+
+    for s in sources:
+        s.version = None
+        if s.processing_status == "completed":
+            s.processing_status = "extracted"
+
+    # Clean up cards & briefs for this version
+    db.query(Card).filter(Card.project_id == project_id, Card.version == version).delete(synchronize_session=False)
+    db.query(Brief).filter(Brief.project_id == project_id, Brief.version == version).delete(synchronize_session=False)
+
+    db.commit()
+
+    all_sources = db.query(Source).filter(Source.project_id == project_id).order_by(Source.upload_timestamp.asc()).all()
+    return [SourceResponse.model_validate(s) for s in all_sources]
