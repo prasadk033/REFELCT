@@ -459,7 +459,7 @@ export default function ProjectOverviewPage() {
                 >
                   <span className="pov-sparkle">✦</span>
                   <span>
-                    {analyzing ? 'Generating Brief...' : `Generate Brief (${completedVersions.length === 0 ? 'Version 0' : `Version ${completedVersions[completedVersions.length - 1] + 1}`})`}
+                    {analyzing ? 'Generating Brief...' : `Generate Brief (${completedVersions.length === 0 ? 'Version 0' : `Version ${completedVersions[0] + 1}`})`}
                   </span>
                 </button>
               ) : (
