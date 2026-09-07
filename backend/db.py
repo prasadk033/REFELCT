@@ -107,7 +107,7 @@ class Source(Base):
     created_at = Column(DateTime, default=utc_now)
 
     project = relationship("Project", back_populates="sources")
-    brief_sources = relationship("BriefSource", back_populates="source")
+    brief_sources = relationship("BriefSource", back_populates="source", cascade="all, delete-orphan")
 
 
 class Brief(Base):
@@ -133,8 +133,8 @@ class BriefSource(Base):
     __tablename__ = "brief_sources"
 
     id = Column(String, primary_key=True)  # UUID
-    brief_id = Column(String, ForeignKey("briefs.id"), nullable=False, index=True)
-    source_id = Column(String, ForeignKey("sources.id"), nullable=False, index=True)
+    brief_id = Column(String, ForeignKey("briefs.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_id = Column(String, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False, index=True)
 
     brief = relationship("Brief", back_populates="brief_sources")
     source = relationship("Source", back_populates="brief_sources")

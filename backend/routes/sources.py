@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
-from db import get_db, Project, Source, User, log_activity
+from db import get_db, Project, Source, BriefSource, User, log_activity
 from auth.dependencies import get_current_user
 from schemas.models import SourceResponse, SourceContentUpdate
 from storage import file_store
@@ -373,8 +373,20 @@ def delete_source(
         raise HTTPException(status_code=404, detail="Source not found")
 
     file_name = source.file_name
+    storage_path = source.storage_path
+
+    # Clean up junction table links
+    db.query(BriefSource).filter(BriefSource.source_id == source_id).delete(synchronize_session=False)
+
     db.delete(source)
     db.commit()
+
+    # Clean up file storage
+    if storage_path:
+        try:
+            file_store.delete_file(storage_path)
+        except Exception as err:
+            logger.warning(f"Could not delete storage file {storage_path}: {err}")
 
     log_activity(
         db=db,
