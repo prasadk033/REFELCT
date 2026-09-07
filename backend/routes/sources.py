@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
-from db import get_db, Project, Source, Brief, BriefSource, User, log_activity
+from db import get_db, Project, Source, Brief, BriefSource, Card, User, log_activity
 from auth.dependencies import get_current_user
 from schemas.models import SourceResponse, SourceContentUpdate
 from storage import file_store
@@ -137,14 +137,24 @@ def list_sources(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Query completed brief versions for this project
-    completed_versions = {
-        b.version for b in db.query(Brief.version).filter(
+    # A version is only truly complete if cards exist in the database for that version
+    card_versions = set([
+        row[0] for row in db.query(Card.version).filter(
+            Card.project_id == project_id
+        ).distinct().all()
+        if row[0] is not None
+    ])
+
+    completed_brief_versions = set([
+        row[0] for row in db.query(Brief.version).filter(
             Brief.project_id == project_id,
             Brief.status == "completed"
         ).all()
-        if b.version is not None
-    }
+        if row[0] is not None
+    ])
+
+    # True completed versions have BOTH a completed brief AND generated cards
+    completed_versions = card_versions.intersection(completed_brief_versions)
 
     sources = (
         db.query(Source)
@@ -153,12 +163,15 @@ def list_sources(
         .all()
     )
 
-    # Healing: If any source has a version assigned, but no completed brief exists for that version,
+    # Healing: If any source has a version assigned, but no completed brief/cards exist for that version,
     # recover it back to pending (version = None) so the user can generate the brief cleanly.
     needs_commit = False
     for s in sources:
         if s.version is not None and s.version not in completed_versions:
-            logger.info(f"Auto-recovering stranded source '{s.file_name}' (V{s.version}) to pending.")
+            logger.info(f"Auto-recovering stranded source '{s.file_name}' (V{s.version}) to pending (no cards found).")
+            # Clean up zombie brief / brief_source records for this incomplete version
+            db.query(Brief).filter(Brief.project_id == project_id, Brief.version == s.version).delete(synchronize_session=False)
+            db.query(BriefSource).filter(BriefSource.source_id == s.id).delete(synchronize_session=False)
             s.version = None
             if s.processing_status == "completed":
                 s.processing_status = "extracted"

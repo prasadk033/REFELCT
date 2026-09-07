@@ -274,11 +274,16 @@ export default function ProjectOverviewPage() {
   const acceptedCards = cards.filter(c => (c.status || '').toLowerCase() === 'accepted').length
   const rejectedCards = cards.filter(c => (c.status || '').toLowerCase() === 'rejected').length
 
-  // Version Grouping
-  const versionedSources = sources.filter(s => s.version !== null && s.version !== undefined)
-  const pendingBatchSources = sources.filter(s => s.version === null || s.version === undefined)
+  // Version Grouping — A version is only considered completed if cards actually exist for that version!
+  const versionsWithCards = new Set(cards.map(c => Number(c.version)).filter(v => !isNaN(v)))
 
-  // Unique completed version numbers sorted descending (latest on top: Version 2, Version 1, Version 0)
+  // Sources that belong to a completed version with generated cards
+  const versionedSources = sources.filter(s => s.version !== null && s.version !== undefined && versionsWithCards.has(Number(s.version)))
+
+  // Pending batch sources: either version is null OR their version has 0 cards generated
+  const pendingBatchSources = sources.filter(s => s.version === null || s.version === undefined || !versionsWithCards.has(Number(s.version)))
+
+  // Unique completed version numbers sorted descending (latest on top: Version 1, Version 0)
   const completedVersions = Array.from(new Set(versionedSources.map(s => Number(s.version)))).sort((a, b) => b - a)
 
   // Check pending status
