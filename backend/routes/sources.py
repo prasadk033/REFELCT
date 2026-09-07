@@ -168,16 +168,30 @@ def list_sources(
     for s in sources:
         if s.version is not None and s.version not in completed_versions:
             logger.info(f"Auto-recovering stranded source '{s.file_name}' (V{s.version}) to pending (no cards found).")
-            # Clean up zombie brief / brief_source records for this incomplete version
-            db.query(Brief).filter(Brief.project_id == project_id, Brief.version == s.version).delete(synchronize_session=False)
-            db.query(BriefSource).filter(BriefSource.source_id == s.id).delete(synchronize_session=False)
+            # Clean up zombie brief / brief_source records safely without FK violations
+            try:
+                zombie_brief_ids = [b[0] for b in db.query(Brief.id).filter(Brief.project_id == project_id, Brief.version == s.version).all()]
+                if zombie_brief_ids:
+                    db.query(BriefSource).filter(BriefSource.brief_id.in_(zombie_brief_ids)).delete(synchronize_session=False)
+                    db.query(Brief).filter(Brief.previous_version_id.in_(zombie_brief_ids)).update({"previous_version_id": None}, synchronize_session=False)
+                    db.query(Brief).filter(Brief.id.in_(zombie_brief_ids)).delete(synchronize_session=False)
+                db.query(BriefSource).filter(BriefSource.source_id == s.id).delete(synchronize_session=False)
+            except Exception as clean_err:
+                logger.warning(f"Could not purge zombie briefs for V{s.version}: {clean_err}")
+
             s.version = None
             if s.processing_status == "completed":
                 s.processing_status = "extracted"
             needs_commit = True
 
     if needs_commit:
-        db.commit()
+        try:
+            db.commit()
+            for s in sources:
+                db.refresh(s)
+        except Exception as commit_err:
+            logger.error(f"Error committing auto-recovery: {commit_err}")
+            db.rollback()
 
     return [SourceResponse.model_validate(s) for s in sources]
 
@@ -496,9 +510,17 @@ def reset_version(
         if s.processing_status == "completed":
             s.processing_status = "extracted"
 
-    # Clean up cards & briefs for this version
-    db.query(Card).filter(Card.project_id == project_id, Card.version == version).delete(synchronize_session=False)
-    db.query(Brief).filter(Brief.project_id == project_id, Brief.version == version).delete(synchronize_session=False)
+    # Clean up cards & briefs for this version safely without FK violations
+    try:
+        ver_brief_ids = [b[0] for b in db.query(Brief.id).filter(Brief.project_id == project_id, Brief.version == version).all()]
+        if ver_brief_ids:
+            db.query(BriefSource).filter(BriefSource.brief_id.in_(ver_brief_ids)).delete(synchronize_session=False)
+            db.query(Card).filter(Card.brief_id.in_(ver_brief_ids)).delete(synchronize_session=False)
+            db.query(Brief).filter(Brief.previous_version_id.in_(ver_brief_ids)).update({"previous_version_id": None}, synchronize_session=False)
+            db.query(Brief).filter(Brief.id.in_(ver_brief_ids)).delete(synchronize_session=False)
+        db.query(Card).filter(Card.project_id == project_id, Card.version == version).delete(synchronize_session=False)
+    except Exception as e:
+        logger.warning(f"Error cleaning brief records for version {version}: {e}")
 
     db.commit()
 

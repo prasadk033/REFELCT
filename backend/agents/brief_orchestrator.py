@@ -70,9 +70,17 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         new_version = latest_completed_version + 1
         logger.info(f"[{project_id}] Starting Brief pipeline for Version {new_version}")
 
-        # Clean up any zombie brief records for this version or higher that lack cards
-        db.query(Brief).filter(Brief.project_id == project_id, Brief.version >= new_version).delete(synchronize_session=False)
-        db.commit()
+        # Clean up any zombie brief records for this version or higher that lack cards safely
+        try:
+            zombie_bids = [b[0] for b in db.query(Brief.id).filter(Brief.project_id == project_id, Brief.version >= new_version).all()]
+            if zombie_bids:
+                db.query(BriefSource).filter(BriefSource.brief_id.in_(zombie_bids)).delete(synchronize_session=False)
+                db.query(Brief).filter(Brief.previous_version_id.in_(zombie_bids)).update({"previous_version_id": None}, synchronize_session=False)
+                db.query(Brief).filter(Brief.id.in_(zombie_bids)).delete(synchronize_session=False)
+                db.commit()
+        except Exception as z_err:
+            logger.warning(f"Error purging zombie briefs: {z_err}")
+            db.rollback()
 
         # Fetch all approved project sources
         all_approved_sources = (
@@ -410,9 +418,10 @@ Return ONLY JSON list.
                         src_obj.version = None
                         src_obj.processing_status = "extracted"
 
-            # Clean up the uncompleted brief record and its associations
+            # Clean up the uncompleted brief record and its associations safely
             if 'brief_id' in locals():
                 db.query(BriefSource).filter(BriefSource.brief_id == brief_id).delete(synchronize_session=False)
+                db.query(Brief).filter(Brief.previous_version_id == brief_id).update({"previous_version_id": None}, synchronize_session=False)
                 db.query(Brief).filter(Brief.id == brief_id, Brief.status != "completed").delete(synchronize_session=False)
 
             db.commit()
