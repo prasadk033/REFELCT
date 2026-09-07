@@ -145,16 +145,15 @@ def list_sources(
         if row[0] is not None
     ])
 
-    completed_brief_versions = set([
-        row[0] for row in db.query(Brief.version).filter(
-            Brief.project_id == project_id,
-            Brief.status == "completed"
-        ).all()
+    brief_versions_with_cards = set([
+        row[0] for row in db.query(Brief.version).join(Card, Card.brief_id == Brief.id).filter(
+            Brief.project_id == project_id
+        ).distinct().all()
         if row[0] is not None
     ])
 
-    # True completed versions have BOTH a completed brief AND generated cards
-    completed_versions = card_versions.intersection(completed_brief_versions)
+    # True completed versions are those that actually produced Brief Cards!
+    completed_versions = card_versions.union(brief_versions_with_cards)
 
     sources = (
         db.query(Source)

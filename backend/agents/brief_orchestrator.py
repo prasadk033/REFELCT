@@ -51,15 +51,28 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
 
         effective_user_id = user_id or project.user_id
 
-        # Determine new version number based on previous completed briefs
-        latest_brief = (
-            db.query(Brief)
-            .filter(Brief.project_id == project_id, Brief.status == "completed")
-            .order_by(Brief.version.desc())
-            .first()
-        )
-        new_version = 0 if (latest_brief is None or latest_brief.version is None) else (latest_brief.version + 1)
+        # Determine new version number based on previous completed briefs that actually produced cards
+        card_versions = set([
+            row[0] for row in db.query(Card.version).filter(
+                Card.project_id == project_id
+            ).distinct().all()
+            if row[0] is not None
+        ])
+        brief_versions_with_cards = set([
+            row[0] for row in db.query(Brief.version).join(Card, Card.brief_id == Brief.id).filter(
+                Brief.project_id == project_id
+            ).distinct().all()
+            if row[0] is not None
+        ])
+        completed_card_versions = card_versions.union(brief_versions_with_cards)
+
+        latest_completed_version = max(completed_card_versions) if completed_card_versions else -1
+        new_version = latest_completed_version + 1
         logger.info(f"[{project_id}] Starting Brief pipeline for Version {new_version}")
+
+        # Clean up any zombie brief records for this version or higher that lack cards
+        db.query(Brief).filter(Brief.project_id == project_id, Brief.version >= new_version).delete(synchronize_session=False)
+        db.commit()
 
         # Fetch all approved project sources
         all_approved_sources = (
@@ -76,14 +89,7 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             _update_job(db, job_id, "failed", "Error", "No approved project documents found. Please extract, review, and approve documents first.")
             return
 
-        # Query completed brief versions for this project
-        completed_brief_versions = {
-            b.version for b in db.query(Brief.version).filter(
-                Brief.project_id == project_id,
-                Brief.status == "completed"
-            ).all()
-            if b.version is not None
-        }
+        completed_brief_versions = completed_card_versions
 
         # Identify newly added / pending sources for this version cycle
         if source_ids:
