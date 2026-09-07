@@ -3,7 +3,7 @@ Google OAuth token verification and JWT session management.
 """
 import uuid
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 from jose import jwt, JWTError
@@ -66,7 +66,7 @@ def get_or_create_user(google_info: Dict[str, Any]) -> User:
             user.picture = google_info.get("picture", user.picture)
             if not user.google_sub:
                 user.google_sub = google_info["sub"]
-            user.updated_at = datetime.utcnow()
+            user.updated_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(user)
             return user
@@ -107,7 +107,7 @@ def create_dev_user(
         if user:
             # Keep the development user's profile information current.
             user.name = name
-            user.updated_at = datetime.utcnow()
+            user.updated_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(user)
             return user
@@ -119,7 +119,7 @@ def create_dev_user(
         if user:
             user.google_sub = "dev-local"
             user.name = name
-            user.updated_at = datetime.utcnow()
+            user.updated_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(user)
             return user
@@ -149,7 +149,7 @@ def create_dev_user(
 
 def create_jwt_token(user_id: str, email: str) -> str:
     """Create a JWT token for the authenticated user."""
-    expire = datetime.utcnow() + timedelta(hours=config.JWT_EXPIRATION_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=config.JWT_EXPIRATION_HOURS)
     payload = {
         "sub": user_id,
         "email": email,

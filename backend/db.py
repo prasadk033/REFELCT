@@ -5,7 +5,7 @@ This is the Reflect application database (separate from LiteLLM's database).
 Contains: users, projects, sources, briefs, cards, processing_jobs.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     create_engine, Column, String, Integer, Float, Text, Boolean,
     DateTime, ForeignKey, JSON, Enum as SAEnum
@@ -16,6 +16,11 @@ from config import config
 logger = logging.getLogger(__name__)
 
 Base = declarative_base()
+
+
+def utc_now():
+    """Return timezone-aware current UTC time."""
+    return datetime.now(timezone.utc)
 
 # ── Engine & Session ────────────────────────────────────────────────────────
 
@@ -56,8 +61,8 @@ class User(Base):
     name = Column(String, nullable=True)
     picture = Column(String, nullable=True)
     google_sub = Column(String, unique=True, nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
 
@@ -72,8 +77,8 @@ class Project(Base):
     location = Column(String, nullable=True)
     client = Column(String, nullable=True)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     user = relationship("User", back_populates="projects")
     sources = relationship("Source", back_populates="project", cascade="all, delete-orphan")
@@ -91,7 +96,7 @@ class Source(Base):
     file_type = Column(String, nullable=False)  # pdf, docx, txt, jpg, png, etc.
     file_size = Column(Integer, nullable=True)
     storage_path = Column(String, nullable=False)
-    upload_timestamp = Column(DateTime, default=datetime.utcnow)
+    upload_timestamp = Column(DateTime, default=utc_now)
     processing_status = Column(String, default="uploaded")  # uploaded, parsing, extracted, approved, failed
     approval_status = Column(String, default="pending_review")  # pending_review, approved, reparse_needed
     version = Column(Integer, nullable=True, default=None)  # None until assigned to completed Brief cycle (0 for V0, 1 for V1, etc.)
@@ -99,7 +104,7 @@ class Source(Base):
     ocr_text = Column(Text, nullable=True)
     ocr_status = Column(String, nullable=True)  # None, processing, completed, failed, skipped
     processing_error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     project = relationship("Project", back_populates="sources")
     brief_sources = relationship("BriefSource", back_populates="source")
@@ -115,7 +120,7 @@ class Brief(Base):
     raw_content = Column(Text, nullable=True)  # Raw LLM output text
     project_metadata = Column(JSON, nullable=True)  # Project context passed to the prompt
     status = Column(String, default="processing")  # processing, completed, failed
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
     previous_version_id = Column(String, ForeignKey("briefs.id"), nullable=True)
 
     project = relationship("Project", back_populates="briefs")
@@ -152,8 +157,8 @@ class Card(Base):
     version = Column(Integer, nullable=True, default=None)  # Project version (0 for V0, 1 for V1, etc.)
     created_by = Column(String, nullable=False, default="AI")  # AI or ARCHITECT
     status = Column(String, nullable=False, default="provisional")  # provisional, accepted, rejected, edited
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     project = relationship("Project", back_populates="cards")
     brief = relationship("Brief", back_populates="cards")
@@ -168,8 +173,8 @@ class ProcessingJob(Base):
     status = Column(String, default="queued")  # queued, parsing, extracting_images, processing_brief, generating_cards, completed, failed
     current_step = Column(String, nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     project = relationship("Project", back_populates="processing_jobs")
 
@@ -183,7 +188,7 @@ class ActivityLog(Base):
     event_type = Column(String, nullable=False)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     user = relationship("User")
     project = relationship("Project")
@@ -200,7 +205,7 @@ def log_activity(db: SessionLocal, user_id: str, event_type: str, title: str, de
             event_type=event_type,
             title=title,
             description=description,
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
         )
         db.add(act)
         db.commit()

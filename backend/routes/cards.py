@@ -10,7 +10,7 @@ POST   /api/cards/{card_id}/reject             — Reject a provisional card
 """
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -123,7 +123,7 @@ def update_card(
             value = value.upper()
         setattr(card, key, value)
 
-    card.updated_at = datetime.utcnow()
+    card.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(card)
 
@@ -178,7 +178,7 @@ def accept_card(
 ):
     card = _get_user_card(db, card_id, user.id)
     card.status = "accepted"
-    card.updated_at = datetime.utcnow()
+    card.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(card)
 
@@ -205,7 +205,7 @@ def reject_card(
 ):
     card = _get_user_card(db, card_id, user.id)
     card.status = "rejected"
-    card.updated_at = datetime.utcnow()
+    card.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(card)
 

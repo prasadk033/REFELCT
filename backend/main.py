@@ -11,8 +11,30 @@ from documents.loader import DocumentLoader
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+from contextlib import asynccontextmanager
+
+# ── Lifespan (Startup & Shutdown) ──────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize database tables on application startup."""
+    try:
+        from db import init_db
+        init_db()
+        logger.info("Database initialized successfully.")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        raise  # Fail fast in production if DB is down
+    yield
+
+
 # ── App ─────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Reflect — Architect Thinking App")
+app = FastAPI(
+    title="Reflect — Architect Thinking App",
+    lifespan=lifespan,
+    docs_url="/docs" if config.ENABLE_DOCS else None,
+    redoc_url="/redoc" if config.ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if config.ENABLE_DOCS else None,
+)
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
@@ -28,19 +50,6 @@ loader = DocumentLoader()
 
 # Project root = one level up from backend/main.py
 PROJECT_ROOT = Path(__file__).parent.parent
-
-
-# ── Database Initialization ─────────────────────────────────────────────────
-@app.on_event("startup")
-def on_startup():
-    """Initialize database tables on application startup."""
-    try:
-        from db import init_db
-        init_db()
-        logger.info("Database initialized successfully.")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
-        raise  # Fail fast in production if DB is down
 
 
 # ── Mount API Routers ────────────────────────────────────────────────────────

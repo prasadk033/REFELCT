@@ -56,10 +56,9 @@ class Config:
     )
 
     # PostgreSQL — Application database
-    APP_DATABASE_URL = os.getenv(
-        "APP_DATABASE_URL",
-        "postgresql://reflect:ReflectPostgres2026@localhost:5432/reflect"
-    )
+    APP_DATABASE_URL = os.getenv("APP_DATABASE_URL")
+    if not APP_DATABASE_URL:
+        raise ValueError("CRITICAL: APP_DATABASE_URL is not set in environment or .env. Halting startup.")
 
     # Agent configuration
     MAX_AGENT_RETRIES = int(
@@ -69,13 +68,15 @@ class Config:
     # Worker Queue Configuration: "distributed" (Redis RQ) or "inprocess" (FastAPI background)
     WORKER_MODE = os.getenv("WORKER_MODE", "distributed").lower()
 
-    # JWT for session tokens
-    JWT_SECRET_KEY = os.getenv(
-        "JWT_SECRET_KEY",
-        "bad0fb023d83c360548fbea90b0c013a48547e28113c239c50206883054edea5"
-    )
+    # JWT for session tokens — strictly requires secure key from .env
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+    if not JWT_SECRET_KEY:
+        raise ValueError("CRITICAL: JWT_SECRET_KEY is not set in environment or .env. Halting startup.")
     JWT_ALGORITHM = "HS256"
     JWT_EXPIRATION_HOURS = 72
+
+    # API Documentation (/docs, /redoc, /openapi.json) — disabled by default in production
+    ENABLE_DOCS = os.getenv("ENABLE_DOCS", "false").lower() == "true"
 
     # Google OAuth
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "") or os.getenv("VITE_GOOGLE_CLIENT_ID", "")

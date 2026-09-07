@@ -13,7 +13,7 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 import redis
-from rq import Worker, Queue, Connection
+from rq import Worker, Queue
 from config import config
 
 logging.basicConfig(
@@ -41,10 +41,10 @@ def start_worker():
         logger.error(f"Failed to connect to Redis at {redis_url}: {e}")
         sys.exit(1)
 
-    with Connection(conn):
-        worker = Worker(list(map(Queue, QUEUES_TO_LISTEN)))
-        logger.info(f"Worker ready! Listening on queues: {QUEUES_TO_LISTEN}")
-        worker.work(with_scheduler=True)
+    queues = [Queue(name, connection=conn) for name in QUEUES_TO_LISTEN]
+    worker = Worker(queues, connection=conn)
+    logger.info(f"Worker ready! Listening on queues: {QUEUES_TO_LISTEN}")
+    worker.work(with_scheduler=True)
 
 
 if __name__ == "__main__":

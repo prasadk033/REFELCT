@@ -15,7 +15,7 @@ Pipeline:
 import uuid
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from db import SessionLocal, Source, Brief, BriefSource, Card, ProcessingJob, Project
@@ -364,7 +364,7 @@ Return ONLY JSON list.
             
         _update_job(db, job_id, "completed", "Ready for Review")
 
-        project.updated_at = datetime.utcnow()
+        project.updated_at = datetime.now(timezone.utc)
         db.commit()
 
         # Log completion activity
@@ -404,6 +404,6 @@ def _update_job(db, job_id: str, status: str, step: str, error: str = None):
         job.status = status
         job.current_step = step
         job.error = error
-        job.updated_at = datetime.utcnow()
+        job.updated_at = datetime.now(timezone.utc)
         db.commit()
 

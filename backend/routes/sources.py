@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 
 from db import get_db, Project, Source, User, log_activity
 from auth.dependencies import get_current_user
@@ -105,7 +105,7 @@ async def upload_source(
     db.add(source)
 
     # Update project timestamp
-    project.updated_at = datetime.utcnow()
+    project.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(source)
 

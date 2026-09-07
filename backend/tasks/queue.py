@@ -10,15 +10,15 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
-_redis_conn = None
+_pool = None
 
 
 def get_redis_connection():
-    """Obtain or initialize the shared Redis connection pool."""
-    global _redis_conn
-    if _redis_conn is None:
-        _redis_conn = redis.from_url(config.REDIS_URL)
-    return _redis_conn
+    """Obtain a Redis client backed by a thread-safe connection pool."""
+    global _pool
+    if _pool is None:
+        _pool = redis.ConnectionPool.from_url(config.REDIS_URL)
+    return redis.Redis(connection_pool=_pool)
 
 
 def get_queue(name: str = "briefs") -> Queue:

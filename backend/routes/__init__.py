@@ -8,7 +8,7 @@ PATCH  /api/projects/{project_id} — Update project
 """
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -142,7 +142,7 @@ def update_project(
     for key, value in update_data.items():
         setattr(project, key, value)
 
-    project.updated_at = datetime.utcnow()
+    project.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(project)
     logger.info(f"Updated project: {project.id}")
