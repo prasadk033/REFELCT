@@ -44,6 +44,8 @@ class LiteLLMGenerator:
         ]
 
         timeout_val = self.kwargs.pop("timeout", 300.0)
+        max_tokens_val = self.kwargs.pop("max_tokens", 2500)
+        temperature_val = self.kwargs.pop("temperature", 0.2)
         start_time = time.time()
 
         try:
@@ -55,6 +57,8 @@ class LiteLLMGenerator:
                 api_key=self.api_key or "sk-datai2i-a100-qwen35-27b-8x3f9z",
                 custom_llm_provider="openai",
                 timeout=timeout_val,
+                max_tokens=max_tokens_val,
+                temperature=temperature_val,
                 num_retries=0,
                 **self.kwargs
             )
@@ -85,7 +89,7 @@ class LiteLLMGenerator:
             
             if is_timeout:
                 print(f"LLM generation timeout error: model={self.model}, timeout_duration={timeout_val}s, elapsed={elapsed:.2f}s, error={e}")
-                raise TimeoutError(f"LLM Request Timed Out after {elapsed:.2f}s") from e
+                raise TimeoutError(f"AI Services are temporarily slow: The remote Qwen GPU server took too long to respond ({elapsed:.1f}s). This is NOT a deployment error.") from e
             else:
                 print(f"LLM generation error: model={self.model}, elapsed={elapsed:.2f}s, error={e}")
                 raise RuntimeError(f"LLM Request Failed: {e}") from e

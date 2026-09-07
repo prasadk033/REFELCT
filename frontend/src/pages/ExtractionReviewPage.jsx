@@ -30,6 +30,7 @@ export default function ExtractionReviewPage() {
   const [showCompleteModal, setShowCompleteModal] = useState(false)
   const [analysisSummary, setAnalysisSummary] = useState(null)
   const [analysisError, setAnalysisError] = useState(null)
+  const [analyzingSeconds, setAnalyzingSeconds] = useState(0)
   const pollIntervalRef = useRef(null)
 
   const [toastMsg, setToastMsg] = useState(null)
@@ -151,12 +152,14 @@ export default function ExtractionReviewPage() {
     try {
       setAnalyzing(true)
       setAnalysisError(null)
+      setAnalyzingSeconds(0)
       setAnalysisStep('Initiating Brief analysis pipeline...')
       
       await analyzeBrief(projectId)
 
       // Start polling status
       pollIntervalRef.current = setInterval(async () => {
+        setAnalyzingSeconds(s => s + 1.5)
         try {
           const statusRes = await getBriefStatus(projectId)
           const step = statusRes.current_step || statusRes.status
@@ -531,6 +534,33 @@ export default function ExtractionReviewPage() {
               </div>
             </div>
 
+            {/* Slowness Advisory Banner */}
+            {analyzingSeconds >= 18 && (
+              <div style={{
+                background: '#fffbeb',
+                border: '1.5px solid #fde68a',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                textAlign: 'left',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px',
+                marginBottom: '16px'
+              }}>
+                <span style={{ fontSize: '18px', lineHeight: 1 }}>⏳</span>
+                <div>
+                  <strong style={{ fontSize: '12.5px', color: '#92400e', display: 'block', fontWeight: 700 }}>
+                    AI Services Are Temporarily Slow
+                  </strong>
+                  <p style={{ fontSize: '11.5px', color: '#b45309', margin: '3px 0 0 0', lineHeight: 1.45 }}>
+                    The remote Qwen GPU server is currently handling high inference load or queueing.
+                    <br />
+                    <strong style={{ color: '#78350f' }}>Note: This is NOT a deployment or server error.</strong> The job is actively processing in the background.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {analysisStep === 'Ready for Review' ? (
               <button
                 style={{
@@ -570,30 +600,37 @@ export default function ExtractionReviewPage() {
       )}
 
 
-      {/* ANALYSIS ERROR MODAL */}
+      {/* AI SERVICES SLOWNESS / ANALYSIS NOTICE MODAL */}
       {analysisError && (
-        <div className="bui-modal-overlay" onClick={() => setAnalysisError(null)}>
-          <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px', textAlign: 'center', padding: '32px 24px', background: '#ffffff', borderRadius: '12px', color: '#0f172a' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '22px' }}>
-              ⚠
+        <div className="bui-modal-overlay" onClick={() => setAnalysisError(null)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
+          <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', textAlign: 'center', padding: '32px 28px', background: '#ffffff', borderRadius: '12px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#fffbeb', border: '1.5px solid #fde68a', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '24px' }}>
+              ⏳
             </div>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
-              Analysis Note
+            <h2 style={{ fontSize: '19px', fontWeight: 700, color: '#92400e', marginBottom: '8px' }}>
+              AI Services Temporarily Slow
             </h2>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>
+            <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 14px', textAlign: 'left', marginBottom: '16px' }}>
+              <p style={{ fontSize: '12.5px', color: '#92400e', margin: 0, lineHeight: 1.5 }}>
+                <strong>Notice:</strong> This is <strong>NOT a deployment or application error</strong>. Your server, database, and background workers are healthy. The remote Qwen GPU server took too long to respond or experienced high queueing.
+              </p>
+            </div>
+            <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '22px', lineHeight: 1.5, wordBreak: 'break-word' }}>
               {analysisError}
             </p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
               <button
+                type="button"
                 className="bui-btn"
-                style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', padding: '8px 18px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', padding: '10px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                 onClick={() => setAnalysisError(null)}
               >
                 Dismiss
               </button>
               <button
+                type="button"
                 className="bui-btn"
-                style={{ background: '#000000', color: '#ffffff', border: '1px solid #000000', padding: '8px 18px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                style={{ background: '#0f172a', color: '#ffffff', border: '1px solid #0f172a', padding: '10px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                 onClick={() => { setAnalysisError(null); handleAnalyseAll(); }}
               >
                 Retry Analysis

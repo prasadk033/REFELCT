@@ -391,7 +391,14 @@ Return ONLY JSON list.
                 db.commit()
         except Exception:
             pass
-        _update_job(db, job_id, "failed", "Error", str(e))
+
+        err_str = str(e)
+        if "timeout" in err_str.lower() or "connection" in err_str.lower() or "ai" in err_str.lower():
+            friendly_err = "AI Services are temporarily slow or overloaded. The remote Qwen GPU server took too long to respond. This is NOT a deployment or server error. Please retry in a few moments."
+        else:
+            friendly_err = err_str
+
+        _update_job(db, job_id, "failed", "AI Latency Notice", friendly_err)
 
     finally:
         db.close()
