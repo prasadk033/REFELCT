@@ -471,6 +471,7 @@ export default function ProjectOverviewPage() {
                   >
                     <span>View Brief Workspace →</span>
                   </button>
+                  {/* Re-generate button disabled for now; can be enabled in future
                   {completedVersions.length > 0 && (
                     <button
                       type="button"
@@ -482,6 +483,7 @@ export default function ProjectOverviewPage() {
                       ↻ Re-generate (Version {completedVersions[0]})
                     </button>
                   )}
+                  */}
                 </div>
               )}
 
@@ -664,6 +666,7 @@ export default function ProjectOverviewPage() {
                         <span style={{ fontSize: '11.5px', color: '#059669', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                           ✓ Complete
                         </span>
+                        {/* Re-generate Cards button disabled for now; can be enabled in future
                         <button
                           type="button"
                           className="bui-btn bui-btn-outline"
@@ -673,6 +676,7 @@ export default function ProjectOverviewPage() {
                         >
                           ↻ Re-generate Cards
                         </button>
+                        */}
                       </div>
                     </div>
 
