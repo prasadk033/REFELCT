@@ -76,18 +76,27 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             _update_job(db, job_id, "failed", "Error", "No approved project documents found. Please extract, review, and approve documents first.")
             return
 
+        # Query completed brief versions for this project
+        completed_brief_versions = {
+            b.version for b in db.query(Brief.version).filter(
+                Brief.project_id == project_id,
+                Brief.status == "completed"
+            ).all()
+            if b.version is not None
+        }
+
         # Identify newly added / pending sources for this version cycle
         if source_ids:
-            pending_batch = [s for s in all_approved_sources if s.id in source_ids and (s.version is None or s.version == new_version)]
+            pending_batch = [s for s in all_approved_sources if s.id in source_ids and (s.version is None or s.version not in completed_brief_versions)]
             if not pending_batch:
                 pending_batch = [s for s in all_approved_sources if s.id in source_ids]
         else:
-            pending_batch = [s for s in all_approved_sources if s.version is None]
+            pending_batch = [s for s in all_approved_sources if s.version is None or s.version not in completed_brief_versions]
             if not pending_batch:
                 pending_batch = all_approved_sources
 
         # Historical sources (from prior completed versions)
-        historical_sources = [s for s in all_approved_sources if s.version is not None and s.version < new_version and s not in pending_batch]
+        historical_sources = [s for s in all_approved_sources if s.version is not None and s.version in completed_brief_versions and s not in pending_batch]
 
         # ── Step 1: Ensure Extraction for Pending Batch ──────────────────────
         _update_job(db, job_id, "parsing", f"Parsing Version {new_version} Documents")
@@ -164,12 +173,8 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             )
             db.add(bs)
 
-        # Assign version to the pending batch sources now that Brief is being recorded
-        for source in pending_batch:
-            source.version = new_version
-            # Source approval status is already enforced to be 'approved' by our query
-            source.processing_status = "completed"
-
+        # Note: Do NOT assign source.version yet!
+        # Version assignment is deferred until Step 7 after cards have successfully generated.
         db.commit()
 
         job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
@@ -361,6 +366,13 @@ Return ONLY JSON list.
         brief = db.query(Brief).filter(Brief.id == brief_id).first()
         if brief:
             brief.status = "completed"
+
+        # Assign version to the pending batch sources ONLY AFTER cards are successfully generated!
+        for source in pending_batch:
+            src_obj = db.query(Source).filter(Source.id == source.id).first()
+            if src_obj:
+                src_obj.version = new_version
+                src_obj.processing_status = "completed"
             
         _update_job(db, job_id, "completed", "Ready for Review")
 
@@ -384,13 +396,23 @@ Return ONLY JSON list.
     except Exception as e:
         logger.error(f"[{project_id}] Brief pipeline failed: {e}", exc_info=True)
         try:
+            # Revert any pending batch source version assignments so they stay in pending batch!
+            if 'pending_batch' in locals():
+                for s in pending_batch:
+                    src_obj = db.query(Source).filter(Source.id == s.id).first()
+                    if src_obj and (src_obj.version == new_version or src_obj.version is None):
+                        src_obj.version = None
+                        src_obj.processing_status = "extracted"
+
+            # Clean up the uncompleted brief record and its associations
             if 'brief_id' in locals():
-                failed_brief = db.query(Brief).filter(Brief.id == brief_id).first()
-                if failed_brief and failed_brief.status != "completed":
-                    failed_brief.status = "failed"
-                db.commit()
-        except Exception:
-            pass
+                db.query(BriefSource).filter(BriefSource.brief_id == brief_id).delete(synchronize_session=False)
+                db.query(Brief).filter(Brief.id == brief_id, Brief.status != "completed").delete(synchronize_session=False)
+
+            db.commit()
+        except Exception as rollback_err:
+            logger.error(f"Rollback error: {rollback_err}")
+            db.rollback()
 
         err_str = str(e)
         if "timeout" in err_str.lower() or "connection" in err_str.lower() or "ai" in err_str.lower():

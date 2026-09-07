@@ -188,6 +188,7 @@ export default function ExtractionReviewPage() {
             pollIntervalRef.current = null
             setAnalyzing(false)
             setAnalysisError(statusRes.error_message || 'Brief analysis failed.')
+            loadData().catch(() => {})
           }
         } catch (pollErr) {
           console.warn('Poll error:', pollErr)

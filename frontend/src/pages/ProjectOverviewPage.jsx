@@ -218,6 +218,7 @@ export default function ProjectOverviewPage() {
             pollIntervalRef.current = null
             setAnalyzing(false)
             setAnalysisError(statusRes.error || 'Analysis failed. Please try again.')
+            loadProjectData().catch(() => {})
           }
         } catch (pollErr) {
           console.error('Polling error:', pollErr)
