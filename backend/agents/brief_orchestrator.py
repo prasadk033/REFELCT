@@ -68,7 +68,16 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
 
         latest_completed_version = max(completed_card_versions) if completed_card_versions else -1
         new_version = latest_completed_version + 1
-        logger.info(f"[{project_id}] Starting Brief pipeline for Version {new_version}")
+        latest_brief = (
+            db.query(Brief)
+            .filter(
+                Brief.project_id == project_id,
+                Brief.version == latest_completed_version,
+                Brief.status == "completed"
+            )
+            .first()
+        ) if latest_completed_version >= 0 else None
+        logger.info(f"[{project_id}] Starting Brief pipeline for Version {new_version} (previous brief: {latest_brief.id if latest_brief else 'None'})")
 
         # Clean up any zombie brief records for this version or higher that lack cards safely
         try:
