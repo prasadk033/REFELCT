@@ -1121,6 +1121,90 @@ export default function ProjectOverviewPage() {
           </div>
         )}
 
+        {/* ANALYSIS IN PROGRESS MODAL */}
+        {analyzing && (
+          <div className="bui-modal-overlay" style={{ background: 'rgba(5, 7, 12, 0.85)', backdropFilter: 'blur(6px)', zIndex: 1000 }}>
+            <div className="bui-modal" style={{ maxWidth: '480px', textAlign: 'center', padding: '36px 28px', background: '#ffffff', borderRadius: '12px', color: '#0f172a' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <span className="bui-spinner" style={{ width: '40px', height: '40px', borderWidth: '3px', margin: '0 auto', borderColor: '#000000', borderTopColor: 'transparent' }} />
+              </div>
+              <h2 style={{ fontSize: '20px', color: '#0f172a', fontWeight: 700, marginBottom: '8px' }}>
+                Generating Project Brief Cards
+              </h2>
+              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px', lineHeight: 1.5 }}>
+                Analyzing verified project information, extracting architectural parameters, and formulating candidate Brief Cards.
+              </p>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 16px', textAlign: 'left', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ color: '#000000', fontWeight: 700 }}>✦</span>
+                  <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{analysisStep}</span>
+                </div>
+              </div>
+
+              {/* Slowness Advisory Banner */}
+              {analyzingSeconds >= 18 && (
+                <div style={{
+                  background: '#fffbeb',
+                  border: '1.5px solid #fde68a',
+                  borderRadius: '8px',
+                  padding: '12px 14px',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
+                  marginBottom: '16px'
+                }}>
+                  <span style={{ fontSize: '18px', lineHeight: 1 }}>⏳</span>
+                  <div>
+                    <strong style={{ fontSize: '12.5px', color: '#92400e', display: 'block', fontWeight: 700 }}>
+                      AI Services Are Temporarily Slow
+                    </strong>
+                    <p style={{ fontSize: '11.5px', color: '#b45309', margin: '3px 0 0 0', lineHeight: 1.45 }}>
+                      AI services are currently experiencing high demand and running slower than usual. Your analysis is actively processing in the background. Please wait a moment.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {analysisStep === 'Ready for Review' ? (
+                <button
+                  style={{
+                    width: '100%',
+                    background: '#000000',
+                    color: '#ffffff',
+                    border: '1px solid #000000',
+                    padding: '12px 20px',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    marginTop: '8px',
+                    transition: 'all 0.15s'
+                  }}
+                  onClick={() => navigate(`/projects/${projectId}/brief`)}
+                >
+                  Open Brief Workspace →
+                </button>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                    Please wait — your Brief Workspace will be ready in just a moment.
+                  </span>
+                  <button
+                    type="button"
+                    className="bui-btn bui-btn-outline"
+                    style={{ marginTop: '8px', fontSize: '11px', padding: '4px 12px', color: '#64748b', borderColor: '#cbd5e1' }}
+                    onClick={() => setAnalyzing(false)}
+                  >
+                    Run in background (Dismiss)
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ANALYSIS COMPLETE SUCCESS MODAL */}
         {showCompleteModal && (
           <div className="bui-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
