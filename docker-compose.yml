@@ -32,6 +32,7 @@ services:
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
     volumes:
       - ./uploads:/app/uploads
+      - ./backend:/app/backend
     restart: unless-stopped
     depends_on:
       postgres:
@@ -57,6 +58,7 @@ services:
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
     volumes:
       - ./uploads:/app/uploads
+      - ./backend:/app/backend
     restart: unless-stopped
     depends_on:
       postgres:
