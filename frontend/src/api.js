@@ -74,6 +74,12 @@ export async function updateProject(projectId, data) {
   });
 }
 
+export async function deleteProject(projectId) {
+  return apiFetch(`/api/projects/${projectId}`, {
+    method: "DELETE",
+  });
+}
+
 // ── Sources ─────────────────────────────────────────────────────────────────
 
 export async function uploadSource(projectId, file) {

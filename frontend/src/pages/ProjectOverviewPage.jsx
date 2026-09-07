@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, listSources, uploadSource, deleteSource, extractSources, analyzeBrief, listCards, getBriefStatus } from '../api.js'
+import { getProject, listSources, uploadSource, deleteSource, extractSources, analyzeBrief, listCards, getBriefStatus, deleteProject } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 
 
@@ -33,6 +33,9 @@ export default function ProjectOverviewPage() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
+
+  // Document Text Inspector Modal
+  const [viewingSource, setViewingSource] = useState(null)
 
   // Share Dialog
   const [showShareModal, setShowShareModal] = useState(false)
@@ -246,6 +249,18 @@ export default function ProjectOverviewPage() {
     }
   }
 
+  async function handleDeleteProject() {
+    if (!window.confirm(`Are you sure you want to delete project "${project?.name || 'this project'}"? All associated documents, brief versions, and cards will be permanently removed.`)) {
+      return
+    }
+    try {
+      await deleteProject(projectId)
+      navigate('/overview')
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   // Real Counts & Status Breakdown
   const totalCards = cards.length
   const pendingCards = cards.filter(c => {
@@ -259,8 +274,8 @@ export default function ProjectOverviewPage() {
   const versionedSources = sources.filter(s => s.version !== null && s.version !== undefined)
   const pendingBatchSources = sources.filter(s => s.version === null || s.version === undefined)
 
-  // Unique completed version numbers sorted (0, 1, 2...)
-  const completedVersions = Array.from(new Set(versionedSources.map(s => Number(s.version)))).sort((a, b) => a - b)
+  // Unique completed version numbers sorted descending (latest on top: Version 2, Version 1, Version 0)
+  const completedVersions = Array.from(new Set(versionedSources.map(s => Number(s.version)))).sort((a, b) => b - a)
 
   // Check pending status
   const pendingNeedsExtraction = pendingBatchSources.some(s => s.processing_status === 'uploaded' || !s.extracted_text)
@@ -303,7 +318,7 @@ export default function ProjectOverviewPage() {
             </p>
           </div>
 
-          <div className="pov-top-right">
+          <div className="pov-top-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button className="pov-btn-share" onClick={() => setShowShareModal(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
                 <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
@@ -311,6 +326,19 @@ export default function ProjectOverviewPage() {
                 <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
               </svg>
               <span>Share</span>
+            </button>
+            <button
+              type="button"
+              className="pov-btn-share"
+              style={{ color: '#ef4444', borderColor: '#fee2e2' }}
+              onClick={handleDeleteProject}
+              title="Delete Project"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="13" height="13">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              <span>Delete Project</span>
             </button>
           </div>
         </header>
@@ -469,85 +497,7 @@ export default function ProjectOverviewPage() {
           ) : (
             <div className="pov-sources-version-groups" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-              {/* Render Completed Version Groups */}
-              {completedVersions.map(ver => {
-                const groupDocs = versionedSources.filter(s => Number(s.version) === ver)
-                return (
-                  <div key={`ver-${ver}`} className="pov-version-group-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
-                    
-                    {/* Single Version Group Header */}
-                    <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ background: '#0f172a', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
-                          Version {ver}
-                        </span>
-                        <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
-                          {groupDocs.length} Document{groupDocs.length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <span style={{ fontSize: '11.5px', color: '#059669', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        ✓ Complete
-                      </span>
-                    </div>
-
-                    <table className="pov-sources-table" style={{ margin: 0 }}>
-                      <thead>
-                        <tr>
-                          <th>Name</th>
-                          <th>Type</th>
-                          <th>Uploaded On</th>
-                          <th>Status</th>
-                          <th style={{ textAlign: 'right' }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {groupDocs.map(s => (
-                          <tr key={s.id}>
-                            <td className="td-name">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" width="14" height="14" className="pov-doc-icon">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                <polyline points="14 2 14 8 20 8" />
-                              </svg>
-                              <span>{s.file_name}</span>
-                            </td>
-                            <td className="td-type">{(s.file_type || 'PDF').toUpperCase()}</td>
-                            <td className="td-date">
-                              {s.upload_timestamp ? new Date(s.upload_timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Recently'}
-                            </td>
-                            <td className="td-ver">
-                              <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
-                                ✓ Approved
-                              </span>
-                            </td>
-                            <td style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                              <button
-                                type="button"
-                                className="bui-btn bui-btn-outline"
-                                style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
-                                onClick={() => navigate(`/projects/${projectId}/extract`)}
-                                title="Inspect extracted text"
-                              >
-                                📄 View
-                              </button>
-                              <button
-                                type="button"
-                                className="bui-btn bui-btn-outline"
-                                style={{ padding: '3px 8px', fontSize: '11px', color: '#ef4444', borderColor: '#cbd5e1' }}
-                                onClick={() => handleDeleteSource(s.id, s.file_name)}
-                                title="Delete document"
-                              >
-                                🗑
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )
-              })}
-
-              {/* Render Pending Extraction Group (New Documents) */}
+              {/* 1. Render Pending Extraction Group at Top (New In-flight Documents) */}
               {pendingBatchSources.length > 0 && (
                 <div className="pov-version-group-card" style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '10px', overflow: 'hidden' }}>
                   
@@ -619,10 +569,19 @@ export default function ProjectOverviewPage() {
                                 type="button"
                                 className="bui-btn bui-btn-outline"
                                 style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
+                                onClick={() => setViewingSource(s)}
+                                title="Inspect extracted text"
+                              >
+                                📄 View
+                              </button>
+                              <button
+                                type="button"
+                                className="bui-btn bui-btn-outline"
+                                style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#cbd5e1' }}
                                 onClick={() => navigate(`/projects/${projectId}/extract`)}
                                 title="Review & Approve"
                               >
-                                📄 Review
+                                ✏ Review
                               </button>
                               <button
                                 type="button"
@@ -642,9 +601,155 @@ export default function ProjectOverviewPage() {
                 </div>
               )}
 
+              {/* 2. Render Completed Version Groups (Latest on Top: Version 2, Version 1, Version 0) */}
+              {completedVersions.map(ver => {
+                const groupDocs = versionedSources.filter(s => Number(s.version) === ver)
+                return (
+                  <div key={`ver-${ver}`} className="pov-version-group-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+                    
+                    {/* Single Version Group Header */}
+                    <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ background: '#0f172a', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+                          Version {ver}
+                        </span>
+                        <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
+                          {groupDocs.length} Document{groupDocs.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '11.5px', color: '#059669', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        ✓ Complete
+                      </span>
+                    </div>
+
+                    <table className="pov-sources-table" style={{ margin: 0 }}>
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Uploaded On</th>
+                          <th>Status</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupDocs.map(s => (
+                          <tr key={s.id}>
+                            <td className="td-name">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" width="14" height="14" className="pov-doc-icon">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                              </svg>
+                              <span>{s.file_name}</span>
+                            </td>
+                            <td className="td-type">{(s.file_type || 'PDF').toUpperCase()}</td>
+                            <td className="td-date">
+                              {s.upload_timestamp ? new Date(s.upload_timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Recently'}
+                            </td>
+                            <td className="td-ver">
+                              <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
+                                ✓ Approved
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                              <button
+                                type="button"
+                                className="bui-btn bui-btn-outline"
+                                style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
+                                onClick={() => setViewingSource(s)}
+                                title="Inspect extracted text"
+                              >
+                                📄 View
+                              </button>
+                              <button
+                                type="button"
+                                className="bui-btn bui-btn-outline"
+                                style={{ padding: '3px 8px', fontSize: '11px', color: '#ef4444', borderColor: '#cbd5e1' }}
+                                onClick={() => handleDeleteSource(s.id, s.file_name)}
+                                title="Delete document"
+                              >
+                                🗑
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              })}
+
             </div>
           )}
         </section>
+
+        {/* DOCUMENT TEXT INSPECTOR MODAL */}
+        {viewingSource && (
+          <div className="bui-modal-overlay" onClick={() => setViewingSource(null)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
+            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px', width: '90%', background: '#ffffff', borderRadius: '12px', padding: '24px 28px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '16px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <span style={{ background: '#0f172a', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+                      {viewingSource.version !== null && viewingSource.version !== undefined ? `Version ${viewingSource.version}` : 'Pending'}
+                    </span>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>
+                      {(viewingSource.file_type || 'PDF').toUpperCase()} • {viewingSource.file_size ? `${(viewingSource.file_size / 1024).toFixed(0)} KB` : ''}
+                    </span>
+                    {viewingSource.approval_status === 'approved' && (
+                      <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '2px 7px', borderRadius: '10px', fontSize: '10.5px', fontWeight: 600 }}>
+                        ✓ Approved
+                      </span>
+                    )}
+                  </div>
+                  <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                    {viewingSource.file_name}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  className="bui-close-btn"
+                  onClick={() => setViewingSource(null)}
+                  style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ marginBottom: '18px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '8px' }}>
+                  Extracted Document Text
+                </span>
+                <div style={{
+                  maxHeight: '400px',
+                  overflowY: 'auto',
+                  background: '#f8fafc',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '12.5px',
+                  lineHeight: 1.6,
+                  color: '#1e293b',
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'Consolas, Monaco, monospace'
+                }}>
+                  {viewingSource.extracted_text || viewingSource.ocr_text || 'No extracted text available for this document.'}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="bui-btn"
+                  style={{ background: '#0f172a', color: '#ffffff', padding: '8px 18px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                  onClick={() => setViewingSource(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
 
 

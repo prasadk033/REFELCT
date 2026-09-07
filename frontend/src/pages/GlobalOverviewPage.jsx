@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listProjects, createProject } from '../api.js'
+import { listProjects, createProject, deleteProject } from '../api.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import GlobalShell from '../components/GlobalShell.jsx'
 
@@ -38,6 +38,19 @@ export default function GlobalOverviewPage() {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleDeleteProject(e, projectId, projectName) {
+    e.stopPropagation()
+    if (!window.confirm(`Are you sure you want to delete project "${projectName}"? All associated documents, brief versions, and cards will be permanently removed.`)) {
+      return
+    }
+    try {
+      await deleteProject(projectId)
+      setProjects(prev => prev.filter(p => p.id !== projectId))
+    } catch (err) {
+      alert(`Failed to delete project: ${err.message}`)
     }
   }
 
@@ -175,9 +188,32 @@ export default function GlobalOverviewPage() {
                         </div>
                       </div>
 
-                      <div className="gov-project-action" onClick={e => e.stopPropagation()}>
+                      <div className="gov-project-action" onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <button className="gov-btn-open" onClick={() => navigate(`/projects/${p.id}`)}>
                           Open
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete Project"
+                          style={{
+                            background: 'transparent',
+                            border: '1px solid #fee2e2',
+                            color: '#ef4444',
+                            borderRadius: '6px',
+                            padding: '6px 10px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s'
+                          }}
+                          onClick={(e) => handleDeleteProject(e, p.id, p.name)}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="13" height="13">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
                         </button>
                       </div>
 

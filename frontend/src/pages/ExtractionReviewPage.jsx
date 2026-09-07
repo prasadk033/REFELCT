@@ -252,13 +252,19 @@ export default function ExtractionReviewPage() {
           <span className="extract-approved-count">
             {sources.filter(s => s.approval_status === 'approved' || s.processing_status === 'approved').length} of {sources.length} Sources Approved
           </span>
-          <button
-            className="extract-btn-approve-all"
-            onClick={handleApproveAll}
-            disabled={actionLoading || allApproved}
-          >
-            Approve All
-          </button>
+          {pendingSources.length > 0 ? (
+            <button
+              className="extract-btn-approve-all"
+              onClick={handleApproveAll}
+              disabled={actionLoading || allApproved}
+            >
+              Approve All
+            </button>
+          ) : (
+            <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '5px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600 }}>
+              ✓ All Sources Finalized
+            </span>
+          )}
           <button
             className="bui-btn"
             style={{
@@ -284,8 +290,8 @@ export default function ExtractionReviewPage() {
         {/* Left Sidebar: Categorized Sources */}
         <aside className="extract-sidebar">
           <div className="extract-sidebar-header">
-            <h3>{pendingSources.length > 0 ? `Pending Sources (${displaySources.length})` : `Project Sources (${displaySources.length})`}</h3>
-            <p>Select a source to review and approve its extracted text.</p>
+            <h3>{pendingSources.length > 0 ? `Pending Sources (${displaySources.length})` : `All Project Sources (${displaySources.length})`}</h3>
+            <p>{pendingSources.length > 0 ? 'Select a source to review and approve its extracted text.' : 'All project documents are finalized and synthesized into Brief Cards.'}</p>
           </div>
 
           <div className="extract-sidebar-groups">
@@ -364,17 +370,47 @@ export default function ExtractionReviewPage() {
           </div>
 
           {sources.length > 0 && (
-            <div className="extract-sidebar-footer" style={{ padding: '20px', borderTop: '1px solid #e2e8f0', marginTop: 'auto' }}>
-              <button
-                className={`extract-btn-analyse-all ${allApproved ? 'ready' : 'disabled'}`}
-                onClick={handleAnalyseAll}
-                disabled={actionLoading || analyzing || !allApproved}
-                style={{ width: '100%', padding: '12px', fontSize: '14px', borderRadius: '8px' }}
-              >
-                {analyzing ? 'Launching Analysis...' : 'Generate Brief'}
-              </button>
-              {!allApproved && <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>Approve all sources to unlock</p>}
-            </div>
+            pendingSources.length > 0 ? (
+              <div className="extract-sidebar-footer" style={{ padding: '20px', borderTop: '1px solid #e2e8f0', marginTop: 'auto' }}>
+                <button
+                  className={`extract-btn-analyse-all ${allApproved ? 'ready' : 'disabled'}`}
+                  onClick={handleAnalyseAll}
+                  disabled={actionLoading || analyzing || !allApproved}
+                  style={{ width: '100%', padding: '12px', fontSize: '14px', borderRadius: '8px' }}
+                >
+                  {analyzing ? 'Launching Analysis...' : 'Generate Brief'}
+                </button>
+                {!allApproved && <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>Approve all sources to unlock</p>}
+              </div>
+            ) : (
+              <div className="extract-sidebar-footer" style={{ padding: '16px 20px', borderTop: '1px solid #e2e8f0', marginTop: 'auto', background: '#f8fafc' }}>
+                <button
+                  type="button"
+                  className="bui-btn"
+                  onClick={() => navigate(`/projects/${projectId}/brief`)}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    borderRadius: '8px',
+                    background: '#0f172a',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <span>✓ Brief Ready — View Brief →</span>
+                </button>
+                <p style={{ fontSize: '11.5px', color: '#64748b', marginTop: '8px', textAlign: 'center', lineHeight: 1.4 }}>
+                  All sources are finalized. To generate a new Brief Version, add new documents in Project Overview.
+                </p>
+              </div>
+            )
           )}
         </aside>
 

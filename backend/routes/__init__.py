@@ -13,9 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from db import get_db, Project, Source, Brief, Card, User
+from db import get_db, Project, Source, Brief, Card, User, log_activity
 from auth.dependencies import get_current_user
 from schemas.models import ProjectCreate, ProjectUpdate, ProjectResponse
+from storage import file_store
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,39 @@ def update_project(
     logger.info(f"Updated project: {project.id}")
 
     return _project_to_response(db, project)
+
+
+@router.delete("/{project_id}")
+def delete_project(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    project = _get_user_project(db, project_id, user.id)
+    project_name = project.name
+
+    # Delete storage files for all project sources
+    sources = db.query(Source).filter(Source.project_id == project_id).all()
+    for s in sources:
+        if s.storage_path:
+            try:
+                file_store.delete_file(s.storage_path)
+            except Exception as err:
+                logger.warning(f"Failed to delete file {s.storage_path}: {err}")
+
+    db.delete(project)
+    db.commit()
+
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="project_deleted",
+        title="Project deleted",
+        description=f"Project '{project_name}' deleted",
+    )
+
+    logger.info(f"Deleted project: {project_id} ('{project_name}')")
+    return {"message": f"Project '{project_name}' deleted successfully"}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
