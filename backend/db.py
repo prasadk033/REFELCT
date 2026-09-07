@@ -25,18 +25,23 @@ def utc_now():
 # ── Engine & Session ────────────────────────────────────────────────────────
 
 def _create_db_engine():
-        eng = create_engine(
-            config.APP_DATABASE_URL,
-            pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
-            echo=False,
-        )
-        # Test connection
-        with eng.connect() as conn:
-            pass
-        logger.info(f"Connected to primary database: {config.APP_DATABASE_URL.split('@')[-1]}")
-        return eng
+    engine_kwargs = {"echo": False}
+    if "sqlite" in config.APP_DATABASE_URL:
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        engine_kwargs["pool_pre_ping"] = True
+        engine_kwargs["pool_size"] = 10
+        engine_kwargs["max_overflow"] = 20
+
+    eng = create_engine(
+        config.APP_DATABASE_URL,
+        **engine_kwargs,
+    )
+    # Test connection
+    with eng.connect() as conn:
+        pass
+    logger.info(f"Connected to primary database: {config.APP_DATABASE_URL.split('@')[-1]}")
+    return eng
 
 engine = _create_db_engine()
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
