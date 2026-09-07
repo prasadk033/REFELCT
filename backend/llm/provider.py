@@ -89,7 +89,7 @@ class LiteLLMGenerator:
             
             if is_timeout:
                 print(f"LLM generation timeout error: model={self.model}, timeout_duration={timeout_val}s, elapsed={elapsed:.2f}s, error={e}")
-                raise TimeoutError(f"AI Services are temporarily slow: The remote Qwen GPU server took too long to respond ({elapsed:.1f}s). This is NOT a deployment error.") from e
+                raise TimeoutError("AI services are temporarily slow due to high demand. Please try again after some time.") from e
             else:
                 print(f"LLM generation error: model={self.model}, elapsed={elapsed:.2f}s, error={e}")
                 raise RuntimeError(f"LLM Request Failed: {e}") from e

@@ -1,5 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import AiHealthBanner from './AiHealthBanner.jsx'
 
 export default function ProjectShell({ children, project }) {
   const navigate = useNavigate()
@@ -151,6 +152,7 @@ export default function ProjectShell({ children, project }) {
 
       {/* Main Workspace Area */}
       <main className="p-main">
+        <AiHealthBanner />
         {children}
       </main>
     </div>

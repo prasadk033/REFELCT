@@ -214,5 +214,15 @@ export async function listActivities(projectId = null, limit = 20) {
   return apiFetch(`/api/activities${qs ? "?" + qs : ""}`);
 }
 
+// ── AI Health ──────────────────────────────────────────────────────────────
+
+export async function checkAiHealth() {
+  try {
+    return await apiFetch("/api/health/ai");
+  } catch (err) {
+    return { status: "slow", slow: true, message: "AI services are temporarily slow due to high demand. Please try again after some time." };
+  }
+}
+
 
 

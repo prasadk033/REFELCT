@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { listProjects } from '../api.js'
+import AiHealthBanner from './AiHealthBanner.jsx'
 
 export default function GlobalShell({ children }) {
   const navigate = useNavigate()
@@ -124,6 +125,7 @@ export default function GlobalShell({ children }) {
 
       {/* Main Global Content Area */}
       <main className="g-main">
+        <AiHealthBanner />
         {children}
       </main>
     </div>

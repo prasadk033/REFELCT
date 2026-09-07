@@ -394,7 +394,7 @@ Return ONLY JSON list.
 
         err_str = str(e)
         if "timeout" in err_str.lower() or "connection" in err_str.lower() or "ai" in err_str.lower():
-            friendly_err = "AI Services are temporarily slow or overloaded. The remote Qwen GPU server took too long to respond. This is NOT a deployment or server error. Please retry in a few moments."
+            friendly_err = "AI services are temporarily slow due to high demand. Please try again after some time."
         else:
             friendly_err = err_str
 

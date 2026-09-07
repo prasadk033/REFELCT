@@ -11,6 +11,7 @@ import {
   getBriefStatus,
   listCards
 } from '../api.js'
+import AiHealthBanner from '../components/AiHealthBanner.jsx'
 
 export default function ExtractionReviewPage() {
   const { projectId } = useParams()
@@ -222,6 +223,7 @@ export default function ExtractionReviewPage() {
 
   return (
     <div className="extract-page-container">
+      <AiHealthBanner />
       {toastMsg && <div className="extract-toast-banner">{toastMsg}</div>}
 
       {/* Top Header */}
@@ -553,9 +555,7 @@ export default function ExtractionReviewPage() {
                     AI Services Are Temporarily Slow
                   </strong>
                   <p style={{ fontSize: '11.5px', color: '#b45309', margin: '3px 0 0 0', lineHeight: 1.45 }}>
-                    The remote Qwen GPU server is currently handling high inference load or queueing.
-                    <br />
-                    <strong style={{ color: '#78350f' }}>Note: This is NOT a deployment or server error.</strong> The job is actively processing in the background.
+                    AI services are currently experiencing high demand and running slower than usual. Your analysis is actively processing in the background. Please wait a moment.
                   </p>
                 </div>
               </div>
@@ -602,17 +602,17 @@ export default function ExtractionReviewPage() {
 
       {/* AI SERVICES SLOWNESS / ANALYSIS NOTICE MODAL */}
       {analysisError && (
-        <div className="bui-modal-overlay" onClick={() => setAnalysisError(null)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
-          <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', textAlign: 'center', padding: '32px 28px', background: '#ffffff', borderRadius: '12px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
+        <div className="bui-modal-overlay" onClick={() => setAnalysisError(null)} style={{ background: 'rgba(5, 7, 12, 0.85)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
+          <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px', textAlign: 'center', padding: '32px 28px', background: '#ffffff', borderRadius: '12px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
             <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#fffbeb', border: '1.5px solid #fde68a', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '24px' }}>
               ⏳
             </div>
             <h2 style={{ fontSize: '19px', fontWeight: 700, color: '#92400e', marginBottom: '8px' }}>
               AI Services Temporarily Slow
             </h2>
-            <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 14px', textAlign: 'left', marginBottom: '16px' }}>
-              <p style={{ fontSize: '12.5px', color: '#92400e', margin: 0, lineHeight: 1.5 }}>
-                <strong>Notice:</strong> This is <strong>NOT a deployment or application error</strong>. Your server, database, and background workers are healthy. The remote Qwen GPU server took too long to respond or experienced high queueing.
+            <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 14px', textAlign: 'center', marginBottom: '16px' }}>
+              <p style={{ fontSize: '13px', color: '#92400e', margin: 0, lineHeight: 1.5, fontWeight: 500 }}>
+                AI services are temporarily slow due to high demand. Please try again after some time.
               </p>
             </div>
             <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '22px', lineHeight: 1.5, wordBreak: 'break-word' }}>

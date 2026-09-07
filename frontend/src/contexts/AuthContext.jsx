@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react'
-import { loginWithGoogle, loginDev, getCurrentUser } from '../api.js'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { loginWithGoogle, loginDev, getCurrentUser, checkAiHealth } from '../api.js'
 
 const AuthContext = createContext(null)
 
@@ -7,6 +7,24 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [token, setToken] = useState(localStorage.getItem('reflect_token'))
   const [loading, setLoading] = useState(true)
+  const [aiStatus, setAiStatus] = useState({ slow: false, message: '' })
+  const [aiDismissed, setAiDismissed] = useState(false)
+
+  const verifyAiHealth = useCallback(async () => {
+    try {
+      const res = await checkAiHealth()
+      if (res && res.slow) {
+        setAiStatus({
+          slow: true,
+          message: res.message || 'AI services are temporarily slow due to high demand. Please try again after some time.'
+        })
+      } else {
+        setAiStatus({ slow: false, message: '' })
+      }
+    } catch {
+      // Silently fail on network glitches
+    }
+  }, [])
 
   useEffect(() => {
     if (token) {
@@ -14,9 +32,10 @@ export function AuthProvider({ children }) {
       if (stored) {
         try { setUser(JSON.parse(stored)) } catch { /* ignore */ }
       }
+      verifyAiHealth()
     }
     setLoading(false)
-  }, [])
+  }, [token, verifyAiHealth])
 
   async function handleGoogleLogin(googleToken) {
     const data = await loginWithGoogle(googleToken)
@@ -24,6 +43,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('reflect_user', JSON.stringify(data.user))
     setToken(data.access_token)
     setUser(data.user)
+    verifyAiHealth()
     return data
   }
 
@@ -33,6 +53,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('reflect_user', JSON.stringify(data.user))
     setToken(data.access_token)
     setUser(data.user)
+    verifyAiHealth()
     return data
   }
 
@@ -43,11 +64,19 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  function dismissAiNotice() {
+    setAiDismissed(true)
+  }
+
   const value = {
     user,
     token,
     loading,
     isAuthenticated: !!token && !!user,
+    aiStatus,
+    aiDismissed,
+    dismissAiNotice,
+    verifyAiHealth,
     loginWithGoogle: handleGoogleLogin,
     loginDev: handleDevLogin,
     logout,
