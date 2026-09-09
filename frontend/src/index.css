@@ -3081,18 +3081,11 @@ a {
   margin-left: 3px;
 }
 
-/* ── Main 2-Column Layout ──────────────────────────────────── */
+/* ── Main Full-Width Cards Layout ──────────────────────────── */
 .bpage-main-layout {
-  display: grid;
-  grid-template-columns: 1fr 270px;
-  gap: 24px;
+  display: block;
+  width: 100%;
   margin-top: 18px;
-}
-
-@media (max-width: 1100px) {
-  .bpage-main-layout {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ── Filter Toolbar ────────────────────────────────────────── */

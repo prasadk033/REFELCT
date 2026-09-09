@@ -753,15 +753,6 @@ export default function ProjectOverviewPage() {
                               <button
                                 type="button"
                                 className="bui-btn bui-btn-outline"
-                                style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#cbd5e1' }}
-                                onClick={() => handleResetSourceVersion(s.id)}
-                                title="Move document back to pending to re-generate cards"
-                              >
-                                ↩ Reset to Pending
-                              </button>
-                              <button
-                                type="button"
-                                className="bui-btn bui-btn-outline"
                                 style={{ padding: '3px 8px', fontSize: '11px', color: '#ef4444', borderColor: '#cbd5e1' }}
                                 onClick={() => handleDeleteSource(s.id, s.file_name)}
                                 title="Delete document"
