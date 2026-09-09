@@ -537,86 +537,42 @@ export default function ExtractionReviewPage() {
               </div>
             </div>
 
-            {/* Slowness Advisory Banner */}
-            {analyzingSeconds >= 18 && (
-              <div style={{
-                background: '#fffbeb',
-                border: '1.5px solid #fde68a',
-                borderRadius: '8px',
-                padding: '12px 14px',
-                textAlign: 'left',
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '10px',
-                marginBottom: '16px'
-              }}>
-                <span style={{ fontSize: '18px', lineHeight: 1 }}>⏳</span>
-                <div>
-                  <strong style={{ fontSize: '12.5px', color: '#92400e', display: 'block', fontWeight: 700 }}>
-                    AI Services Are Temporarily Slow
-                  </strong>
-                  <p style={{ fontSize: '11.5px', color: '#b45309', margin: '3px 0 0 0', lineHeight: 1.45 }}>
-                    AI services are currently experiencing high demand and running slower than usual. Your analysis is actively processing in the background. Please wait a moment.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {analysisStep === 'Ready for Review' ? (
-              <button
-                style={{
-                  width: '100%',
-                  background: '#000000',
-                  color: '#ffffff',
-                  border: '1px solid #000000',
-                  padding: '12px 20px',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  marginTop: '8px',
-                  transition: 'all 0.15s'
-                }}
-                onClick={() => navigate(`/projects/${projectId}/brief`)}
-              >
-                Open Brief Workspace →
-              </button>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-                  Please wait — your Brief Workspace will be ready in just a moment.
-                </span>
+              {analysisStep === 'Ready for Review' && (
                 <button
-                  type="button"
-                  className="bui-btn bui-btn-outline"
-                  style={{ marginTop: '8px', fontSize: '11px', padding: '4px 12px', color: '#64748b', borderColor: '#cbd5e1' }}
-                  onClick={() => setAnalyzing(false)}
+                  style={{
+                    width: '100%',
+                    background: '#000000',
+                    color: '#ffffff',
+                    border: '1px solid #000000',
+                    padding: '12px 20px',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    marginTop: '8px',
+                    transition: 'all 0.15s'
+                  }}
+                  onClick={() => navigate(`/projects/${projectId}/brief`)}
                 >
-                  Run in background (Dismiss)
+                  Open Brief Workspace →
                 </button>
-              </div>
-            )}
+              )}
           </div>
         </div>
       )}
 
 
-      {/* AI SERVICES SLOWNESS / ANALYSIS NOTICE MODAL */}
+      {/* ANALYSIS ERROR MODAL */}
       {analysisError && (
         <div className="bui-modal-overlay" onClick={() => setAnalysisError(null)} style={{ background: 'rgba(5, 7, 12, 0.85)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
           <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px', textAlign: 'center', padding: '32px 28px', background: '#ffffff', borderRadius: '12px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
-            <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#fffbeb', border: '1.5px solid #fde68a', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '24px' }}>
-              ⏳
+            <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#fef2f2', border: '1.5px solid #fecaca', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '24px' }}>
+              ⚠️
             </div>
-            <h2 style={{ fontSize: '19px', fontWeight: 700, color: '#92400e', marginBottom: '8px' }}>
-              AI Services Temporarily Slow
+            <h2 style={{ fontSize: '19px', fontWeight: 700, color: '#991b1b', marginBottom: '8px' }}>
+              Generation Failed
             </h2>
-            <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 14px', textAlign: 'center', marginBottom: '16px' }}>
-              <p style={{ fontSize: '13px', color: '#92400e', margin: 0, lineHeight: 1.5, fontWeight: 500 }}>
-                AI services are temporarily slow due to high demand. Please try again after some time.
-              </p>
-            </div>
-            <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '22px', lineHeight: 1.5, wordBreak: 'break-word' }}>
+            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '22px', lineHeight: 1.5, wordBreak: 'break-word' }}>
               {analysisError}
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
@@ -634,7 +590,7 @@ export default function ExtractionReviewPage() {
                 style={{ background: '#0f172a', color: '#ffffff', border: '1px solid #0f172a', padding: '10px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                 onClick={() => { setAnalysisError(null); handleAnalyseAll(); }}
               >
-                Retry Analysis
+                Generate Brief Again
               </button>
             </div>
           </div>

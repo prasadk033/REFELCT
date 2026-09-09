@@ -41,27 +41,64 @@ class BriefAgent:
             result = self.llm.run(prompt=prompt)
             raw_response = result["replies"][0]
 
-            text = raw_response.strip()
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
-            elif "[" in text and "]" in text:
-                start = text.find("[")
-                end = text.rfind("]") + 1
-                text = text[start:end].strip()
+            clean_text = raw_response.strip()
+            if "```json" in clean_text:
+                clean_text = clean_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in clean_text:
+                clean_text = clean_text.split("```")[1].split("```")[0].strip()
 
-            cards = json.loads(text)
+            cards = None
+
+            # 1. Direct parse attempt
+            try:
+                start = clean_text.find("[")
+                end = clean_text.rfind("]")
+                if start != -1 and end > start:
+                    cards = json.loads(clean_text[start:end+1])
+                else:
+                    cards = json.loads(clean_text)
+            except Exception:
+                pass
+
+            # 2. If direct parse failed, heal truncated JSON array (e.g. unterminated string or missing closing bracket)
+            if not cards:
+                try:
+                    start = clean_text.find("[")
+                    if start != -1:
+                        sub = clean_text[start:]
+                        # Find the last closing brace '}' of a valid card item
+                        last_brace = sub.rfind("}")
+                        if last_brace != -1:
+                            healed = sub[:last_brace+1] + "]"
+                            cards = json.loads(healed)
+                except Exception:
+                    pass
+
+            # 3. If healing failed, regex-extract all individually completed card JSON objects
+            if not cards:
+                import re
+                candidate_cards = []
+                card_pattern = re.compile(r'\{[^{}]*"card_point"[^{}]*\}|\{[^{}]*"title"[^{}]*\}', re.DOTALL)
+                for m in card_pattern.finditer(raw_response):
+                    try:
+                        c = json.loads(m.group(0))
+                        if isinstance(c, dict):
+                            candidate_cards.append(c)
+                    except Exception:
+                        continue
+                if candidate_cards:
+                    cards = candidate_cards
+
             if isinstance(cards, list) and len(cards) > 0:
                 logger.info(f"Generated {len(cards)} cards via LLM.")
                 return cards
-            elif isinstance(cards, dict) and "cards" in cards:
+            elif isinstance(cards, dict) and "cards" in cards and len(cards["cards"]) > 0:
                 return cards["cards"]
             else:
-                raise ValueError("LLM returned empty or invalid card JSON structure.")
+                raise ValueError("LLM returned malformed or unparseable card structure.")
         except Exception as e:
             logger.error(f"LLM Card Generation failed: {e}")
-            raise RuntimeError(f"AI Model Connection Dropped: Unable to generate Brief Cards from Qwen ({e}). Please verify server connectivity and retry.")
+            raise RuntimeError(f"Unable to generate Brief Cards from Qwen: {e}")
 
 
 def format_project_context(

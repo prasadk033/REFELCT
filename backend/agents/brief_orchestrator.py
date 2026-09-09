@@ -439,12 +439,12 @@ Return ONLY JSON list.
             db.rollback()
 
         err_str = str(e)
-        if "timeout" in err_str.lower() or "connection" in err_str.lower() or "ai" in err_str.lower():
-            friendly_err = "AI services are temporarily slow due to high demand. Please try again after some time."
+        if "timeout" in err_str.lower():
+            friendly_err = "AI generation timed out. Please try again."
         else:
             friendly_err = err_str
 
-        _update_job(db, job_id, "failed", "AI Latency Notice", friendly_err)
+        _update_job(db, job_id, "failed", "Error", friendly_err)
 
     finally:
         db.close()

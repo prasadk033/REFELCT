@@ -44,7 +44,7 @@ class LiteLLMGenerator:
         ]
 
         timeout_val = self.kwargs.pop("timeout", 300.0)
-        max_tokens_val = self.kwargs.pop("max_tokens", 2500)
+        max_tokens_val = self.kwargs.pop("max_tokens", 8192)
         temperature_val = self.kwargs.pop("temperature", 0.2)
         start_time = time.time()
 
@@ -74,8 +74,9 @@ class LiteLLMGenerator:
                     usage = dict(response.usage)
 
             meta = {
-                "model": self.model,
-                "usage": usage
+                "model": response.model,
+                "usage": usage,
+                "finish_reason": response.choices[0].finish_reason if response.choices else None,
             }
 
             return {
@@ -89,7 +90,7 @@ class LiteLLMGenerator:
             
             if is_timeout:
                 print(f"LLM generation timeout error: model={self.model}, timeout_duration={timeout_val}s, elapsed={elapsed:.2f}s, error={e}")
-                raise TimeoutError("AI services are temporarily slow due to high demand. Please try again after some time.") from e
+                raise TimeoutError(f"LLM request timed out after {timeout_val:.0f}s. Please retry.") from e
             else:
                 print(f"LLM generation error: model={self.model}, elapsed={elapsed:.2f}s, error={e}")
                 raise RuntimeError(f"LLM Request Failed: {e}") from e
