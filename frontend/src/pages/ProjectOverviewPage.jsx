@@ -45,6 +45,7 @@ export default function ProjectOverviewPage() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [uploadCategory, setUploadCategory] = useState('document') // 'document' or 'image'
   const [selectedFile, setSelectedFile] = useState(null)
+  const [uploadDescription, setUploadDescription] = useState('')
   const [fileTypeError, setFileTypeError] = useState(null)
 
   // Analysis Blocking & Progress
@@ -95,10 +96,11 @@ export default function ProjectOverviewPage() {
     if (!selectedFile) return
     setUploading(true)
     try {
-      await uploadSource(projectId, selectedFile)
+      await uploadSource(projectId, selectedFile, uploadDescription)
       showToast(`Source "${selectedFile.name}" added successfully`)
       setShowUploadModal(false)
       setSelectedFile(null)
+      setUploadDescription('')
       setFileTypeError(null)
       await loadProjectData()
     } catch (err) {
@@ -955,6 +957,28 @@ export default function ProjectOverviewPage() {
                   )}
                 </div>
 
+                <div style={{ marginTop: '14px', textAlign: 'left' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                    Document Description (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Site survey and site dimensions for the Jubilee Hills residence."
+                    value={uploadDescription}
+                    onChange={(e) => setUploadDescription(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '12.5px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      resize: 'vertical',
+                      boxSizing: 'border-box',
+                      color: '#0f172a'
+                    }}
+                  />
+                </div>
+
                 {fileTypeError && (
                   <div style={{ color: '#b91c1c', fontSize: '12px', marginTop: '10px', background: '#fef2f2', border: '1px solid #fecaca', padding: '8px 12px', borderRadius: '6px' }}>
                     ⚠ {fileTypeError}
@@ -967,7 +991,7 @@ export default function ProjectOverviewPage() {
                   type="button"
                   className="bui-btn"
                   style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#475569', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-                  onClick={() => { setShowUploadModal(false); setSelectedFile(null); setFileTypeError(null); }}
+                  onClick={() => { setShowUploadModal(false); setSelectedFile(null); setUploadDescription(''); setFileTypeError(null); }}
                   disabled={uploading}
                 >
                   Cancel

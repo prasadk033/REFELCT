@@ -82,9 +82,12 @@ export async function deleteProject(projectId) {
 
 // ── Sources ─────────────────────────────────────────────────────────────────
 
-export async function uploadSource(projectId, file) {
+export async function uploadSource(projectId, file, description = "") {
   const formData = new FormData();
   formData.append("file", file);
+  if (description && description.trim()) {
+    formData.append("description", description.trim());
+  }
   return apiFetch(`/api/projects/${projectId}/sources`, {
     method: "POST",
     body: formData,
@@ -214,6 +217,14 @@ export async function acceptCard(cardId) {
 
 export async function rejectCard(cardId) {
   return apiFetch(`/api/cards/${cardId}/reject`, { method: "POST" });
+}
+
+export async function resolveCardReview(cardId, decision) {
+  return apiFetch(`/api/cards/${cardId}/resolve-review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision }),
+  });
 }
 
 // ── Activities ──────────────────────────────────────────────────────────────

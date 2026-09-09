@@ -3,22 +3,56 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   listProjects, getProject,
   listCards, createCard, updateCard, deleteCard,
-  acceptCard, rejectCard, listSources, uploadSource
+  acceptCard, rejectCard, listSources, uploadSource,
+  resolveCardReview
 } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 
-const CARD_TYPES = [
-  'Fact',
-  'Requirement',
-  'Question',
-  'Conflict',
-  'Other',
-  'Action',
-  'Clarification'
+export const TAXONOMY_CATEGORIES = [
+  { key: 'PROJECT_PARAMETER', label: 'Project Parameter' },
+  { key: 'CLIENT_INFO', label: 'Client Info' },
+  { key: 'FACT', label: 'Fact' },
+  { key: 'REQUIREMENT', label: 'Requirement' },
+  { key: 'QUESTION', label: 'Question' },
+  { key: 'CONFLICT', label: 'Conflict' },
+  { key: 'ACTION', label: 'Action' },
+  { key: 'CLARIFICATION', label: 'Clarification' },
+  { key: 'INSIGHT', label: 'Insight' },
+  { key: 'OTHER', label: 'Other' }
 ]
+
+const CARD_TYPES = TAXONOMY_CATEGORIES.map(c => c.label)
 
 function getCardIcon(type = '') {
   const t = (type || '').toLowerCase()
+  if (t.includes('parameter')) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+        <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+        <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+        <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+        <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
+      </svg>
+    )
+  }
+  if (t.includes('client')) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    )
+  }
+  if (t.includes('insight')) {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+        <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+        <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+        <circle cx="12" cy="12" r="5" />
+      </svg>
+    )
+  }
   if (t.includes('fact') || t.includes('info')) {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
@@ -80,16 +114,19 @@ function getCardIcon(type = '') {
 }
 
 function normalizeDisplayType(type = '') {
-  const t = (type || '').toUpperCase().trim()
+  const t = (type || '').toUpperCase().trim().replace(/[\s-]+/g, '_')
+  if (t === 'PROJECT_PARAMETER' || t === 'PARAMETER') return 'Project Parameter'
+  if (t === 'CLIENT_INFO' || t === 'CLIENT' || t === 'CLIENT_INFORMATION') return 'Client Info'
   if (t === 'FACT' || t === 'INFORMATION') return 'Fact'
   if (t === 'REQUIREMENT') return 'Requirement'
   if (t === 'QUESTION') return 'Question'
   if (t === 'CONFLICT' || t === 'TENSION') return 'Conflict'
-  if (t === 'OTHER') return 'Other'
   if (t === 'ACTION') return 'Action'
   if (t === 'CLARIFICATION') return 'Clarification'
+  if (t === 'INSIGHT') return 'Insight'
+  if (t === 'OTHER') return 'Other'
   if (t === 'GOAL') return 'Goal'
-  if (t === 'DESIGN PREFERENCE' || t === 'PREFERENCE') return 'Design Preference'
+  if (t === 'DESIGN_PREFERENCE' || t === 'PREFERENCE') return 'Design Preference'
   if (t === 'CONSTRAINT') return 'Constraint'
   return type || 'Other'
 }
@@ -127,6 +164,34 @@ function cleanCardContent(content = '') {
   return c
 }
 
+function getCardStatusStyle(card, isSelected) {
+  if (card?.review_status === 'under_review') {
+    return {
+      border: '2px solid #ef4444',
+      boxShadow: isSelected ? '0 0 0 2px #ef4444' : '0 1px 4px rgba(239, 68, 68, 0.15)',
+      backgroundColor: '#fffcfc'
+    }
+  }
+  if (card?.review_status === 'resolved') {
+    return {
+      border: '2px solid #3b82f6',
+      boxShadow: isSelected ? '0 0 0 2px #3b82f6' : '0 1px 4px rgba(59, 130, 246, 0.15)',
+      backgroundColor: '#fafcff'
+    }
+  }
+  if (card?.status === 'accepted' || card?.is_unified) {
+    return {
+      border: '2px solid #22c55e',
+      boxShadow: isSelected ? '0 0 0 2px #22c55e' : '0 1px 4px rgba(34, 197, 94, 0.15)',
+      backgroundColor: '#fcfffc'
+    }
+  }
+  return {
+    borderColor: isSelected ? '#000000' : undefined,
+    boxShadow: isSelected ? '0 0 0 2px #000000' : undefined
+  }
+}
+
 export default function BriefPage() {
   const { projectId: routeProjectId } = useParams()
   const navigate = useNavigate()
@@ -149,6 +214,11 @@ export default function BriefPage() {
   const [statusFilter, setStatusFilter] = useState('All Status')
   const [typeFilter, setTypeFilter] = useState('All Types')
   const [viewMode, setViewMode] = useState('grid') // 'grid' or 'list'
+
+  // Unified Cards State
+  const [selectedUnifiedCat, setSelectedUnifiedCat] = useState('ALL')
+  const [reviewModalData, setReviewModalData] = useState(null) // { existing, incoming }
+  const [resolvingReview, setResolvingReview] = useState(false)
 
   // Card Inspector
   const [selectedCard, setSelectedCard] = useState(null)
@@ -227,16 +297,77 @@ export default function BriefPage() {
     }
   }
 
+  function openReviewModal(card) {
+    let existing = null
+    let incoming = null
+    if (card.review_card_id) {
+      const pair = cards.find(c => c.id === card.review_card_id)
+      if (pair) {
+        if (card.is_unified) {
+          existing = card
+          incoming = pair
+        } else if (pair.is_unified) {
+          existing = pair
+          incoming = card
+        } else {
+          const vCard = Number(card.version ?? 0)
+          const vPair = Number(pair.version ?? 0)
+          if (vCard <= vPair) {
+            existing = card
+            incoming = pair
+          } else {
+            existing = pair
+            incoming = card
+          }
+        }
+      }
+    }
+    if (!existing) existing = card
+    if (!incoming) incoming = card
+    setReviewModalData({ existing, incoming })
+  }
+
+  async function handleResolveReview(cardId, decision) {
+    setResolvingReview(true)
+    try {
+      await resolveCardReview(cardId, decision)
+      const decisionLabel =
+        decision === 'keep_existing'
+          ? 'Kept existing version'
+          : decision === 'accept_new'
+          ? 'Accepted new version'
+          : 'Created duplicate (kept both versions)'
+      showToast(`Review resolved: ${decisionLabel}`)
+      setReviewModalData(null)
+      const updated = await listCards(activeProjectId)
+      setCards(updated || [])
+    } catch (err) {
+      setError(err.message || 'Failed to resolve review')
+    } finally {
+      setResolvingReview(false)
+    }
+  }
+
   async function handleStatusChange(cardId, newStatus) {
     try {
       if (newStatus === 'accepted') {
-        await acceptCard(cardId)
+        const res = await acceptCard(cardId)
+        const updated = await listCards(activeProjectId)
+        setCards(updated || [])
+        setActiveMenuCardId(null)
+        if (res?.review_status === 'under_review') {
+          showToast('Card accepted with potential conflict — placed under Review.')
+        } else {
+          showToast('Card accepted into Unified Cards!')
+        }
+        return
       } else if (newStatus === 'rejected') {
         await rejectCard(cardId)
       } else {
         await updateCard(cardId, { status: newStatus })
       }
-      setCards(cards.map(c => c.id === cardId ? { ...c, status: newStatus } : c))
+      const updated = await listCards(activeProjectId)
+      setCards(updated || [])
       setActiveMenuCardId(null)
       showToast(`Card marked as ${newStatus}`)
     } catch (err) {
@@ -247,7 +378,8 @@ export default function BriefPage() {
   async function handleDeleteCard(cardId) {
     try {
       await deleteCard(cardId)
-      setCards(cards.filter(c => c.id !== cardId))
+      const updated = await listCards(activeProjectId)
+      setCards(updated || [])
       setActiveMenuCardId(null)
       showToast('Card deleted')
     } catch (err) {
@@ -405,6 +537,13 @@ export default function BriefPage() {
   const questionCardsCount = cards.filter(c => (c.card_type || '').toUpperCase() === 'QUESTION').length
   const conflictCardsCount = cards.filter(c => (c.card_type || '').toUpperCase() === 'CONFLICT' || (c.card_type || '').toUpperCase() === 'TENSION').length
 
+  // Unified Cards Synthesis
+  const unifiedCards = useMemo(() => cards.filter(c => c.is_unified), [cards])
+  const displayedUnifiedCards = useMemo(() => {
+    if (selectedUnifiedCat === 'ALL') return unifiedCards
+    return unifiedCards.filter(c => normalizeDisplayType(c.card_type) === selectedUnifiedCat)
+  }, [unifiedCards, selectedUnifiedCat])
+
   // Available Versions (0, 1, 2...)
   const availableVersions = useMemo(() => {
     const set = new Set(cards.map(c => c.version !== null && c.version !== undefined ? Number(c.version) : 0))
@@ -413,11 +552,14 @@ export default function BriefPage() {
 
   // Types breakdown
   const typeCounts = useMemo(() => {
-    const counts = { 'Fact': 0, 'Requirement': 0, 'Question': 0, 'Conflict': 0, 'Other': 0, 'Action': 0, 'Clarification': 0 }
+    const counts = {}
+    TAXONOMY_CATEGORIES.forEach(cat => {
+      counts[cat.label] = 0
+    })
     cards.forEach(c => {
       const t = normalizeDisplayType(c.card_type)
       if (counts[t] !== undefined) counts[t]++
-      else counts['Other']++
+      else counts['Other'] = (counts['Other'] || 0) + 1
     })
     return counts
   }, [cards])
@@ -496,6 +638,249 @@ export default function BriefPage() {
 
           {/* Left Area: Toolbar, Cards Grid, Pagination */}
           <div className="bpage-cards-area" style={{ minWidth: 0 }}>
+
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {/* UNIFIED CARDS LAYER (AUTHORITATIVE SYNTHESIS)                      */}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            <section
+              className="unified-cards-section"
+              style={{
+                marginBottom: '26px',
+                background: '#ffffff',
+                border: '1.5px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '20px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.01em' }}>
+                      UNIFIED CARDS
+                    </h2>
+                    <span style={{
+                      background: '#052e16',
+                      color: '#4ade80',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      border: '1px solid #166534'
+                    }}>
+                      Authoritative Project Knowledge
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '12.5px', color: '#64748b', margin: '4px 0 0 0' }}>
+                    Single source of truth reconciled across all uploaded documents and project versions.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    className={`bui-btn ${selectedUnifiedCat === 'ALL' ? 'bui-btn-primary' : 'bui-btn-outline'}`}
+                    style={{ fontSize: '12px', padding: '5px 12px' }}
+                    onClick={() => setSelectedUnifiedCat('ALL')}
+                  >
+                    All Categories ({unifiedCards.length})
+                  </button>
+                </div>
+              </div>
+
+              {/* 10 Taxonomy Category Container Headings */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                gap: '10px',
+                marginBottom: '20px'
+              }}>
+                {TAXONOMY_CATEGORIES.map(cat => {
+                  const catCards = unifiedCards.filter(c => normalizeDisplayType(c.card_type) === cat.label)
+                  const catReview = cards.filter(c => normalizeDisplayType(c.card_type) === cat.label && c.review_status === 'under_review')
+                  const isSelected = selectedUnifiedCat === cat.label
+
+                  return (
+                    <div
+                      key={cat.key}
+                      onClick={() => setSelectedUnifiedCat(isSelected ? 'ALL' : cat.label)}
+                      style={{
+                        border: isSelected
+                          ? '2px solid #0f172a'
+                          : catReview.length > 0
+                          ? '1.5px solid #fca5a5'
+                          : '1px solid #e2e8f0',
+                        background: isSelected
+                          ? '#f8fafc'
+                          : catReview.length > 0
+                          ? '#fffcfc'
+                          : '#ffffff',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                        <span style={{ color: '#0f172a' }}>{getCardIcon(cat.key)}</span>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {cat.label}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
+                        <span>{catCards.length} Cards</span>
+                        <span> • </span>
+                        <span style={{ color: catReview.length > 0 ? '#ef4444' : '#64748b', fontWeight: catReview.length > 0 ? 700 : 500 }}>
+                          {catReview.length} Review
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Unified Cards Grid */}
+              {displayedUnifiedCards.length === 0 ? (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '24px 16px',
+                  background: '#f8fafc',
+                  borderRadius: '8px',
+                  border: '1px dashed #cbd5e1',
+                  color: '#64748b',
+                  fontSize: '13px'
+                }}>
+                  {unifiedCards.length === 0 ? (
+                    <p style={{ margin: 0 }}>No cards have been accepted into Unified Cards yet. Review and accept Documented Cards below to synthesize them.</p>
+                  ) : (
+                    <p style={{ margin: 0 }}>No Unified Cards in <strong>{selectedUnifiedCat}</strong>. <span style={{ color: '#0284c7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setSelectedUnifiedCat('ALL')}>View all categories</span></p>
+                  )}
+                </div>
+              ) : (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                  gap: '14px'
+                }}>
+                  {displayedUnifiedCards.map((card, idx) => {
+                    const isSelectedCard = selectedCard?.id === card.id
+                    const isUnderReview = card.review_status === 'under_review'
+                    const isResolved = card.review_status === 'resolved'
+                    const borderStyle = getCardStatusStyle(card, isSelectedCard)
+                    const cleanDoc = getCleanDocName(card.source_document)
+
+                    return (
+                      <div
+                        key={card.id || idx}
+                        className={`bcard-item ${isSelectedCard ? 'active' : ''}`}
+                        onClick={() => setSelectedCard(card)}
+                        style={{
+                          cursor: 'pointer',
+                          ...borderStyle,
+                          position: 'relative'
+                        }}
+                      >
+                        <div className="bcard-header">
+                          <div className="bcard-header-left">
+                            <div className="bcard-type-icon">
+                              {getCardIcon(card.card_type || card.title)}
+                            </div>
+                            <div className="bcard-titles">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <h3 className="bcard-title">{card.title || card.content?.slice(0, 28)}</h3>
+                                <span className="bui-badge-version">V{card.version !== null && card.version !== undefined ? card.version : 0}</span>
+                              </div>
+                              <span className="bcard-type-sub">{normalizeDisplayType(card.card_type)}</span>
+                            </div>
+                          </div>
+                          <div>
+                            {isUnderReview ? (
+                              <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
+                                ⚠️ Under Review
+                              </span>
+                            ) : isResolved ? (
+                              <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
+                                ✓ Resolved
+                              </span>
+                            ) : (
+                              <span style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
+                                ✓ Active
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bcard-body">
+                          <p
+                            className="bcard-content-text"
+                            style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 3,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              lineHeight: 1.45,
+                              margin: 0
+                            }}
+                          >
+                            {cleanCardContent(card.content)}
+                          </p>
+                        </div>
+
+                        <div className="bcard-source-row" style={{ marginTop: '10px' }}>
+                          <div className="bcard-source-left">
+                            <span className="bcard-meta-lbl">Source</span>
+                            <span className="bcard-source-doc" title={cleanDoc}>{cleanDoc}</span>
+                          </div>
+                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Inspect →</span>
+                        </div>
+
+                        <div className="bcard-footer" style={{ marginTop: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            {isUnderReview && (
+                              <button
+                                className="bui-btn"
+                                style={{ background: '#ef4444', color: '#ffffff', fontSize: '11px', padding: '3px 8px', border: 'none', borderRadius: '4px', fontWeight: 600 }}
+                                onClick={(e) => { e.stopPropagation(); openReviewModal(card); }}
+                              >
+                                Resolve Review
+                              </button>
+                            )}
+                            <button
+                              className="bui-btn bui-btn-outline"
+                              style={{ fontSize: '11px', padding: '3px 8px' }}
+                              onClick={(e) => { e.stopPropagation(); setEditingCard(card); }}
+                            >
+                              ✎ Edit
+                            </button>
+                            <button
+                              className="bui-btn bui-btn-outline"
+                              style={{ fontSize: '11px', padding: '3px 8px', color: '#ef4444' }}
+                              onClick={(e) => { e.stopPropagation(); handleDeleteCard(card.id); }}
+                            >
+                              🗑
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {/* DOCUMENTED CARDS LAYER HEADER                                       */}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            <div style={{ marginBottom: '14px', marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f1f5f9', paddingTop: '20px' }}>
+              <div>
+                <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                  DOCUMENTED CARDS
+                </h2>
+                <p style={{ fontSize: '12px', color: '#64748b', margin: '2px 0 0 0' }}>
+                  Extracted items and notes per source document. Accept cards to synthesize them into Unified Cards.
+                </p>
+              </div>
+            </div>
 
             {/* Filter Toolbar */}
             <div className="bpage-toolbar" style={{ flexWrap: 'wrap', gap: '10px' }}>
@@ -639,8 +1024,7 @@ export default function BriefPage() {
                       onClick={() => setSelectedCard(card)}
                       style={{
                         cursor: 'pointer',
-                        borderColor: isSelectedCard ? '#000000' : undefined,
-                        boxShadow: isSelectedCard ? '0 0 0 2px #000000' : undefined,
+                        ...getCardStatusStyle(card, isSelectedCard),
                         transition: 'all 0.15s'
                       }}
                     >
@@ -663,9 +1047,21 @@ export default function BriefPage() {
                           </div>
                         </div>
 
-                        <span className={`bcard-status-pill ${statusClass}`}>
-                          {displayStatus}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {card.review_status === 'under_review' && (
+                            <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
+                              ⚠️ Under Review
+                            </span>
+                          )}
+                          {card.review_status === 'resolved' && (
+                            <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
+                              ✓ Resolved
+                            </span>
+                          )}
+                          <span className={`bcard-status-pill ${statusClass}`}>
+                            {displayStatus}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Card Content Statement (Concise 3-line Preview) */}
@@ -703,6 +1099,15 @@ export default function BriefPage() {
                       {/* Card Footer Actions */}
                       <div className="bcard-footer">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          {card.review_status === 'under_review' && (
+                            <button
+                              className="bui-btn"
+                              style={{ background: '#ef4444', color: '#ffffff', fontSize: '11px', padding: '3px 8px', border: 'none', borderRadius: '4px', fontWeight: 600 }}
+                              onClick={(e) => { e.stopPropagation(); openReviewModal(card); }}
+                            >
+                              Resolve Review
+                            </button>
+                          )}
                           {displayStatus === 'Accepted' ? (
                             <>
                               <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#052e16', padding: '3px 8px', borderRadius: '6px', border: '1px solid #166534' }}>
@@ -1170,6 +1575,206 @@ export default function BriefPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════ */}
+        {/* SIDE-BY-SIDE REVIEW MODAL                                          */}
+        {/* ═══════════════════════════════════════════════════════════════════ */}
+        {reviewModalData && (
+          <div className="bui-modal-overlay" onClick={() => !resolvingReview && setReviewModalData(null)}>
+            <div
+              className="bui-modal"
+              style={{ maxWidth: '960px', width: '94vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="bui-modal-header" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '14px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                      ⚠️ CONFLICT RESOLUTION
+                    </span>
+                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                      Unified Card Reconciliation • Side-by-Side Review
+                    </h2>
+                  </div>
+                  <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
+                    A difference was detected between the existing Unified Card and the incoming version. Select how this item should be reconciled into the authoritative Unified Cards layer.
+                  </p>
+                </div>
+                <button
+                  className="bui-close-btn"
+                  onClick={() => !resolvingReview && setReviewModalData(null)}
+                  disabled={resolvingReview}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Side-by-side comparison columns */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gap: '16px',
+                padding: '18px 0',
+                overflowY: 'auto'
+              }}>
+                {/* Column 1: Existing Version */}
+                <div style={{
+                  background: '#f8fafc',
+                  border: '2px solid #3b82f6',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                    <div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: '#2563eb' }}>
+                        Version {reviewModalData.existing.version !== null && reviewModalData.existing.version !== undefined ? reviewModalData.existing.version : 0}
+                      </span>
+                      <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', margin: '2px 0 0 0' }}>
+                        {reviewModalData.existing.title || 'Existing Card'}
+                      </h3>
+                    </div>
+                    <span style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px' }}>
+                      Current Unified
+                    </span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '2px' }}>Category</span>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a' }}>
+                      {normalizeDisplayType(reviewModalData.existing.card_type)}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Content Statement</span>
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', fontSize: '13px', lineHeight: 1.5, color: '#0f172a', minHeight: '80px' }}>
+                      {cleanCardContent(reviewModalData.existing.content)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '2px' }}>Source Provenance</span>
+                    <span style={{ fontSize: '12px', color: '#334155', fontWeight: 500 }}>
+                      📄 {getCleanDocName(reviewModalData.existing.source_document)}
+                    </span>
+                  </div>
+
+                  {reviewModalData.existing.evidence && (
+                    <div>
+                      <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '2px' }}>Evidence / Quote</span>
+                      <div style={{ background: '#ffffff', borderLeft: '3px solid #3b82f6', padding: '6px 10px', fontSize: '11.5px', color: '#475569', fontStyle: 'italic', borderRadius: '0 4px 4px 0' }}>
+                        "{reviewModalData.existing.evidence}"
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Column 2: Incoming Version */}
+                <div style={{
+                  background: '#fffdfb',
+                  border: '2px solid #f59e0b',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #fed7aa', paddingBottom: '8px' }}>
+                    <div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: '#d97706' }}>
+                        Version {reviewModalData.incoming.version !== null && reviewModalData.incoming.version !== undefined ? reviewModalData.incoming.version : 0}
+                      </span>
+                      <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', margin: '2px 0 0 0' }}>
+                        {reviewModalData.incoming.title || 'Incoming Card'}
+                      </h3>
+                    </div>
+                    <span style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px' }}>
+                      Incoming Candidate
+                    </span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '2px' }}>Category</span>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a' }}>
+                      {normalizeDisplayType(reviewModalData.incoming.card_type)}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Content Statement</span>
+                    <div style={{ background: '#ffffff', border: '1px solid #fde68a', borderRadius: '6px', padding: '10px', fontSize: '13px', lineHeight: 1.5, color: '#0f172a', minHeight: '80px' }}>
+                      {cleanCardContent(reviewModalData.incoming.content)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '2px' }}>Source Provenance</span>
+                    <span style={{ fontSize: '12px', color: '#334155', fontWeight: 500 }}>
+                      📄 {getCleanDocName(reviewModalData.incoming.source_document)}
+                    </span>
+                  </div>
+
+                  {reviewModalData.incoming.evidence && (
+                    <div>
+                      <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '2px' }}>Evidence / Quote</span>
+                      <div style={{ background: '#ffffff', borderLeft: '3px solid #f59e0b', padding: '6px 10px', fontSize: '11.5px', color: '#475569', fontStyle: 'italic', borderRadius: '0 4px 4px 0' }}>
+                        "{reviewModalData.incoming.evidence}"
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Architect Authoritative Decisions */}
+              <div style={{
+                borderTop: '1px solid #e2e8f0',
+                paddingTop: '16px',
+                marginTop: '6px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Choose authoritative reconciliation action:
+                </span>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="bui-btn"
+                    style={{ background: '#f8fafc', color: '#0f172a', border: '1.5px solid #cbd5e1', fontSize: '12.5px', fontWeight: 600, padding: '8px 14px' }}
+                    onClick={() => handleResolveReview(reviewModalData.incoming.id, 'keep_existing')}
+                    disabled={resolvingReview}
+                  >
+                    {resolvingReview ? 'Processing...' : `Keep Existing (V${reviewModalData.existing.version ?? 0})`}
+                  </button>
+                  <button
+                    type="button"
+                    className="bui-btn"
+                    style={{ background: '#16a34a', color: '#ffffff', border: 'none', fontSize: '12.5px', fontWeight: 600, padding: '8px 14px' }}
+                    onClick={() => handleResolveReview(reviewModalData.incoming.id, 'accept_new')}
+                    disabled={resolvingReview}
+                  >
+                    {resolvingReview ? 'Processing...' : `Accept New (V${reviewModalData.incoming.version ?? 0})`}
+                  </button>
+                  <button
+                    type="button"
+                    className="bui-btn"
+                    style={{ background: '#0f172a', color: '#ffffff', border: 'none', fontSize: '12.5px', fontWeight: 600, padding: '8px 14px' }}
+                    onClick={() => handleResolveReview(reviewModalData.incoming.id, 'duplicate')}
+                    disabled={resolvingReview}
+                  >
+                    {resolvingReview ? 'Processing...' : 'Create Duplicate (Keep Both)'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

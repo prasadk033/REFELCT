@@ -7,9 +7,10 @@ and architect source approvals for V1 / V2 workflows.
 import uuid
 import logging
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+from typing import Optional
 
 from db import get_db, Project, Source, Brief, BriefSource, Card, User, log_activity
 from auth.dependencies import get_current_user
@@ -49,6 +50,7 @@ def _extract_source_text(source: Source) -> str:
 async def upload_source(
     project_id: str,
     file: UploadFile = File(...),
+    description: Optional[str] = Form(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -97,6 +99,7 @@ async def upload_source(
         file_name=file.filename,
         file_type=file_type,
         file_size=file_size,
+        description=description.strip() if description and description.strip() else None,
         storage_path=storage_path,
         processing_status="uploaded",
         approval_status="pending_review",

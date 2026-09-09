@@ -170,6 +170,60 @@ def delete_card(
     return {"detail": "Card deleted"}
 
 
+import re
+import difflib
+
+from schemas.models import CardCreate, CardUpdate, CardResponse, ReviewResolutionRequest
+
+
+def _clean_tokens(text: str) -> set:
+    if not text:
+        return set()
+    cleaned = re.sub(r'[^a-zA-Z0-9\s]', ' ', text.lower())
+    stop_words = {'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'is', 'are', 'was', 'by', 'with', 'from'}
+    return {w for w in cleaned.split() if w and w not in stop_words and len(w) > 1}
+
+
+def _concept_match(card_a: Card, card_b: Card) -> tuple:
+    """
+    Evaluates whether two cards represent the same architectural concept.
+    Returns:
+        (is_same_concept: bool, is_identical_content: bool)
+    """
+    if card_a.card_type != card_b.card_type:
+        return False, False
+
+    title_a = (card_a.title or "").strip().lower()
+    title_b = (card_b.title or "").strip().lower()
+
+    # Title similarity
+    ratio = difflib.SequenceMatcher(None, title_a, title_b).ratio()
+    tokens_a = _clean_tokens(title_a)
+    tokens_b = _clean_tokens(title_b)
+    
+    token_overlap = len(tokens_a & tokens_b) / max(1, len(tokens_a | tokens_b)) if (tokens_a or tokens_b) else 0
+
+    # Content similarity
+    content_a = (card_a.content or "").strip().lower()
+    content_b = (card_b.content or "").strip().lower()
+    content_ratio = difflib.SequenceMatcher(None, content_a, content_b).ratio()
+
+    # Same concept criteria:
+    # 1. High title similarity or strong token overlap
+    # 2. Or identical titles
+    # 3. Or parameter/metric keyword subset match
+    is_concept = False
+    if ratio >= 0.72 or token_overlap >= 0.60:
+        is_concept = True
+    elif title_a == title_b and title_a != "":
+        is_concept = True
+    elif tokens_a and tokens_b and (tokens_a.issubset(tokens_b) or tokens_b.issubset(tokens_a)):
+        is_concept = True
+
+    is_identical = (content_ratio >= 0.88 or content_a == content_b) if is_concept else False
+    return is_concept, is_identical
+
+
 @router.post("/api/cards/{card_id}/accept", response_model=CardResponse)
 def accept_card(
     card_id: str,
@@ -177,12 +231,65 @@ def accept_card(
     db: Session = Depends(get_db),
 ):
     card = _get_user_card(db, card_id, user.id)
+
+    # Idempotency check for concurrent requests
+    if card.status == "accepted" and (card.is_unified or card.review_status):
+        return CardResponse.model_validate(card)
+
     card.status = "accepted"
     card.updated_at = datetime.now(timezone.utc)
+
+    # Check against currently active Unified Cards in the project for this category
+    active_unified_cards = (
+        db.query(Card)
+        .filter(
+            Card.project_id == card.project_id,
+            Card.card_type == card.card_type,
+            Card.is_unified == True,
+            Card.status == "accepted",
+            Card.id != card.id
+        )
+        .all()
+    )
+
+    conflicting_existing = None
+    identical_existing = None
+
+    for existing in active_unified_cards:
+        is_same_concept, is_identical = _concept_match(existing, card)
+        if is_same_concept:
+            if is_identical:
+                identical_existing = existing
+                break
+            else:
+                conflicting_existing = existing
+                break
+
+    if identical_existing:
+        # Same information, identical value: do not create redundant unified card
+        card.is_unified = False
+        card.origin_card_id = identical_existing.id
+        card.review_status = "resolved"
+        card.review_decision = "identical_match"
+        logger.info(f"Card {card_id} is identical to Unified Card {identical_existing.id}. Accepted without duplicate.")
+    elif conflicting_existing:
+        # Same concept, different value -> Enter REVIEW state!
+        conflicting_existing.review_status = "under_review"
+        conflicting_existing.review_card_id = card.id
+        conflicting_existing.updated_at = datetime.now(timezone.utc)
+
+        card.is_unified = False  # Not active in Unified Cards until architect decides
+        card.review_status = "under_review"
+        card.review_card_id = conflicting_existing.id
+        logger.info(f"Card {card_id} conflicts with Unified Card {conflicting_existing.id}. Entering REVIEW state.")
+    else:
+        # Genuinely distinct -> promoted to active Unified Cards!
+        card.is_unified = True
+        card.review_status = None
+        logger.info(f"Card {card_id} promoted to active Unified Cards.")
+
     db.commit()
     db.refresh(card)
-
-    logger.info(f"Accepted card {card_id}")
 
     from db import log_activity
     log_activity(
@@ -197,6 +304,95 @@ def accept_card(
     return CardResponse.model_validate(card)
 
 
+@router.post("/api/cards/{card_id}/resolve-review", response_model=CardResponse)
+def resolve_review(
+    card_id: str,
+    body: ReviewResolutionRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Resolve a conflicting card review decision:
+    - keep_existing: Keep existing Unified Card. Candidate is not promoted.
+    - accept_new: Candidate becomes active Unified Card. Previous is preserved in history.
+    - duplicate: Both become separate active Unified Cards.
+    """
+    card = _get_user_card(db, card_id, user.id)
+    competing_card_id = card.review_card_id
+    competing_card = _get_user_card(db, competing_card_id, user.id) if competing_card_id else None
+
+    # Determine which card is existing (older) and which is incoming (newer)
+    if competing_card:
+        v_card = card.version if card.version is not None else 0
+        v_comp = competing_card.version if competing_card.version is not None else 0
+        if v_card >= v_comp:
+            cand_card = card
+            exist_card = competing_card
+        else:
+            cand_card = competing_card
+            exist_card = card
+    else:
+        cand_card = card
+        exist_card = card
+
+    decision = body.decision.lower().strip()
+    now_time = datetime.now(timezone.utc)
+
+    if decision == "keep_existing":
+        exist_card.is_unified = True
+        exist_card.review_status = "resolved"
+        exist_card.review_decision = "keep_existing"
+        exist_card.updated_at = now_time
+
+        cand_card.is_unified = False
+        cand_card.review_status = "resolved"
+        cand_card.review_decision = "rejected_for_unified"
+        cand_card.updated_at = now_time
+
+    elif decision == "accept_new":
+        cand_card.is_unified = True
+        cand_card.review_status = "resolved"
+        cand_card.review_decision = "accept_new"
+        cand_card.updated_at = now_time
+
+        exist_card.is_unified = False
+        exist_card.review_status = "resolved"
+        exist_card.review_decision = "superseded"
+        exist_card.replaced_by_card_id = cand_card.id
+        exist_card.updated_at = now_time
+
+    elif decision == "duplicate":
+        cand_card.is_unified = True
+        cand_card.review_status = "resolved"
+        cand_card.review_decision = "duplicate"
+        cand_card.updated_at = now_time
+
+        exist_card.is_unified = True
+        exist_card.review_status = "resolved"
+        exist_card.review_decision = "duplicate"
+        exist_card.updated_at = now_time
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid review decision '{body.decision}'. Allowed: keep_existing, accept_new, duplicate."
+        )
+
+    db.commit()
+    db.refresh(card)
+
+    from db import log_activity
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="review_resolved",
+        title="Card Review Resolved",
+        description=f"Resolved review for '{card.title}' ({decision})",
+        project_id=card.project_id,
+    )
+
+    return CardResponse.model_validate(card)
+
+
 @router.post("/api/cards/{card_id}/reject", response_model=CardResponse)
 def reject_card(
     card_id: str,
@@ -205,6 +401,7 @@ def reject_card(
 ):
     card = _get_user_card(db, card_id, user.id)
     card.status = "rejected"
+    card.is_unified = False
     card.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(card)

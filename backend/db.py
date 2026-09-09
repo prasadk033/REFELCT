@@ -100,6 +100,7 @@ class Source(Base):
     file_name = Column(String, nullable=False)
     file_type = Column(String, nullable=False)  # pdf, docx, txt, jpg, png, etc.
     file_size = Column(Integer, nullable=True)
+    description = Column(Text, nullable=True)  # Short explanation of what document/image represents
     storage_path = Column(String, nullable=False)
     upload_timestamp = Column(DateTime, default=utc_now)
     processing_status = Column(String, default="uploaded")  # uploaded, parsing, extracted, approved, failed
@@ -153,7 +154,7 @@ class Card(Base):
     brief_id = Column(String, ForeignKey("briefs.id"), nullable=True, index=True)
     source_id = Column(String, nullable=True)  # Reference to source if traceable
     source_document = Column(String, nullable=True)  # Name of source file and page/section
-    card_type = Column(String, nullable=False)  # FACT, REQUIREMENT, QUESTION, CONFLICT, OTHER, ACTION, CLARIFICATION
+    card_type = Column(String, nullable=False)  # FACT, REQUIREMENT, QUESTION, CONFLICT, OTHER, ACTION, CLARIFICATION, etc.
     title = Column(String, nullable=False)
     content = Column(Text, nullable=False)  # Brief information
     evidence = Column(Text, nullable=True)  # Source excerpt / verbatim evidence
@@ -162,6 +163,12 @@ class Card(Base):
     version = Column(Integer, nullable=True, default=None)  # Project version (0 for V0, 1 for V1, etc.)
     created_by = Column(String, nullable=False, default="AI")  # AI or ARCHITECT
     status = Column(String, nullable=False, default="provisional")  # provisional, accepted, rejected, edited
+    is_unified = Column(Boolean, default=False, nullable=False, index=True)  # True if active in Unified Cards layer
+    review_status = Column(String, nullable=True)  # None, under_review, resolved
+    review_card_id = Column(String, nullable=True)  # UUID of competing card
+    review_decision = Column(String, nullable=True)  # keep_existing, accept_new, duplicate
+    replaced_by_card_id = Column(String, nullable=True)  # UUID of card that replaced this one
+    origin_card_id = Column(String, nullable=True)  # Original documented card ID if duplicated
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
@@ -235,6 +242,8 @@ def init_db():
                     conn.execute(text("ALTER TABLE sources ADD COLUMN approval_status VARCHAR DEFAULT 'pending_review';"))
                 if "version" not in source_cols:
                     conn.execute(text("ALTER TABLE sources ADD COLUMN version INTEGER DEFAULT 1;"))
+                if "description" not in source_cols:
+                    conn.execute(text("ALTER TABLE sources ADD COLUMN description TEXT;"))
             
             # Check cards table columns
             if "cards" in inspector.get_table_names():
@@ -247,6 +256,18 @@ def init_db():
                     conn.execute(text("ALTER TABLE cards ADD COLUMN source_id VARCHAR;"))
                 if "ai_suggestion" not in card_cols:
                     conn.execute(text("ALTER TABLE cards ADD COLUMN ai_suggestion TEXT;"))
+                if "is_unified" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN is_unified BOOLEAN DEFAULT FALSE;"))
+                if "review_status" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN review_status VARCHAR;"))
+                if "review_card_id" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN review_card_id VARCHAR;"))
+                if "review_decision" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN review_decision VARCHAR;"))
+                if "replaced_by_card_id" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN replaced_by_card_id VARCHAR;"))
+                if "origin_card_id" not in card_cols:
+                    conn.execute(text("ALTER TABLE cards ADD COLUMN origin_card_id VARCHAR;"))
             
             conn.commit()
         logger.info("Database tables created/verified successfully.")

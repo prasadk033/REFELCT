@@ -70,6 +70,7 @@ class SourceResponse(BaseModel):
     file_name: str
     file_type: str
     file_size: Optional[int] = None
+    description: Optional[str] = None
     upload_timestamp: datetime
     processing_status: str
     approval_status: Optional[str] = "pending_review"
@@ -163,11 +164,21 @@ class CardResponse(BaseModel):
     version: Optional[int] = None
     created_by: str
     status: str
+    is_unified: bool = False
+    review_status: Optional[str] = None
+    review_card_id: Optional[str] = None
+    review_decision: Optional[str] = None
+    replaced_by_card_id: Optional[str] = None
+    origin_card_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ReviewResolutionRequest(BaseModel):
+    decision: str = Field(..., description="keep_existing, accept_new, or duplicate")
 
 
 
