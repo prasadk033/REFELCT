@@ -25,6 +25,7 @@ export default function ProjectOverviewPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const fileInputRef = useRef(null)
+  const modalFileInputRef = useRef(null)
 
   const [project, setProject] = useState(null)
   const [sources, setSources] = useState([])
@@ -47,6 +48,31 @@ export default function ProjectOverviewPage() {
   const [selectedFile, setSelectedFile] = useState(null)
   const [uploadDescription, setUploadDescription] = useState('')
   const [fileTypeError, setFileTypeError] = useState(null)
+
+  function openUploadModal(category = 'document') {
+    setUploadCategory(category)
+    setSelectedFile(null)
+    setUploadDescription('')
+    setFileTypeError(null)
+    setError(null)
+    if (modalFileInputRef.current) modalFileInputRef.current.value = ''
+    setShowUploadModal(true)
+  }
+
+  function closeUploadModal() {
+    setShowUploadModal(false)
+    setSelectedFile(null)
+    setUploadDescription('')
+    setFileTypeError(null)
+    if (modalFileInputRef.current) modalFileInputRef.current.value = ''
+  }
+
+  function switchUploadCategory(cat) {
+    setUploadCategory(cat)
+    setSelectedFile(null)
+    setFileTypeError(null)
+    if (modalFileInputRef.current) modalFileInputRef.current.value = ''
+  }
 
   // Analysis Blocking & Progress
   const [analyzing, setAnalyzing] = useState(false)
@@ -95,16 +121,14 @@ export default function ProjectOverviewPage() {
   async function handleConfirmUpload() {
     if (!selectedFile) return
     setUploading(true)
+    setError(null)
     try {
       await uploadSource(projectId, selectedFile, uploadDescription)
       showToast(`Source "${selectedFile.name}" added successfully`)
-      setShowUploadModal(false)
-      setSelectedFile(null)
-      setUploadDescription('')
-      setFileTypeError(null)
+      closeUploadModal()
       await loadProjectData()
     } catch (err) {
-      setError(err.message)
+      showError(err.message)
     } finally {
       setUploading(false)
     }
@@ -114,6 +138,11 @@ export default function ProjectOverviewPage() {
   function showToast(msg) {
     setToast(msg)
     setTimeout(() => setToast(null), 4000)
+  }
+
+  function showError(msg) {
+    setError(msg)
+    setTimeout(() => setError(null), 6000)
   }
 
   async function loadProjectData() {
@@ -415,7 +444,7 @@ export default function ProjectOverviewPage() {
                 /* 1. No documents yet: Add Source CTA */
                 <button
                   className="pov-btn-analyse"
-                  onClick={() => { setShowUploadModal(true); setSelectedFile(null); setFileTypeError(null); }}
+                  onClick={() => openUploadModal('document')}
                   disabled={uploading}
                 >
                   <span className="pov-sparkle">+</span>
@@ -523,7 +552,7 @@ export default function ProjectOverviewPage() {
             <div className="pov-sources-actions">
               <button
                 className="pov-btn-add-doc"
-                onClick={() => { setShowUploadModal(true); setSelectedFile(null); setFileTypeError(null); }}
+                onClick={() => openUploadModal('document')}
                 disabled={uploading || analyzing}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
@@ -537,7 +566,7 @@ export default function ProjectOverviewPage() {
           {sources.length === 0 ? (
             <div className="pov-empty-sources">
               <p>No documents or images uploaded to this project yet.</p>
-              <button className="pov-btn-add-doc" onClick={() => { setShowUploadModal(true); setSelectedFile(null); setFileTypeError(null); }}>
+              <button className="pov-btn-add-doc" onClick={() => openUploadModal('document')}>
                 + Add Project Source
               </button>
             </div>
@@ -825,7 +854,7 @@ export default function ProjectOverviewPage() {
 
         {/* SOURCE UPLOAD MODAL (DOCUMENT VS IMAGE SELECTION) */}
         {showUploadModal && (
-          <div className="bui-modal-overlay" onClick={() => setShowUploadModal(false)}>
+          <div className="bui-modal-overlay" onClick={closeUploadModal}>
             <div
               className="bui-modal"
               onClick={e => e.stopPropagation()}
@@ -843,7 +872,7 @@ export default function ProjectOverviewPage() {
             >
               <div className="bui-modal-header" style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '12px', marginBottom: '14px' }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: 0 }}>Add Project Source</h2>
-                <button className="bui-close-btn" style={{ color: '#64748b' }} onClick={() => setShowUploadModal(false)}>✕</button>
+                <button className="bui-close-btn" style={{ color: '#64748b' }} onClick={closeUploadModal}>✕</button>
               </div>
 
               <div>
@@ -856,7 +885,7 @@ export default function ProjectOverviewPage() {
                   
                   <button
                     type="button"
-                    onClick={() => { setUploadCategory('document'); setSelectedFile(null); setFileTypeError(null); }}
+                    onClick={() => switchUploadCategory('document')}
                     style={{
                       padding: '12px',
                       borderRadius: '8px',
@@ -882,7 +911,7 @@ export default function ProjectOverviewPage() {
 
                   <button
                     type="button"
-                    onClick={() => { setUploadCategory('image'); setSelectedFile(null); setFileTypeError(null); }}
+                    onClick={() => switchUploadCategory('image')}
                     style={{
                       padding: '12px',
                       borderRadius: '8px',
@@ -909,6 +938,15 @@ export default function ProjectOverviewPage() {
 
                 </div>
 
+                {/* Hidden Modal File Input (Mounted in DOM so browser file streams remain valid) */}
+                <input
+                  type="file"
+                  ref={modalFileInputRef}
+                  style={{ display: 'none' }}
+                  accept={uploadCategory === 'document' ? '.pdf,.docx,.doc,.txt' : '.jpg,.jpeg,.png,.webp'}
+                  onChange={(e) => handleFileSelected(e.target.files?.[0])}
+                />
+
                 {/* Step 2: File Selector / Dropzone */}
                 <div
                   style={{
@@ -920,13 +958,7 @@ export default function ProjectOverviewPage() {
                     cursor: 'pointer',
                     transition: 'all 0.15s'
                   }}
-                  onClick={() => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = uploadCategory === 'document' ? '.pdf,.docx,.doc,.txt' : '.jpg,.jpeg,.png,.webp';
-                    input.onchange = (e) => handleFileSelected(e.target.files?.[0]);
-                    input.click();
-                  }}
+                  onClick={() => modalFileInputRef.current?.click()}
                 >
                   {selectedFile ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
@@ -991,7 +1023,7 @@ export default function ProjectOverviewPage() {
                   type="button"
                   className="bui-btn"
                   style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#475569', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-                  onClick={() => { setShowUploadModal(false); setSelectedFile(null); setUploadDescription(''); setFileTypeError(null); }}
+                  onClick={closeUploadModal}
                   disabled={uploading}
                 >
                   Cancel

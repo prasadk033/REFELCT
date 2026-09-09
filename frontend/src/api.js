@@ -11,7 +11,17 @@ function authHeaders() {
 
 async function apiFetch(url, options = {}) {
   const headers = { ...authHeaders(), ...options.headers };
-  const res = await fetch(`${API_BASE}${url}`, { ...options, headers });
+  if (options.body instanceof FormData) {
+    delete headers["Content-Type"];
+    delete headers["content-type"];
+  }
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${url}`, { ...options, headers });
+  } catch (err) {
+    console.error(`Network fetch failed for ${API_BASE}${url}:`, err);
+    throw new Error(err.message || "Network request failed. Please check your connection.");
+  }
   if (res.status === 401) {
     localStorage.removeItem("reflect_token");
     localStorage.removeItem("reflect_user");
