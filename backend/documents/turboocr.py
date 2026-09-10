@@ -30,6 +30,8 @@ class TurboOCR:
     def __init__(self):
         self.api_url = config.TURBOOCR_API_URL  # e.g. http://10.10.10.2:8005
         self.api_key = config.TURBOOCR_API_KEY  # Optional bearer token
+        self.timeout = getattr(config, "TURBOOCR_TIMEOUT", 60.0)
+        self.connect_timeout = getattr(config, "TURBOOCR_CONNECT_TIMEOUT", 10.0)
         self._available = bool(self.api_url)
 
     @property
@@ -54,14 +56,14 @@ class TurboOCR:
         endpoint = f"{self.api_url}/ocr/raw"
         try:
             headers = {"Content-Type": _mime_for(filename), **self._auth_headers()}
-            with httpx.Client(timeout=httpx.Timeout(4.0, connect=2.0)) as client:
+            with httpx.Client(timeout=httpx.Timeout(self.timeout, connect=self.connect_timeout)) as client:
                 response = client.post(endpoint, content=image_data, headers=headers)
 
             return self._parse_response(response, filename)
 
         except Exception as e:
-            msg = f"TurboOCR /ocr/raw unavailable or timed out for {filename}: {e}"
-            logger.info(msg)
+            msg = f"TurboOCR /ocr/raw unavailable or timed out for {filename} at {endpoint}: {e}"
+            logger.warning(msg)
             return {"success": False, "text": None, "error": msg}
 
     def extract_from_pdf(self, pdf_data: bytes, filename: str = "document.pdf") -> Dict[str, Any]:
@@ -72,16 +74,17 @@ class TurboOCR:
             return self._not_configured()
 
         endpoint = f"{self.api_url}/ocr/pdf"
+        pdf_timeout = max(self.timeout, 120.0)
         try:
             headers = {"Content-Type": "application/pdf", **self._auth_headers()}
-            with httpx.Client(timeout=httpx.Timeout(6.0, connect=2.0)) as client:
+            with httpx.Client(timeout=httpx.Timeout(pdf_timeout, connect=self.connect_timeout)) as client:
                 response = client.post(endpoint, content=pdf_data, headers=headers)
 
             return self._parse_response(response, filename)
 
         except Exception as e:
-            msg = f"TurboOCR /ocr/pdf unavailable or timed out for {filename}: {e}"
-            logger.info(msg)
+            msg = f"TurboOCR /ocr/pdf unavailable or timed out for {filename} at {endpoint}: {e}"
+            logger.warning(msg)
             return {"success": False, "text": None, "error": msg}
 
     def extract_text(self, image_data: bytes, filename: str = "image.png") -> Dict[str, Any]:
