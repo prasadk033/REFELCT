@@ -77,26 +77,33 @@ async def upload_source(
     }
     file_type = file_type_map.get(ext, ext.lstrip("."))
 
+    # Check file size (100MB limit)
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds maximum allowed upload size of 100MB (actual: {file_size / (1024*1024):.1f}MB)."
+        )
+
+    safe_filename = Path(file.filename).name.replace("..", "").replace("/", "").replace("\\", "").strip() or "document"
     source_id = str(uuid.uuid4())
 
     # Save to storage
     storage_path = file_store.save_upload(
         project_id=project_id,
         source_id=source_id,
-        file_name=file.filename,
+        file_name=safe_filename,
         file_data=file.file,
     )
-
-    # Get file size
-    file.file.seek(0, 2)
-    file_size = file.file.tell()
-    file.file.seek(0)
 
     # Create source record — initially unversioned and pending extraction
     source = Source(
         id=source_id,
         project_id=project_id,
-        file_name=file.filename,
+        file_name=safe_filename,
         file_type=file_type,
         file_size=file_size,
         description=description.strip() if description and description.strip() else None,

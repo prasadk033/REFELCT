@@ -230,7 +230,11 @@ def accept_card(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    card = _get_user_card(db, card_id, user.id)
+    # Lock card row to prevent race conditions during concurrent acceptance
+    card = db.query(Card).filter(Card.id == card_id).with_for_update().first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    _verify_project_ownership(db, card.project_id, user.id)
 
     # Idempotency check for concurrent requests
     if card.status == "accepted" and (card.is_unified or card.review_status):
@@ -313,15 +317,31 @@ def resolve_review(
 ):
     """
     Resolve a conflicting card review decision:
-    - keep_existing: Keep existing Unified Card. Candidate is not promoted.
-    - accept_new: Candidate becomes active Unified Card. Previous is preserved in history.
-    - duplicate: Both become separate active Unified Cards.
+    - keep_existing: Keep existing Unified Card. Candidate is preserved in history.
+    - accept_new: Candidate becomes active Unified Card. Previous is preserved in history as superseded.
+    - duplicate: Both become separate active Unified Cards with individual provenance.
     """
-    card = _get_user_card(db, card_id, user.id)
-    competing_card_id = card.review_card_id
-    competing_card = _get_user_card(db, competing_card_id, user.id) if competing_card_id else None
+    first_card = _get_user_card(db, card_id, user.id)
+    competing_card_id = first_card.review_card_id
 
-    # Determine which card is existing (older) and which is incoming (newer)
+    # DETERMINISTIC LOCKING: Always acquire row locks in deterministic ascending ID order
+    # to eliminate deadlocks from concurrent requests.
+    lock_ids = sorted(list(set([cid for cid in [card_id, competing_card_id] if cid])))
+    locked_cards = {}
+    for cid in lock_ids:
+        c_obj = db.query(Card).filter(Card.id == cid).with_for_update().first()
+        if c_obj:
+            locked_cards[cid] = c_obj
+
+    card = locked_cards.get(card_id) or first_card
+    competing_card = locked_cards.get(competing_card_id) if competing_card_id else None
+
+    # Idempotency guard: If review has already been resolved by another request, return cleanly
+    if card.review_status == "resolved" and (competing_card is None or competing_card.review_status == "resolved"):
+        logger.info(f"Review for card {card_id} already resolved, returning current state (idempotent)")
+        return CardResponse.model_validate(card)
+
+    # Determine which card is existing (older version) and which is incoming (newer version)
     if competing_card:
         v_card = card.version if card.version is not None else 0
         v_comp = competing_card.version if competing_card.version is not None else 0

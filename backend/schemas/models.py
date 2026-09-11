@@ -191,6 +191,10 @@ class ProcessingStatusResponse(BaseModel):
     status: str
     current_step: Optional[str] = None
     error: Optional[str] = None
+    cards_generated: Optional[int] = 0
+    questions_count: Optional[int] = 0
+    conflicts_count: Optional[int] = 0
+    document_names: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

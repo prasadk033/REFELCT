@@ -9,16 +9,86 @@ import {
 import ProjectShell from '../components/ProjectShell.jsx'
 
 export const TAXONOMY_CATEGORIES = [
-  { key: 'PROJECT_PARAMETER', label: 'Project Parameter' },
-  { key: 'CLIENT_INFO', label: 'Client Info' },
-  { key: 'FACT', label: 'Fact' },
-  { key: 'REQUIREMENT', label: 'Requirement' },
-  { key: 'QUESTION', label: 'Question' },
-  { key: 'CONFLICT', label: 'Conflict' },
-  { key: 'ACTION', label: 'Action' },
-  { key: 'CLARIFICATION', label: 'Clarification' },
-  { key: 'INSIGHT', label: 'Insight' },
-  { key: 'OTHER', label: 'Other' }
+  {
+    key: 'PROJECT_PARAMETER',
+    label: 'Project Parameter',
+    desc: 'Key project data, measurements and quantitative information.',
+    color: '#0284c7',
+    bg: '#eff6ff',
+    border: '#bfdbfe'
+  },
+  {
+    key: 'CLIENT_INFO',
+    label: 'Client Info',
+    desc: 'Client details, preferences and expectations.',
+    color: '#7c3aed',
+    bg: '#f5f3ff',
+    border: '#ddd6fe'
+  },
+  {
+    key: 'FACT',
+    label: 'Fact',
+    desc: 'Verified information and established facts.',
+    color: '#16a34a',
+    bg: '#f0fdf4',
+    border: '#bbf7d0'
+  },
+  {
+    key: 'REQUIREMENT',
+    label: 'Requirement',
+    desc: 'Stated requirements and mandatory criteria.',
+    color: '#d97706',
+    bg: '#fffbeb',
+    border: '#fde68a'
+  },
+  {
+    key: 'QUESTION',
+    label: 'Question',
+    desc: 'Open questions and items requiring clarification.',
+    color: '#dc2626',
+    bg: '#fef2f2',
+    border: '#fecaca'
+  },
+  {
+    key: 'CONFLICT',
+    label: 'Conflict',
+    desc: 'Conflicting information across sources.',
+    color: '#ea580c',
+    bg: '#fff7ed',
+    border: '#ffedd5'
+  },
+  {
+    key: 'ACTION',
+    label: 'Action',
+    desc: 'Action items and next steps for stakeholders.',
+    color: '#2563eb',
+    bg: '#eff6ff',
+    border: '#bfdbfe'
+  },
+  {
+    key: 'CLARIFICATION',
+    label: 'Clarification',
+    desc: 'Additional context and explanations.',
+    color: '#8b5cf6',
+    bg: '#faf5ff',
+    border: '#e9d5ff'
+  },
+  {
+    key: 'INSIGHT',
+    label: 'Insight',
+    desc: 'Insights, recommendations and observations.',
+    color: '#059669',
+    bg: '#ecfdf5',
+    border: '#a7f3d0'
+  },
+  {
+    key: 'OTHER',
+    label: 'Other',
+    desc: 'Miscellaneous information and uncategorized items.',
+    color: '#64748b',
+    bg: '#f8fafc',
+    border: '#e2e8f0'
+  }
 ]
 
 const CARD_TYPES = TAXONOMY_CATEGORIES.map(c => c.label)
@@ -215,26 +285,12 @@ export default function BriefPage() {
   const [typeFilter, setTypeFilter] = useState('All Types')
   const [viewMode, setViewMode] = useState('grid') // 'grid' or 'list'
 
-  // Unified Cards State
-  const [selectedUnifiedCat, setSelectedUnifiedCat] = useState('ALL')
-  const [expandedCategories, setExpandedCategories] = useState({})
+  // Unified Cards State: null = Dashboard Grid, non-null = Category Drill-Down View
+  const [selectedCategoryView, setSelectedCategoryView] = useState(null)
+  const [unifiedSearchQuery, setUnifiedSearchQuery] = useState('')
+  const [categoryStatusFilter, setCategoryStatusFilter] = useState('ALL') // ALL, ACTIVE, UNDER_REVIEW, RESOLVED
   const [reviewModalData, setReviewModalData] = useState(null) // { existing, incoming }
   const [resolvingReview, setResolvingReview] = useState(false)
-
-  function toggleCategory(catLabel) {
-    setExpandedCategories(prev => ({
-      ...prev,
-      [catLabel]: !prev[catLabel]
-    }))
-  }
-
-  function toggleAllCategories(expand = true) {
-    const next = {}
-    TAXONOMY_CATEGORIES.forEach(c => {
-      next[c.label] = expand
-    })
-    setExpandedCategories(next)
-  }
 
   // Card Inspector
   const [selectedCard, setSelectedCard] = useState(null)
@@ -555,10 +611,32 @@ export default function BriefPage() {
 
   // Unified Cards Synthesis
   const unifiedCards = useMemo(() => cards.filter(c => c.is_unified), [cards])
-  const displayedUnifiedCards = useMemo(() => {
-    if (selectedUnifiedCat === 'ALL') return unifiedCards
-    return unifiedCards.filter(c => normalizeDisplayType(c.card_type) === selectedUnifiedCat)
-  }, [unifiedCards, selectedUnifiedCat])
+
+  const selectedCatObj = useMemo(() => {
+    if (!selectedCategoryView) return null
+    return TAXONOMY_CATEGORIES.find(c => c.label === selectedCategoryView) || null
+  }, [selectedCategoryView])
+
+  const categoryCards = useMemo(() => {
+    if (!selectedCategoryView) return []
+    let list = unifiedCards.filter(c => normalizeDisplayType(c.card_type) === selectedCategoryView)
+    if (unifiedSearchQuery.trim()) {
+      const q = unifiedSearchQuery.toLowerCase()
+      list = list.filter(c => 
+        (c.title || '').toLowerCase().includes(q) ||
+        (c.content || '').toLowerCase().includes(q) ||
+        (c.evidence || '').toLowerCase().includes(q)
+      )
+    }
+    if (categoryStatusFilter === 'ACTIVE') {
+      list = list.filter(c => c.review_status !== 'under_review' && c.status === 'accepted')
+    } else if (categoryStatusFilter === 'UNDER_REVIEW') {
+      list = list.filter(c => c.review_status === 'under_review')
+    } else if (categoryStatusFilter === 'RESOLVED') {
+      list = list.filter(c => c.review_status === 'resolved')
+    }
+    return list
+  }, [unifiedCards, selectedCategoryView, unifiedSearchQuery, categoryStatusFilter])
 
   // Available Versions (0, 1, 2...)
   const availableVersions = useMemo(() => {
@@ -658,310 +736,383 @@ export default function BriefPage() {
             {/* ═══════════════════════════════════════════════════════════════════ */}
             {/* UNIFIED CARDS LAYER (AUTHORITATIVE SYNTHESIS)                      */}
             {/* ═══════════════════════════════════════════════════════════════════ */}
-            <section
-              className="unified-cards-section"
-              style={{
-                marginBottom: '26px',
-                background: '#ffffff',
-                border: '1.5px solid #e2e8f0',
-                borderRadius: '12px',
-                padding: '20px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.01em' }}>
-                      UNIFIED CARDS
-                    </h2>
-                    <span style={{
-                      background: '#052e16',
-                      color: '#4ade80',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      border: '1px solid #166534'
-                    }}>
-                      Authoritative Project Knowledge
-                    </span>
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {/* UNIFIED CARDS LAYER (MODERN TILE GRID & CATEGORY DRILL-DOWN)        */}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            <section className="unified-dashboard-container">
+              {/* Header Bar */}
+              <div className="unified-header-bar">
+                <div className="unified-header-title-group">
+                  <div className="unified-header-icon-box">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                      <polyline points="2 17 12 22 22 17" />
+                      <polyline points="2 12 12 17 22 12" />
+                    </svg>
                   </div>
-                  <p style={{ fontSize: '12.5px', color: '#64748b', margin: '4px 0 0 0' }}>
-                    Single source of truth reconciled across all uploaded documents. Click a category to view the accepted cards inside.
-                  </p>
+                  <div>
+                    <h2 className="unified-header-title">Unified Cards</h2>
+                    <p className="unified-header-subtitle">
+                      Consolidated knowledge across all documents and versions
+                    </p>
+                  </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <button
-                    type="button"
-                    className="bui-btn bui-btn-outline"
-                    style={{ fontSize: '11.5px', padding: '5px 12px', background: '#ffffff' }}
-                    onClick={() => toggleAllCategories(true)}
+                <div className="unified-header-controls">
+                  <div className="unified-search-wrapper">
+                    <span className="unified-search-icon">🔍</span>
+                    <input
+                      type="text"
+                      className="unified-search-input"
+                      placeholder="Search unified cards..."
+                      value={unifiedSearchQuery}
+                      onChange={(e) => setUnifiedSearchQuery(e.target.value)}
+                    />
+                  </div>
+
+                  <select
+                    className="unified-select-filter"
+                    value={selectedCategoryView || 'ALL'}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setSelectedCategoryView(val === 'ALL' ? null : val)
+                    }}
                   >
-                    Expand All
-                  </button>
-                  <button
-                    type="button"
-                    className="bui-btn bui-btn-outline"
-                    style={{ fontSize: '11.5px', padding: '5px 12px', background: '#ffffff' }}
-                    onClick={() => toggleAllCategories(false)}
-                  >
-                    Collapse All
-                  </button>
+                    <option value="ALL">All Categories</option>
+                    {TAXONOMY_CATEGORIES.map(c => (
+                      <option key={c.key} value={c.label}>{c.label}</option>
+                    ))}
+                  </select>
+
                   <span style={{
                     fontSize: '11.5px',
                     fontWeight: 700,
                     background: '#f1f5f9',
                     color: '#0f172a',
-                    padding: '4px 10px',
-                    borderRadius: '6px'
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0'
                   }}>
                     {unifiedCards.length} Total Unified
                   </span>
                 </div>
               </div>
 
-              {unifiedCards.length === 0 && (
-                <div style={{
-                  textAlign: 'center',
-                  padding: '16px',
-                  marginBottom: '16px',
-                  background: '#f8fafc',
-                  borderRadius: '8px',
-                  border: '1px dashed #cbd5e1',
-                  color: '#64748b',
-                  fontSize: '12.5px'
-                }}>
-                  No cards have been accepted into Unified Cards yet. Review and accept Documented Cards below to synthesize them into these categories.
-                </div>
-              )}
+              {/* View 1: Unified Cards Dashboard Grid (selectedCategoryView === null) */}
+              {!selectedCategoryView ? (
+                <div className="unified-cards-grid">
+                  {TAXONOMY_CATEGORIES.map(cat => {
+                    const catCards = unifiedCards.filter(c => normalizeDisplayType(c.card_type) === cat.label)
+                    const catReview = cards.filter(c => normalizeDisplayType(c.card_type) === cat.label && c.review_status === 'under_review')
+                    const hasReviews = catReview.length > 0
 
-              {/* Taxonomy Categories — Cards are nested INSIDE each category */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {TAXONOMY_CATEGORIES.map(cat => {
-                  const catCards = unifiedCards.filter(c => normalizeDisplayType(c.card_type) === cat.label)
-                  const catReview = cards.filter(c => normalizeDisplayType(c.card_type) === cat.label && c.review_status === 'under_review')
-                  const isExpanded = !!expandedCategories[cat.label]
+                    if (unifiedSearchQuery.trim()) {
+                      const q = unifiedSearchQuery.toLowerCase()
+                      const matchesCategory = cat.label.toLowerCase().includes(q) || cat.desc.toLowerCase().includes(q)
+                      const matchesCard = catCards.some(c => 
+                        (c.title || '').toLowerCase().includes(q) || 
+                        (c.content || '').toLowerCase().includes(q)
+                      )
+                      if (!matchesCategory && !matchesCard) return null
+                    }
 
-                  return (
-                    <div
-                      key={cat.key}
-                      style={{
-                        border: isExpanded
-                          ? '1.5px solid #0f172a'
-                          : catReview.length > 0
-                          ? '1.5px solid #fca5a5'
-                          : '1px solid #e2e8f0',
-                        borderRadius: '10px',
-                        overflow: 'hidden',
-                        background: '#ffffff',
-                        transition: 'all 0.15s ease',
-                        boxShadow: isExpanded ? '0 4px 14px rgba(0,0,0,0.05)' : 'none'
-                      }}
-                    >
-                      {/* Category Clickable Header */}
+                    return (
                       <div
-                        onClick={() => toggleCategory(cat.label)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '12px 16px',
-                          cursor: 'pointer',
-                          background: isExpanded
-                            ? '#f8fafc'
-                            : catReview.length > 0
-                            ? '#fffcfc'
-                            : '#ffffff',
-                          userSelect: 'none',
-                          transition: 'background 0.15s'
-                        }}
+                        key={cat.key}
+                        className={`unified-category-card ${hasReviews ? 'has-reviews' : ''}`}
+                        onClick={() => setSelectedCategoryView(cat.label)}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ fontSize: '16px', color: '#0f172a' }}>{getCardIcon(cat.key)}</span>
-                          <div>
-                            <strong style={{ fontSize: '13.5px', color: '#0f172a', letterSpacing: '-0.01em' }}>
-                              {cat.label}
-                            </strong>
-                            <span style={{ fontSize: '11.5px', color: '#64748b', marginLeft: '10px', fontWeight: 500 }}>
-                              {catCards.length} {catCards.length === 1 ? 'Card' : 'Cards'}
-                              {catReview.length > 0 && (
-                                <span style={{ color: '#ef4444', fontWeight: 700, marginLeft: '6px' }}>
-                                  • {catReview.length} Under Review
-                                </span>
-                              )}
-                            </span>
+                        <div>
+                          <div
+                            className="category-icon-wrapper"
+                            style={{ background: cat.bg, color: cat.color }}
+                          >
+                            {getCardIcon(cat.key)}
                           </div>
+                          <h3 className="category-title-text">{cat.label}</h3>
+                          <p className="category-desc-text">{cat.desc}</p>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{
-                            fontSize: '11px',
-                            color: isExpanded ? '#0f172a' : '#64748b',
-                            background: isExpanded ? '#e2e8f0' : '#f1f5f9',
-                            padding: '3px 9px',
+                        <div>
+                          <div className="category-metrics-row">
+                            <div>
+                              <div className="category-metric-val">{catCards.length}</div>
+                              <div className="category-metric-lbl">Cards</div>
+                            </div>
+                            <div>
+                              <div className="category-metric-val under-review-val">{catReview.length}</div>
+                              <div className="category-metric-lbl under-review-lbl">Under Review</div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="category-view-btn"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedCategoryView(cat.label)
+                            }}
+                          >
+                            <span>View Cards</span>
+                            <span>→</span>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                /* View 2: Category Cards Page/View (selectedCategoryView !== null) */
+                <div>
+                  {/* Category Header Banner with Back navigation */}
+                  <div className="category-detail-header-card">
+                    <button
+                      type="button"
+                      className="category-back-btn"
+                      onClick={() => setSelectedCategoryView(null)}
+                    >
+                      <span>← Back to Unified Cards</span>
+                    </button>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <div
+                          className="category-icon-wrapper"
+                          style={{
+                            width: '46px',
+                            height: '46px',
                             borderRadius: '12px',
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}>
-                            {isExpanded ? 'Hide Cards ▲' : 'Show Cards ▼'}
-                          </span>
+                            background: selectedCatObj?.bg || '#f1f5f9',
+                            color: selectedCatObj?.color || '#0f172a',
+                            margin: 0
+                          }}
+                        >
+                          {getCardIcon(selectedCatObj?.key || '')}
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                              {selectedCatObj?.label || selectedCategoryView}
+                            </h2>
+                            <span style={{
+                              background: '#f1f5f9',
+                              color: '#0f172a',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: '12px'
+                            }}>
+                              Category View
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '12px', color: '#64748b', margin: '3px 0 0 0' }}>
+                            {selectedCatObj?.desc || 'Authoritative synthesized cards for this category.'}
+                          </p>
                         </div>
                       </div>
 
-                      {/* Nested Cards View: Only visible when clicked! */}
-                      {isExpanded && (
-                        <div style={{
-                          padding: '16px',
-                          borderTop: '1px solid #e2e8f0',
-                          background: '#f8fafc'
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          background: '#f1f5f9',
+                          color: '#0f172a',
+                          padding: '5px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #e2e8f0'
                         }}>
-                          {catCards.length === 0 ? (
-                            <div style={{
-                              textAlign: 'center',
-                              padding: '16px',
-                              background: '#ffffff',
-                              borderRadius: '8px',
-                              border: '1px dashed #cbd5e1',
-                              color: '#94a3b8',
-                              fontSize: '12px'
-                            }}>
-                              No accepted cards in <strong>{cat.label}</strong> yet. Accept cards from Documented Cards below to synthesize them here.
-                            </div>
-                          ) : (
-                            <div style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                              gap: '14px'
-                            }}>
-                              {catCards.map((card, idx) => {
-                                const isSelectedCard = selectedCard?.id === card.id
-                                const isUnderReview = card.review_status === 'under_review'
-                                const isResolved = card.review_status === 'resolved'
-                                const borderStyle = getCardStatusStyle(card, isSelectedCard)
-                                const cleanDoc = getCleanDocName(card.source_document)
-
-                                return (
-                                  <div
-                                    key={card.id || idx}
-                                    className={`bcard-item ${isSelectedCard ? 'active' : ''}`}
-                                    onClick={() => setSelectedCard(card)}
-                                    style={{
-                                      cursor: 'pointer',
-                                      ...borderStyle,
-                                      position: 'relative'
-                                    }}
-                                  >
-                                    <div className="bcard-header">
-                                      <div className="bcard-header-left">
-                                        <div className="bcard-type-icon">
-                                          {getCardIcon(card.card_type || card.title)}
-                                        </div>
-                                        <div className="bcard-titles">
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                            <h3 className="bcard-title">{card.title || card.content?.slice(0, 28)}</h3>
-                                            <span className="bui-badge-version">V{card.version !== null && card.version !== undefined ? card.version : 0}</span>
-                                          </div>
-                                          <span className="bcard-type-sub">{normalizeDisplayType(card.card_type)}</span>
-                                        </div>
-                                      </div>
-                                      <div>
-                                        {isUnderReview ? (
-                                          <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
-                                            ⚠️ Under Review
-                                          </span>
-                                        ) : isResolved ? (
-                                          <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
-                                            ✓ Resolved
-                                          </span>
-                                        ) : (
-                                          <span style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
-                                            ✓ Active
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    <div className="bcard-body">
-                                      <p
-                                        className="bcard-content-text"
-                                        style={{
-                                          display: '-webkit-box',
-                                          WebkitLineClamp: 3,
-                                          WebkitBoxOrient: 'vertical',
-                                          overflow: 'hidden',
-                                          textOverflow: 'ellipsis',
-                                          lineHeight: 1.45,
-                                          margin: 0
-                                        }}
-                                      >
-                                        {cleanCardContent(card.content)}
-                                      </p>
-                                    </div>
-
-                                    <div className="bcard-source-row" style={{ marginTop: '10px' }}>
-                                      <div className="bcard-source-left">
-                                        <span className="bcard-meta-lbl">Source</span>
-                                        <span className="bcard-source-doc" title={cleanDoc}>{cleanDoc}</span>
-                                      </div>
-                                      <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Inspect →</span>
-                                    </div>
-
-                                    <div className="bcard-footer" style={{ marginTop: '10px' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                        {isUnderReview && (
-                                          <button
-                                            className="bui-btn"
-                                            style={{
-                                              background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                                              color: '#ffffff',
-                                              fontSize: '11px',
-                                              padding: '4px 10px',
-                                              border: 'none',
-                                              borderRadius: '6px',
-                                              fontWeight: 700,
-                                              display: 'inline-flex',
-                                              alignItems: 'center',
-                                              gap: '4px',
-                                              boxShadow: '0 2px 5px rgba(239, 68, 68, 0.35)',
-                                              cursor: 'pointer'
-                                            }}
-                                            onClick={(e) => { e.stopPropagation(); openReviewModal(card); }}
-                                          >
-                                            <span>⚡</span>
-                                            <span>Resolve Review</span>
-                                          </button>
-                                        )}
-                                        <button
-                                          className="bui-btn bui-btn-outline"
-                                          style={{ fontSize: '11px', padding: '3px 8px' }}
-                                          onClick={(e) => { e.stopPropagation(); setEditingCard(card); }}
-                                        >
-                                          ✎ Edit
-                                        </button>
-                                        <button
-                                          className="bui-btn bui-btn-outline"
-                                          style={{ fontSize: '11px', padding: '3px 8px', color: '#ef4444' }}
-                                          onClick={(e) => { e.stopPropagation(); handleDeleteCard(card.id); }}
-                                        >
-                                          🗑
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                          {unifiedCards.filter(c => normalizeDisplayType(c.card_type) === selectedCategoryView).length} Cards
+                        </span>
+                        {cards.filter(c => normalizeDisplayType(c.card_type) === selectedCategoryView && c.review_status === 'under_review').length > 0 && (
+                          <span style={{
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            background: '#fef2f2',
+                            color: '#dc2626',
+                            padding: '5px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #fecaca'
+                          }}>
+                            ⚠️ {cards.filter(c => normalizeDisplayType(c.card_type) === selectedCategoryView && c.review_status === 'under_review').length} Under Review
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  )
-                })}
-              </div>
+
+                    {/* Status Filter Pills */}
+                    <div className="category-filter-pills-row">
+                      <span style={{ fontSize: '11.5px', color: '#64748b', fontWeight: 600 }}>Filter:</span>
+                      <button
+                        type="button"
+                        className={`category-pill-btn ${categoryStatusFilter === 'ALL' ? 'active' : ''}`}
+                        onClick={() => setCategoryStatusFilter('ALL')}
+                      >
+                        All Cards ({unifiedCards.filter(c => normalizeDisplayType(c.card_type) === selectedCategoryView).length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`category-pill-btn ${categoryStatusFilter === 'ACTIVE' ? 'active' : ''}`}
+                        onClick={() => setCategoryStatusFilter('ACTIVE')}
+                      >
+                        Active ({unifiedCards.filter(c => normalizeDisplayType(c.card_type) === selectedCategoryView && c.review_status !== 'under_review').length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`category-pill-btn ${categoryStatusFilter === 'UNDER_REVIEW' ? 'active' : ''}`}
+                        onClick={() => setCategoryStatusFilter('UNDER_REVIEW')}
+                      >
+                        Under Review ({unifiedCards.filter(c => normalizeDisplayType(c.card_type) === selectedCategoryView && c.review_status === 'under_review').length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`category-pill-btn ${categoryStatusFilter === 'RESOLVED' ? 'active' : ''}`}
+                        onClick={() => setCategoryStatusFilter('RESOLVED')}
+                      >
+                        Resolved ({unifiedCards.filter(c => normalizeDisplayType(c.card_type) === selectedCategoryView && c.review_status === 'resolved').length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Cards Grid */}
+                  {categoryCards.length === 0 ? (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '32px 16px',
+                      background: '#f8fafc',
+                      borderRadius: '10px',
+                      border: '1px dashed #cbd5e1',
+                      color: '#64748b',
+                      fontSize: '13px'
+                    }}>
+                      No cards found matching the filter criteria in <strong>{selectedCategoryView}</strong>.
+                    </div>
+                  ) : (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))',
+                      gap: '16px'
+                    }}>
+                      {categoryCards.map((card, idx) => {
+                        const isSelectedCard = selectedCard?.id === card.id
+                        const isUnderReview = card.review_status === 'under_review'
+                        const isResolved = card.review_status === 'resolved'
+                        const borderStyle = getCardStatusStyle(card, isSelectedCard)
+                        const cleanDoc = getCleanDocName(card.source_document)
+
+                        return (
+                          <div
+                            key={card.id || idx}
+                            className={`bcard-item ${isSelectedCard ? 'active' : ''}`}
+                            onClick={() => setSelectedCard(card)}
+                            style={{
+                              cursor: 'pointer',
+                              ...borderStyle,
+                              position: 'relative'
+                            }}
+                          >
+                            <div className="bcard-header">
+                              <div className="bcard-header-left">
+                                <div className="bcard-type-icon">
+                                  {getCardIcon(card.card_type || card.title)}
+                                </div>
+                                <div className="bcard-titles">
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    <h3 className="bcard-title">{card.title || card.content?.slice(0, 28)}</h3>
+                                    <span className="bui-badge-version">V{card.version !== null && card.version !== undefined ? card.version : 0}</span>
+                                  </div>
+                                  <span className="bcard-type-sub">{normalizeDisplayType(card.card_type)}</span>
+                                </div>
+                              </div>
+                              <div>
+                                {isUnderReview ? (
+                                  <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
+                                    ⚠️ Under Review
+                                  </span>
+                                ) : isResolved ? (
+                                  <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
+                                    ✓ Resolved
+                                  </span>
+                                ) : (
+                                  <span style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '2px 7px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
+                                    ✓ Active
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="bcard-body">
+                              <p
+                                className="bcard-content-text"
+                                style={{
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 3,
+                                  WebkitBoxOrient: 'vertical',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  lineHeight: 1.45,
+                                  margin: 0
+                                }}
+                              >
+                                {cleanCardContent(card.content)}
+                              </p>
+                            </div>
+
+                            <div className="bcard-source-row" style={{ marginTop: '10px' }}>
+                              <div className="bcard-source-left">
+                                <span className="bcard-meta-lbl">Source</span>
+                                <span className="bcard-source-doc" title={cleanDoc}>{cleanDoc}</span>
+                              </div>
+                              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Inspect →</span>
+                            </div>
+
+                            <div className="bcard-footer" style={{ marginTop: '10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                {isUnderReview && (
+                                  <button
+                                    className="bui-btn"
+                                    style={{
+                                      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                                      color: '#ffffff',
+                                      fontSize: '11px',
+                                      padding: '4px 10px',
+                                      border: 'none',
+                                      borderRadius: '6px',
+                                      fontWeight: 700,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      boxShadow: '0 2px 5px rgba(239, 68, 68, 0.35)',
+                                      cursor: 'pointer'
+                                    }}
+                                    onClick={(e) => { e.stopPropagation(); openReviewModal(card); }}
+                                  >
+                                    <span>⚡</span>
+                                    <span>Resolve Review</span>
+                                  </button>
+                                )}
+                                <button
+                                  className="bui-btn bui-btn-outline"
+                                  style={{ fontSize: '11px', padding: '3px 8px' }}
+                                  onClick={(e) => { e.stopPropagation(); setEditingCard(card); }}
+                                >
+                                  ✎ Edit
+                                </button>
+                                <button
+                                  className="bui-btn bui-btn-outline"
+                                  style={{ fontSize: '11px', padding: '3px 8px', color: '#ef4444' }}
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteCard(card.id); }}
+                                >
+                                  🗑
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             <div style={{ marginBottom: '14px', marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f1f5f9', paddingTop: '20px' }}>

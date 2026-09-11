@@ -170,19 +170,25 @@ export default function ExtractionReviewPage() {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
             
-            // Fetch generated cards summary
-            const generatedCards = await listCards(projectId).catch(() => [])
-            const questions = generatedCards.filter(c => (c.card_type || '').toUpperCase() === 'QUESTION')
-            const conflicts = generatedCards.filter(c => ['CONFLICT', 'TENSION'].includes((c.card_type || '').toUpperCase()))
+            // Fetch generated cards count strictly from this document generation run
+            const docCardsCount = typeof statusRes.cards_generated === 'number'
+              ? statusRes.cards_generated
+              : 0
+            const qCount = typeof statusRes.questions_count === 'number'
+              ? statusRes.questions_count
+              : 0
+            const cCount = typeof statusRes.conflicts_count === 'number'
+              ? statusRes.conflicts_count
+              : 0
             
             setAnalysisSummary({
-              totalCards: generatedCards.length,
-              questions: questions.length,
-              conflicts: conflicts.length
+              totalCards: docCardsCount,
+              questions: qCount,
+              conflicts: cCount
             })
             setAnalyzing(false)
             setShowCompleteModal(true)
-            showToast(`✦ Brief Cards generated for "${project?.name || 'Project'}"!`)
+            showToast(`✦ ${docCardsCount} Cards generated for "${project?.name || 'Project'}"!`)
           } else if (statusRes.status === 'failed') {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
@@ -617,7 +623,7 @@ export default function ExtractionReviewPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
                 <div>
                   <strong style={{ fontSize: '20px', color: '#0f172a', display: 'block' }}>{analysisSummary.totalCards}</strong>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>Brief Cards</span>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>Cards Generated</span>
                 </div>
                 <div>
                   <strong style={{ fontSize: '20px', color: '#0f172a', display: 'block' }}>{analysisSummary.questions}</strong>

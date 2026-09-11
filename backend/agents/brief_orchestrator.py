@@ -397,14 +397,20 @@ Return ONLY JSON list.
                 src_obj.version = new_version
                 src_obj.processing_status = "completed"
             
-        _update_job(db, job_id, "completed", "Ready for Review")
+        doc_names = ", ".join([s.file_name for s in pending_batch])
+        _update_job(
+            db, job_id, "completed", "Ready for Review",
+            cards_generated=total_new_cards,
+            questions_count=total_questions,
+            conflicts_count=total_conflicts,
+            document_names=doc_names,
+        )
 
         project.updated_at = datetime.now(timezone.utc)
         db.commit()
 
         # Log completion activity
         from db import log_activity
-        doc_names = ", ".join([s.file_name for s in pending_batch])
         log_activity(
             db=db,
             user_id=effective_user_id,
@@ -450,13 +456,25 @@ Return ONLY JSON list.
         db.close()
 
 
-def _update_job(db, job_id: str, status: str, step: str, error: str = None):
-    """Update a processing job's status."""
+def _update_job(
+    db, job_id: str, status: str, step: str, error: str = None,
+    cards_generated: int = None, questions_count: int = None,
+    conflicts_count: int = None, document_names: str = None
+):
+    """Update a processing job's status and card generation metrics."""
     job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
     if job:
         job.status = status
         job.current_step = step
         job.error = error
+        if cards_generated is not None:
+            job.cards_generated = cards_generated
+        if questions_count is not None:
+            job.questions_count = questions_count
+        if conflicts_count is not None:
+            job.conflicts_count = conflicts_count
+        if document_names is not None:
+            job.document_names = document_names
         job.updated_at = datetime.now(timezone.utc)
         db.commit()
 

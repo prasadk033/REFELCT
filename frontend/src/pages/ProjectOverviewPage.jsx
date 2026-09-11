@@ -232,18 +232,25 @@ export default function ProjectOverviewPage() {
               loadProjectData()
             ])
             
-            const validCards = freshCards || []
-            const qCount = validCards.filter(c => c.card_type === 'QUESTION').length
-            const cCount = validCards.filter(c => c.card_type === 'CONFLICT' || c.card_type === 'TENSION').length
+            const docGeneratedCount = typeof statusRes.cards_generated === 'number'
+              ? statusRes.cards_generated
+              : 0
+            const qCount = typeof statusRes.questions_count === 'number'
+              ? statusRes.questions_count
+              : (freshCards || []).filter(c => c.card_type === 'QUESTION').length
+            const cCount = typeof statusRes.conflicts_count === 'number'
+              ? statusRes.conflicts_count
+              : (freshCards || []).filter(c => c.card_type === 'CONFLICT' || c.card_type === 'TENSION').length
             
             setAnalysisSummary({
-              totalCards: validCards.length,
+              cardsGenerated: docGeneratedCount,
+              projectTotalCards: (freshCards || []).length,
               questions: qCount,
               conflicts: cCount,
-              documents: sources.map(s => s.file_name).join(', ')
+              documents: statusRes.document_names || sources.map(s => s.file_name).join(', ')
             })
             setShowCompleteModal(true)
-            showToast(`✦ Brief Cards generated for "${freshProj?.name || project?.name || 'Project'}"!`)
+            showToast(`✦ ${docGeneratedCount} Brief Cards generated for "${freshProj?.name || project?.name || 'Project'}"!`)
           } else if (statusRes.status === 'failed') {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
@@ -1150,20 +1157,25 @@ export default function ProjectOverviewPage() {
               </p>
 
               {analysisSummary && (
-                <div className="pov-summary-counts" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
-                  <div>
-                    <strong style={{ fontSize: '20px', color: '#0f172a', display: 'block' }}>{analysisSummary.totalCards}</strong>
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>Brief Cards</span>
+                <>
+                  <div className="pov-summary-counts" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+                    <div>
+                      <strong style={{ fontSize: '20px', color: '#0f172a', display: 'block' }}>{analysisSummary.cardsGenerated}</strong>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Cards Generated</span>
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: '20px', color: '#0f172a', display: 'block' }}>{analysisSummary.questions}</strong>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Questions</span>
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: '20px', color: '#0f172a', display: 'block' }}>{analysisSummary.conflicts}</strong>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Conflicts</span>
+                    </div>
                   </div>
-                  <div>
-                    <strong style={{ fontSize: '20px', color: '#0f172a', display: 'block' }}>{analysisSummary.questions}</strong>
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>Questions</span>
+                  <div style={{ textAlign: 'center', marginBottom: '20px', fontSize: '12px', color: '#64748b' }}>
+                    Project Total: <strong style={{ color: '#0f172a' }}>{analysisSummary.projectTotalCards} Total Cards</strong> across all documents
                   </div>
-                  <div>
-                    <strong style={{ fontSize: '20px', color: '#0f172a', display: 'block' }}>{analysisSummary.conflicts}</strong>
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>Conflicts</span>
-                  </div>
-                </div>
+                </>
               )}
               <button
                 style={{

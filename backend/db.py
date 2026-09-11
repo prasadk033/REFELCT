@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 from sqlalchemy import (
     create_engine, Column, String, Integer, Float, Text, Boolean,
-    DateTime, ForeignKey, JSON, Enum as SAEnum
+    DateTime, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from config import config
@@ -178,17 +178,27 @@ class Card(Base):
 
 class ProcessingJob(Base):
     __tablename__ = "processing_jobs"
+    __table_args__ = (
+        UniqueConstraint("project_id", "idempotency_key", name="uq_project_idempotency_key"),
+    )
 
     id = Column(String, primary_key=True)  # UUID
     project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
     brief_id = Column(String, nullable=True)
     status = Column(String, default="queued")  # queued, parsing, extracting_images, processing_brief, generating_cards, completed, failed
     current_step = Column(String, nullable=True)
     error = Column(Text, nullable=True)
+    cards_generated = Column(Integer, default=0, nullable=True)
+    questions_count = Column(Integer, default=0, nullable=True)
+    conflicts_count = Column(Integer, default=0, nullable=True)
+    document_names = Column(String, nullable=True)
+    idempotency_key = Column(String, nullable=True, index=True)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     project = relationship("Project", back_populates="processing_jobs")
+    user = relationship("User")
 
 
 class ActivityLog(Base):
@@ -268,6 +278,28 @@ def init_db():
                     conn.execute(text("ALTER TABLE cards ADD COLUMN replaced_by_card_id VARCHAR;"))
                 if "origin_card_id" not in card_cols:
                     conn.execute(text("ALTER TABLE cards ADD COLUMN origin_card_id VARCHAR;"))
+
+            # Check processing_jobs table columns
+            if "processing_jobs" in inspector.get_table_names():
+                job_cols = [c["name"] for c in inspector.get_columns("processing_jobs")]
+                if "user_id" not in job_cols:
+                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN user_id VARCHAR;"))
+                if "cards_generated" not in job_cols:
+                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN cards_generated INTEGER DEFAULT 0;"))
+                if "questions_count" not in job_cols:
+                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN questions_count INTEGER DEFAULT 0;"))
+                if "conflicts_count" not in job_cols:
+                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN conflicts_count INTEGER DEFAULT 0;"))
+                if "document_names" not in job_cols:
+                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN document_names VARCHAR;"))
+                if "idempotency_key" not in job_cols:
+                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN idempotency_key VARCHAR;"))
+                
+                # Enforce DB-level composite uniqueness index on (project_id, idempotency_key)
+                try:
+                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_project_idempotency_key ON processing_jobs (project_id, idempotency_key);"))
+                except Exception as idx_err:
+                    logger.warning(f"Index creation notice: {idx_err}")
             
             conn.commit()
         logger.info("Database tables created/verified successfully.")

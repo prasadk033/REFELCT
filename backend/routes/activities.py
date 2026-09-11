@@ -8,9 +8,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from db import get_db, ActivityLog, User
+from db import get_db, ActivityLog, User, Project
 from auth.dependencies import get_current_user
 from schemas.models import ActivityLogResponse
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,13 @@ def list_activities(
     query = db.query(ActivityLog).filter(ActivityLog.user_id == user.id)
 
     if project_id:
+        # Verify user ownership of the requested project
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == user.id
+        ).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
         query = query.filter(ActivityLog.project_id == project_id)
 
     activities = query.order_by(ActivityLog.created_at.desc()).limit(limit).all()

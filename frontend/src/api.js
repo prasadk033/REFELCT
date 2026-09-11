@@ -161,11 +161,15 @@ export async function resetVersion(projectId, version) {
 
 // ── Briefs ──────────────────────────────────────────────────────────────────
 
-export async function analyzeBrief(projectId, sourceIds = null) {
+export async function analyzeBrief(projectId, sourceIds = null, customIdempotencyKey = null) {
   const body = sourceIds ? { source_ids: sourceIds } : {};
+  const key = customIdempotencyKey || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `job_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
   return apiFetch(`/api/projects/${projectId}/brief/analyze`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": key,
+    },
     body: JSON.stringify(body),
   });
 }

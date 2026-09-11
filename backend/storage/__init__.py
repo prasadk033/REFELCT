@@ -103,9 +103,11 @@ class FileStore:
     def save_upload(self, project_id: str, source_id: str, file_name: str, file_data) -> str:
         """
         Save an uploaded file.
+        Sanitizes file_name to prevent directory traversal.
         Returns the storage key (relative path / S3 object key).
         """
-        key = f"{project_id}/{source_id}/{file_name}"
+        safe_file_name = Path(file_name).name.replace("..", "").replace("/", "").replace("\\", "").strip() or "uploaded_doc"
+        key = f"{project_id}/{source_id}/{safe_file_name}"
 
         if hasattr(file_data, "read"):
             data = file_data.read()
@@ -113,9 +115,9 @@ class FileStore:
             data = file_data
 
         if self.storage_type == "s3":
-            self._s3_upload(key, data, file_name)
+            self._s3_upload(key, data, safe_file_name)
         else:
-            self._local_save(key, project_id, source_id, file_name, data)
+            self._local_save(key, project_id, source_id, safe_file_name, data)
 
         return key
 

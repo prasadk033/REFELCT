@@ -8,7 +8,8 @@ GET   /api/projects/{project_id}/brief/versions   — List Brief versions
 GET   /api/projects/{project_id}/brief/{brief_id} — Get specific Brief version
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -29,6 +30,8 @@ def analyze_brief(
     project_id: str,
     body: AnalyzeBriefRequest = None,
     background_tasks: BackgroundTasks = None,
+    idempotency_key_header: Optional[str] = Header(None, alias="Idempotency-Key"),
+    x_idempotency_key_header: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -47,8 +50,34 @@ def analyze_brief(
         if not sources:
             raise HTTPException(status_code=400, detail="None of the specified source IDs were found.")
 
-    # Check for existing processing job in progress — mark stale jobs (>90s) as superseded
+    # Compute deterministic batch identity for generation idempotency
+    import hashlib
     from datetime import datetime, timezone
+
+    client_key = idempotency_key_header or x_idempotency_key_header
+    if client_key:
+        idempotency_key = client_key.strip()
+    else:
+        source_ids = [s.id for s in sources]
+        source_ids_sorted = sorted(source_ids)
+        batch_raw = f"{project_id}:{','.join(source_ids_sorted)}"
+        idempotency_key = hashlib.sha256(batch_raw.encode("utf-8")).hexdigest()[:32]
+
+    # Check for existing active processing job with the same batch identity
+    existing_active = (
+        db.query(ProcessingJob)
+        .filter(
+            ProcessingJob.project_id == project_id,
+            ProcessingJob.idempotency_key == idempotency_key,
+            ProcessingJob.status.in_(["queued", "parsing", "extracting_images", "processing_brief", "generating_cards"])
+        )
+        .first()
+    )
+    if existing_active:
+        logger.info(f"Duplicate generation request for project {project_id}, returning active job {existing_active.id}")
+        return ProcessingStatusResponse.model_validate(existing_active)
+
+    # Mark stale active jobs from earlier attempts (>120s or different batch) as superseded
     active_jobs = (
         db.query(ProcessingJob)
         .filter(
@@ -58,29 +87,46 @@ def analyze_brief(
         .all()
     )
     for aj in active_jobs:
-        # Mark previous active jobs as superseded so user is never blocked
         aj.status = "superseded"
         aj.current_step = "Superseded by new analysis run"
     db.commit()
 
-
     # Import here to avoid circular imports
     from agents.brief_orchestrator import run_brief_pipeline
 
-    # Create processing job
+    # Create processing job safely with database-level uniqueness enforcement
     import uuid
     job_id = str(uuid.uuid4())
     job = ProcessingJob(
         id=job_id,
         project_id=project_id,
+        user_id=user.id,
         status="queued",
         current_step="Queued",
+        idempotency_key=idempotency_key,
     )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
+    try:
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+    except Exception as exc:
+        db.rollback()
+        # Concurrency safety: if another simultaneous request already inserted this idempotency key
+        winner_job = (
+            db.query(ProcessingJob)
+            .filter(
+                ProcessingJob.project_id == project_id,
+                ProcessingJob.idempotency_key == idempotency_key,
+            )
+            .order_by(ProcessingJob.created_at.desc())
+            .first()
+        )
+        if winner_job:
+            logger.info(f"Concurrent generation request caught by uniqueness constraint, returning winner job {winner_job.id}")
+            return ProcessingStatusResponse.model_validate(winner_job)
+        raise exc
 
-    logger.info(f"Starting Brief analysis for project {project_id}, job {job_id}")
+    logger.info(f"Starting Brief analysis for project {project_id}, job {job_id} (idempotency key {idempotency_key})")
 
     # Record activity
     from db import log_activity
