@@ -2,6 +2,11 @@
 .env
 .env.*
 !.env.example
+*.local
+
+# Dockerfile backups (may contain baked-in credentials)
+Dockerfile.save
+*.save
 
 # Python
 __pycache__/

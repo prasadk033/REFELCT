@@ -5,7 +5,7 @@ set -e
 # Uses environment variables provided by docker-compose / .env instead of hardcoded plaintext passwords.
 
 REFLECT_USER="${REFLECT_DB_USER:-reflect}"
-REFLECT_PASS="${REFLECT_DB_PASSWORD:-ReflectPostgres2026}"
+REFLECT_PASS="${REFLECT_DB_PASSWORD:?ERROR: REFLECT_DB_PASSWORD is not set. Set it in .env before starting the database.}"
 REFLECT_DB="${REFLECT_DB_NAME:-reflect}"
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL

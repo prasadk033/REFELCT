@@ -54,10 +54,7 @@ class Config:
         "QWEN_API_KEY",
         ""
     )
-    QWEN_API_BASE = os.getenv(
-        "QWEN_API_BASE",
-        "http://115.244.46.68:8000/v1"
-    )
+    QWEN_API_BASE = os.getenv("QWEN_API_BASE", "")
 
     # PostgreSQL — LiteLLM proxy/dashboard persistence only
     DATABASE_URL = os.getenv(
@@ -93,7 +90,7 @@ class Config:
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
     # TurboOCR — GPU 3
-    TURBOOCR_API_URL = os.getenv("TURBOOCR_API_URL", "http://115.244.46.68:8005") or "http://115.244.46.68:8005"
+    TURBOOCR_API_URL = os.getenv("TURBOOCR_API_URL", "")
     TURBOOCR_API_KEY = os.getenv("TURBOOCR_API_KEY", "")
     TURBOOCR_TIMEOUT = float(os.getenv("TURBOOCR_TIMEOUT", "60.0"))
     TURBOOCR_CONNECT_TIMEOUT = float(os.getenv("TURBOOCR_CONNECT_TIMEOUT", "10.0"))

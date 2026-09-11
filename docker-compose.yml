@@ -28,8 +28,8 @@ services:
       - .env
     environment:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${POSTGRES_DB:-litellm}}
-      - APP_DATABASE_URL=${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-litellm}}
+      - APP_DATABASE_URL=${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
       - LITELLM_API_BASE=${LITELLM_API_BASE:-http://litellm:4000}
     volumes:
@@ -55,8 +55,8 @@ services:
       - .env
     environment:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${POSTGRES_DB:-litellm}}
-      - APP_DATABASE_URL=${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-litellm}}
+      - APP_DATABASE_URL=${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
       - LITELLM_API_BASE=${LITELLM_API_BASE:-http://litellm:4000}
     volumes:
@@ -105,9 +105,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-litellm}
       POSTGRES_USER: ${POSTGRES_USER:-litellm}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-LiteLLMPostgres2026}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REFLECT_DB_USER: ${REFLECT_DB_USER:-reflect}
-      REFLECT_DB_PASSWORD: ${REFLECT_DB_PASSWORD:-ReflectPostgres2026}
+      REFLECT_DB_PASSWORD: ${REFLECT_DB_PASSWORD}
       REFLECT_DB_NAME: ${REFLECT_DB_NAME:-reflect}
     ports:
       # Bound to loopback interface to prevent external database scans
@@ -129,8 +129,8 @@ services:
       - "127.0.0.1:9000:9000"   # S3 API loopback only
       - "127.0.0.1:9001:9001"   # Web Console loopback only
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-reflect-minio-access}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-reflect-minio-secret-2026}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
@@ -167,7 +167,7 @@ services:
     image: dpage/pgadmin4:latest
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@reflect.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-pgAdminSecure2026}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
       PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
       - "127.0.0.1:5050:80"

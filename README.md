@@ -84,7 +84,7 @@ Key `.env` settings:
 # Application Host & Database
 HOST=0.0.0.0
 PORT=8000
-APP_DATABASE_URL=postgresql://litellm:LiteLLMPostgres2026@postgres:5432/litellm
+APP_DATABASE_URL=postgresql://litellm:<your-postgres-password>@postgres:5432/litellm
 
 # Allowed CORS Origins
 CORS_ORIGINS=http://localhost:5173,http://<INSTANCE_IP>.nip.io:5173,http://<INSTANCE_IP>:5173
@@ -92,15 +92,15 @@ CORS_ORIGINS=http://localhost:5173,http://<INSTANCE_IP>.nip.io:5173,http://<INST
 # LLM Configuration
 LLM_PROVIDER=litellm
 LLM_MODEL=qwen
-QWEN_API_KEY=your-qwen-api-key-here
-QWEN_API_BASE=http://115.244.46.68:8000/v1
+QWEN_API_KEY=<your-qwen-api-key>
+QWEN_API_BASE=http://<your-gpu-server-ip>:<port>/v1
 
 # Storage (MinIO S3)
 STORAGE_TYPE=s3
 MINIO_ENDPOINT=http://minio:9000
 MINIO_BUCKET=reflect-uploads
-MINIO_ACCESS_KEY=reflect-minio-access
-MINIO_SECRET_KEY=reflect-minio-secret-2026
+MINIO_ACCESS_KEY=<your-minio-access-key>
+MINIO_SECRET_KEY=<your-minio-secret-key>
 ```
 
 ### 3. Launch with Docker Compose

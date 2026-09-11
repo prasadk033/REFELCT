@@ -99,7 +99,7 @@ def google_login(body: GoogleLoginRequest):
 def dev_login(body: DevLoginRequest = None):
     """Development login — creates a dev user without Google OAuth."""
     import os
-    allow_dev = os.getenv("ALLOW_DEV_LOGIN", "true").lower() in ("true", "1", "yes")
+    allow_dev = os.getenv("ALLOW_DEV_LOGIN", "false").lower() in ("true", "1", "yes")
     if not allow_dev and config.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=403, detail="Dev login disabled in production")
 
