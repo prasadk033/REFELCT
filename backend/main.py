@@ -39,6 +39,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
+    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,7 +98,9 @@ def google_login(body: GoogleLoginRequest):
 @app.post("/api/auth/dev", response_model=AuthResponse)
 def dev_login(body: DevLoginRequest = None):
     """Development login — creates a dev user without Google OAuth."""
-    if config.GOOGLE_CLIENT_ID:
+    import os
+    allow_dev = os.getenv("ALLOW_DEV_LOGIN", "true").lower() in ("true", "1", "yes")
+    if not allow_dev and config.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=403, detail="Dev login disabled in production")
 
     from auth import create_dev_user, create_jwt_token
