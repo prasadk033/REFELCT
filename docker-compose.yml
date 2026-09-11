@@ -31,6 +31,7 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${POSTGRES_DB:-litellm}}
       - APP_DATABASE_URL=${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - LITELLM_API_BASE=${LITELLM_API_BASE:-http://litellm:4000}
     volumes:
       - ./uploads:/app/uploads
       - ./backend:/app/backend
@@ -57,6 +58,7 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${POSTGRES_DB:-litellm}}
       - APP_DATABASE_URL=${APP_DATABASE_URL:-postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD:-LiteLLMPostgres2026}@postgres:5432/${REFLECT_DB_NAME:-reflect}}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - LITELLM_API_BASE=${LITELLM_API_BASE:-http://litellm:4000}
     volumes:
       - ./uploads:/app/uploads
       - ./backend:/app/backend

@@ -86,8 +86,34 @@ class LiteLLMGenerator:
 
         except Exception as e:
             elapsed = time.time() - start_time
-            is_timeout = isinstance(e, litellm.exceptions.Timeout) or "timeout" in str(e).lower()
+            err_str = str(e).lower()
             
+            # If the proxy was unreachable or had a connection issue, fail over directly to Qwen GPU server
+            if "connection" in err_str or "connect" in err_str or "refused" in err_str or "proxy" in err_str:
+                try:
+                    print(f"Proxy connection failed ({e}). Failing over directly to Qwen GPU server...")
+                    direct_response = litellm.completion(
+                        model="openai/current-model",
+                        messages=messages,
+                        api_base="http://115.244.46.68:8000/v1",
+                        api_key="sk-datai2i-a100-qwen35-27b-8x3f9z",
+                        custom_llm_provider="openai",
+                        timeout=timeout_val,
+                        max_tokens=max_tokens_val,
+                        temperature=temperature_val,
+                        num_retries=1,
+                    )
+                    content = direct_response.choices[0].message.content
+                    meta = {
+                        "model": direct_response.model,
+                        "usage": dict(direct_response.usage) if direct_response.usage else {},
+                        "finish_reason": direct_response.choices[0].finish_reason if direct_response.choices else None,
+                    }
+                    return {"replies": [content], "meta": [meta]}
+                except Exception as direct_err:
+                    print(f"Direct Qwen failover also failed: {direct_err}")
+
+            is_timeout = isinstance(e, litellm.exceptions.Timeout) or "timeout" in err_str
             if is_timeout:
                 print(f"LLM generation timeout error: model={self.model}, timeout_duration={timeout_val}s, elapsed={elapsed:.2f}s, error={e}")
                 raise TimeoutError(f"LLM request timed out after {timeout_val:.0f}s. Please retry.") from e

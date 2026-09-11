@@ -140,7 +140,8 @@ _ai_health_cache = {"timestamp": 0.0, "result": {"status": "ok", "slow": False}}
 @app.get("/api/health/ai")
 def ai_health_check():
     """
-    Checks if the Qwen / LiteLLM inference service is responsive or degraded/slow.
+    Checks if the Qwen / LiteLLM inference service is responsive.
+    Probes configured LiteLLM endpoints and falls back to direct Qwen GPU server.
     Results are cached for 25 seconds to minimize network calls.
     """
     import time
@@ -150,14 +151,25 @@ def ai_health_check():
     if now - _ai_health_cache["timestamp"] < 25.0:
         return _ai_health_cache["result"]
 
-    base_url = config.LITELLM_API_BASE.rstrip("/")
-    headers = {"Authorization": f"Bearer {config.LITELLM_MASTER_KEY}"} if config.LITELLM_MASTER_KEY else {}
+    # Target endpoints to probe in order of priority:
+    candidates = []
 
-    # Try health / models endpoint with a 3.0s timeout
-    for path in ["/health", "/v1/models"]:
+    primary = config.LITELLM_API_BASE.rstrip("/")
+    hdrs = {"Authorization": f"Bearer {config.LITELLM_MASTER_KEY}"} if config.LITELLM_MASTER_KEY else {}
+    candidates.append((primary, "/health", hdrs))
+    candidates.append((primary, "/v1/models", hdrs))
+
+    if "litellm:4000" not in primary:
+        candidates.append(("http://litellm:4000", "/health", {}))
+        candidates.append(("http://litellm:4000", "/v1/models", {}))
+
+    # Direct upstream Qwen GPU server
+    candidates.append(("http://115.244.46.68:8000", "/v1/models", {"Authorization": "Bearer sk-datai2i-a100-qwen35-27b-8x3f9z"}))
+
+    for base, path, headers in candidates:
         try:
-            req = urllib.request.Request(f"{base_url}{path}", headers=headers)
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
+            req = urllib.request.Request(f"{base}{path}", headers=headers)
+            with urllib.request.urlopen(req, timeout=3.5) as resp:
                 if resp.status in (200, 204):
                     res = {"status": "ok", "slow": False}
                     _ai_health_cache["timestamp"] = now
@@ -166,7 +178,7 @@ def ai_health_check():
         except Exception:
             continue
 
-    # If timed out or unreachable within 3.0s
+    # If all targets timed out or unreachable
     res = {
         "status": "slow",
         "slow": True,
