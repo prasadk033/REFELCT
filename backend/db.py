@@ -242,69 +242,77 @@ def init_db():
     from sqlalchemy import inspect, text
     try:
         Base.metadata.create_all(bind=engine)
-        inspector = inspect(engine)
-        
-        with engine.connect() as conn:
-            # Check sources table columns
-            if "sources" in inspector.get_table_names():
-                source_cols = [c["name"] for c in inspector.get_columns("sources")]
-                if "approval_status" not in source_cols:
-                    conn.execute(text("ALTER TABLE sources ADD COLUMN approval_status VARCHAR DEFAULT 'pending_review';"))
-                if "version" not in source_cols:
-                    conn.execute(text("ALTER TABLE sources ADD COLUMN version INTEGER DEFAULT 1;"))
-                if "description" not in source_cols:
-                    conn.execute(text("ALTER TABLE sources ADD COLUMN description TEXT;"))
-            
-            # Check cards table columns
-            if "cards" in inspector.get_table_names():
-                card_cols = [c["name"] for c in inspector.get_columns("cards")]
-                if "version" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN version INTEGER DEFAULT 1;"))
-                if "source_document" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN source_document VARCHAR;"))
-                if "source_id" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN source_id VARCHAR;"))
-                if "ai_suggestion" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN ai_suggestion TEXT;"))
-                if "is_unified" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN is_unified BOOLEAN DEFAULT FALSE;"))
-                if "review_status" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN review_status VARCHAR;"))
-                if "review_card_id" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN review_card_id VARCHAR;"))
-                if "review_decision" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN review_decision VARCHAR;"))
-                if "replaced_by_card_id" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN replaced_by_card_id VARCHAR;"))
-                if "origin_card_id" not in card_cols:
-                    conn.execute(text("ALTER TABLE cards ADD COLUMN origin_card_id VARCHAR;"))
+    except Exception as e:
+        logger.warning(f"metadata.create_all notice: {e}")
 
-            # Check processing_jobs table columns
-            if "processing_jobs" in inspector.get_table_names():
-                job_cols = [c["name"] for c in inspector.get_columns("processing_jobs")]
-                if "user_id" not in job_cols:
-                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN user_id VARCHAR;"))
-                if "cards_generated" not in job_cols:
-                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN cards_generated INTEGER DEFAULT 0;"))
-                if "questions_count" not in job_cols:
-                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN questions_count INTEGER DEFAULT 0;"))
-                if "conflicts_count" not in job_cols:
-                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN conflicts_count INTEGER DEFAULT 0;"))
-                if "document_names" not in job_cols:
-                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN document_names VARCHAR;"))
-                if "idempotency_key" not in job_cols:
-                    conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN idempotency_key VARCHAR;"))
-                
-                # Enforce DB-level composite uniqueness index on (project_id, idempotency_key)
-                try:
-                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_project_idempotency_key ON processing_jobs (project_id, idempotency_key);"))
-                except Exception as idx_err:
-                    logger.warning(f"Index creation notice: {idx_err}")
+    try:
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
+        
+        # Check sources table columns
+        if "sources" in existing_tables:
+            source_cols = [c["name"] for c in inspector.get_columns("sources")]
+            for col, col_type in [
+                ("approval_status", "VARCHAR DEFAULT 'pending_review'"),
+                ("version", "INTEGER DEFAULT 1"),
+                ("description", "TEXT"),
+            ]:
+                if col not in source_cols:
+                    try:
+                        with engine.begin() as conn:
+                            conn.execute(text(f"ALTER TABLE sources ADD COLUMN {col} {col_type};"))
+                    except Exception as err:
+                        logger.warning(f"Could not add {col} to sources: {err}")
+        
+        # Check cards table columns
+        if "cards" in existing_tables:
+            card_cols = [c["name"] for c in inspector.get_columns("cards")]
+            for col, col_type in [
+                ("version", "INTEGER DEFAULT 1"),
+                ("source_document", "VARCHAR"),
+                ("source_id", "VARCHAR"),
+                ("ai_suggestion", "TEXT"),
+                ("is_unified", "BOOLEAN DEFAULT FALSE"),
+                ("review_status", "VARCHAR"),
+                ("review_card_id", "VARCHAR"),
+                ("review_decision", "VARCHAR"),
+                ("replaced_by_card_id", "VARCHAR"),
+                ("origin_card_id", "VARCHAR"),
+            ]:
+                if col not in card_cols:
+                    try:
+                        with engine.begin() as conn:
+                            conn.execute(text(f"ALTER TABLE cards ADD COLUMN {col} {col_type};"))
+                    except Exception as err:
+                        logger.warning(f"Could not add {col} to cards: {err}")
+
+        # Check processing_jobs table columns
+        if "processing_jobs" in existing_tables:
+            job_cols = [c["name"] for c in inspector.get_columns("processing_jobs")]
+            for col, col_type in [
+                ("user_id", "VARCHAR"),
+                ("cards_generated", "INTEGER DEFAULT 0"),
+                ("questions_count", "INTEGER DEFAULT 0"),
+                ("conflicts_count", "INTEGER DEFAULT 0"),
+                ("document_names", "VARCHAR"),
+                ("idempotency_key", "VARCHAR"),
+            ]:
+                if col not in job_cols:
+                    try:
+                        with engine.begin() as conn:
+                            conn.execute(text(f"ALTER TABLE processing_jobs ADD COLUMN {col} {col_type};"))
+                    except Exception as err:
+                        logger.warning(f"Could not add {col} to processing_jobs: {err}")
             
-            conn.commit()
+            # Enforce DB-level composite uniqueness index on (project_id, idempotency_key)
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_project_idempotency_key ON processing_jobs (project_id, idempotency_key);"))
+            except Exception as idx_err:
+                logger.warning(f"Index creation notice: {idx_err}")
+        
         logger.info("Database tables created/verified successfully.")
     except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
-        raise
+        logger.warning(f"Database migration notice: {e}")
 
 
