@@ -49,6 +49,16 @@ class Config:
         ""
     )
 
+    # Qwen GPU Server
+    QWEN_API_KEY = os.getenv(
+        "QWEN_API_KEY",
+        ""
+    )
+    QWEN_API_BASE = os.getenv(
+        "QWEN_API_BASE",
+        "http://115.244.46.68:8000/v1"
+    )
+
     # PostgreSQL — LiteLLM proxy/dashboard persistence only
     DATABASE_URL = os.getenv(
         "DATABASE_URL",

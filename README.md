@@ -92,7 +92,7 @@ CORS_ORIGINS=http://localhost:5173,http://<INSTANCE_IP>.nip.io:5173,http://<INST
 # LLM Configuration
 LLM_PROVIDER=litellm
 LLM_MODEL=qwen
-QWEN_API_KEY=sk-datai2i-a100-qwen35-27b-8x3f9z
+QWEN_API_KEY=your-qwen-api-key-here
 QWEN_API_BASE=http://115.244.46.68:8000/v1
 
 # Storage (MinIO S3)

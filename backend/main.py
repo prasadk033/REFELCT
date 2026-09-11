@@ -162,8 +162,11 @@ def ai_health_check():
         candidates.append(("http://litellm:4000", "/health", {}))
         candidates.append(("http://litellm:4000", "/v1/models", {}))
 
-    # Direct upstream Qwen GPU server
-    candidates.append(("http://115.244.46.68:8000", "/v1/models", {"Authorization": "Bearer sk-datai2i-a100-qwen35-27b-8x3f9z"}))
+    # Direct upstream Qwen GPU server (from config/env)
+    if config.QWEN_API_BASE:
+        qwen_base = config.QWEN_API_BASE.rstrip("/v1").rstrip("/")
+        qwen_hdrs = {"Authorization": f"Bearer {config.QWEN_API_KEY}"} if config.QWEN_API_KEY else {}
+        candidates.append((qwen_base, "/v1/models", qwen_hdrs))
 
     for base, path, headers in candidates:
         try:

@@ -54,7 +54,7 @@ class LiteLLMGenerator:
                 model=self.model,
                 messages=messages,
                 api_base=f"{self.api_base.rstrip('/')}/v1" if not self.api_base.rstrip('/').endswith("/v1") else self.api_base.rstrip('/'),
-                api_key=self.api_key or "sk-datai2i-a100-qwen35-27b-8x3f9z",
+                api_key=self.api_key or config.QWEN_API_KEY or config.LITELLM_MASTER_KEY,
                 custom_llm_provider="openai",
                 timeout=timeout_val,
                 max_tokens=max_tokens_val,
@@ -89,14 +89,14 @@ class LiteLLMGenerator:
             err_str = str(e).lower()
             
             # If the proxy was unreachable or had a connection issue, fail over directly to Qwen GPU server
-            if "connection" in err_str or "connect" in err_str or "refused" in err_str or "proxy" in err_str:
+            if ("connection" in err_str or "connect" in err_str or "refused" in err_str or "proxy" in err_str) and config.QWEN_API_BASE:
                 try:
                     print(f"Proxy connection failed ({e}). Failing over directly to Qwen GPU server...")
                     direct_response = litellm.completion(
                         model="openai/current-model",
                         messages=messages,
-                        api_base="http://115.244.46.68:8000/v1",
-                        api_key="sk-datai2i-a100-qwen35-27b-8x3f9z",
+                        api_base=config.QWEN_API_BASE,
+                        api_key=config.QWEN_API_KEY,
                         custom_llm_provider="openai",
                         timeout=timeout_val,
                         max_tokens=max_tokens_val,
