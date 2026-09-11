@@ -4,7 +4,7 @@ import { GoogleLogin } from '@react-oauth/google'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
 export default function LoginPage() {
-  const { loginWithGoogle, loginDev, isAuthenticated, loading } = useAuth()
+  const { loginWithGoogle, isAuthenticated, loading } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState(null)
 
@@ -25,16 +25,7 @@ export default function LoginPage() {
     }
   }
 
-  async function handleDevLogin() {
-    try {
-      setError(null)
-      await loginDev()
-      navigate('/')
-    } catch (err) {
-      console.error('Dev login failed:', err)
-      setError(err.message || 'Login failed')
-    }
-  }
+
 
   return (
     <div className="auth-page-container">
@@ -89,12 +80,7 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Dev Login Fallback Option */}
-            <div className="auth-dev-login-option">
-              <button className="auth-dev-btn" onClick={handleDevLogin}>
-                Quick Studio Sign-in (Dev Access)
-              </button>
-            </div>
+
 
             {error && <div className="auth-error-msg">{error}</div>}
 
