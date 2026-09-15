@@ -1018,7 +1018,6 @@ export default function BriefPage() {
                                 <div className="bcard-titles">
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                     <h3 className="bcard-title">{card.title || card.content?.slice(0, 28)}</h3>
-                                    <span className="bui-badge-version">V{card.version !== null && card.version !== undefined ? card.version : 0}</span>
                                   </div>
                                   <span className="bcard-type-sub">{normalizeDisplayType(card.card_type)}</span>
                                 </div>
@@ -1152,28 +1151,28 @@ export default function BriefPage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>Sources ({sources.length}):</span>
-                {documentList.slice(0, 3).map(doc => (
-                  <span
-                    key={doc.fileName}
-                    onClick={() => setSelectedDocFilter(selectedDocFilter === doc.fileName ? 'ALL' : doc.fileName)}
-                    style={{
-                      background: selectedDocFilter === doc.fileName ? '#0f172a' : '#ffffff',
-                      color: selectedDocFilter === doc.fileName ? '#ffffff' : '#334155',
-                      border: '1px solid #cbd5e1',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      maxWidth: '130px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}
-                    title={doc.fileName}
-                  >
-                    {doc.label} ({docCounts[doc.fileName] || 0})
-                  </span>
-                ))}
+                <select
+                  value={selectedDocFilter}
+                  onChange={e => setSelectedDocFilter(e.target.value)}
+                  style={{
+                    background: '#ffffff',
+                    color: '#334155',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    maxWidth: '220px',
+                    outline: 'none'
+                  }}
+                >
+                  <option value="ALL">All Sources ({cards.length})</option>
+                  {documentList.map(doc => (
+                    <option key={doc.fileName} value={doc.fileName}>
+                      {doc.label} ({docCounts[doc.fileName] || 0})
+                    </option>
+                  ))}
+                </select>
                 <span
                   onClick={() => navigate(`/projects/${activeProjectId}`)}
                   style={{ color: '#2563eb', cursor: 'pointer', fontWeight: 600, fontSize: '11.5px', marginLeft: '4px' }}
@@ -1339,7 +1338,6 @@ export default function BriefPage() {
                           <div className="bcard-titles">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               <h3 className="bcard-title">{card.title || card.content?.slice(0, 28)}</h3>
-                              <span className="bui-badge-version">V{card.version !== null && card.version !== undefined ? card.version : 0}</span>
                               {card.created_by === 'ARCHITECT' && (
                                 <span className="bui-badge-architect">Architect Input</span>
                               )}
@@ -1589,7 +1587,7 @@ export default function BriefPage() {
               <div className="bwidget-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px', marginBottom: '14px' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <span className="bui-badge-version">V{selectedCard.version !== null && selectedCard.version !== undefined ? selectedCard.version : 0}</span>
+
                     <span className="bcard-type-sub" style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, color: '#64748b' }}>
                       {normalizeDisplayType(selectedCard.card_type)}
                     </span>
