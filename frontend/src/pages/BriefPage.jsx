@@ -275,6 +275,7 @@ export default function BriefPage() {
   const [uploading, setUploading] = useState(false)
   const [toast, setToast] = useState(null)
   const [error, setError] = useState(null)
+  const [pendingCards, setPendingCards] = useState(new Set()) // tracks in-flight card actions
 
   // Filters & Tabs
   const [activeTab, setActiveTab] = useState('All Cards') // 'All Cards', 'Pending', 'Accepted', 'Rejected'
@@ -421,6 +422,8 @@ export default function BriefPage() {
   }
 
   async function handleStatusChange(cardId, newStatus) {
+    if (pendingCards.has(cardId)) return // prevent double-click
+    setPendingCards(prev => new Set(prev).add(cardId))
     try {
       if (newStatus === 'accepted') {
         const res = await acceptCard(cardId)
@@ -444,6 +447,8 @@ export default function BriefPage() {
       showToast(`Card marked as ${newStatus}`)
     } catch (err) {
       setError(err.message)
+    } finally {
+      setPendingCards(prev => { const s = new Set(prev); s.delete(cardId); return s })
     }
   }
 

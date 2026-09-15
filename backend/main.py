@@ -39,7 +39,6 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
-    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -68,7 +67,7 @@ app.include_router(activities_router)
 
 
 # ── Auth Endpoints ───────────────────────────────────────────────────────────
-from schemas.models import GoogleLoginRequest, DevLoginRequest, AuthResponse, UserResponse
+from schemas.models import GoogleLoginRequest, AuthResponse, UserResponse
 from auth.dependencies import get_current_user
 
 
@@ -82,33 +81,6 @@ def google_login(body: GoogleLoginRequest):
         raise HTTPException(status_code=401, detail="Invalid Google token")
 
     user = get_or_create_user(google_info)
-    access_token = create_jwt_token(user.id, user.email)
-
-    return AuthResponse(
-        access_token=access_token,
-        user=UserResponse(
-            id=user.id,
-            email=user.email,
-            name=user.name,
-            picture=user.picture,
-        ),
-    )
-
-
-@app.post("/api/auth/dev", response_model=AuthResponse)
-def dev_login(body: DevLoginRequest = None):
-    """Development login — creates a dev user without Google OAuth."""
-    import os
-    allow_dev = os.getenv("ALLOW_DEV_LOGIN", "false").lower() in ("true", "1", "yes")
-    if not allow_dev and config.GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=403, detail="Dev login disabled in production")
-
-    from auth import create_dev_user, create_jwt_token
-
-    if body is None:
-        body = DevLoginRequest()
-
-    user = create_dev_user(email=body.email, name=body.name)
     access_token = create_jwt_token(user.id, user.email)
 
     return AuthResponse(

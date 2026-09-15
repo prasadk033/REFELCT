@@ -90,6 +90,7 @@ class Project(Base):
     briefs = relationship("Brief", back_populates="project", cascade="all, delete-orphan")
     cards = relationship("Card", back_populates="project", cascade="all, delete-orphan")
     processing_jobs = relationship("ProcessingJob", back_populates="project", cascade="all, delete-orphan")
+    activity_logs = relationship("ActivityLog", foreign_keys="ActivityLog.project_id", cascade="all, delete-orphan")
 
 
 class Source(Base):

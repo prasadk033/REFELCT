@@ -169,10 +169,6 @@ def delete_project(
             except Exception as err:
                 logger.warning(f"Failed to delete file {s.storage_path}: {err}")
 
-    # Delete activity logs referencing this project (FK constraint requires this before project delete)
-    from db import ActivityLog
-    db.query(ActivityLog).filter(ActivityLog.project_id == project_id).delete(synchronize_session=False)
-
     db.delete(project)
     db.commit()
 
