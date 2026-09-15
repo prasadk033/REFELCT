@@ -38,6 +38,8 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
       but generates cards ONLY for new/changed information (no duplicate V0 cards).
     - Source.version, Brief.version, and Card.version are explicitly assigned upon completion.
     """
+    import time
+    pipeline_start = time.time()
     db = SessionLocal()
     loader = DocumentLoader()
     brief_agent = BriefAgent()
@@ -420,7 +422,13 @@ Return ONLY JSON list.
             project_id=project_id,
         )
 
-        logger.info(f"[{project_id}] Brief pipeline for Version {new_version} completed successfully.")
+        elapsed = time.time() - pipeline_start
+        logger.info(
+            f"[{project_id}] ✅ Brief pipeline V{new_version} COMPLETE — "
+            f"{total_new_cards} cards generated "
+            f"({total_questions} questions, {total_conflicts} conflicts) "
+            f"in {elapsed:.1f}s ({elapsed/60:.1f} min)"
+        )
 
     except Exception as e:
         logger.error(f"[{project_id}] Brief pipeline failed: {e}", exc_info=True)
