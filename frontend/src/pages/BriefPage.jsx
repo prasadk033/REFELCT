@@ -1130,6 +1130,132 @@ export default function BriefPage() {
               </div>
             </div>
 
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {/* 2-COLUMN LAYOUT: AI RECOMMENDATIONS (LEFT) + CARDS GRID (RIGHT)    */}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            <div style={{ display: 'flex', gap: '18px', alignItems: 'flex-start', marginTop: '4px' }}>
+
+              {/* ── LEFT COLUMN: AI Architect Recommendations Sidebar ── */}
+              {(() => {
+                const recoCards = cards.filter(c => c.ai_suggestion && c.ai_suggestion.trim())
+                return (
+                  <div style={{
+                    width: '258px',
+                    flexShrink: 0,
+                    position: 'sticky',
+                    top: '80px',
+                    maxHeight: 'calc(100vh - 120px)',
+                    overflowY: 'auto',
+                    background: '#f0fdf4',
+                    border: '1.5px solid #bbf7d0',
+                    borderRadius: '12px',
+                    padding: '16px 14px',
+                    boxSizing: 'border-box'
+                  }}>
+                    {/* Sidebar Header */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                      <div style={{
+                        width: '28px', height: '28px', borderRadius: '7px',
+                        background: '#dcfce7', border: '1px solid #bbf7d0',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#16a34a', fontSize: '13px', flexShrink: 0
+                      }}>✦</div>
+                      <div style={{ minWidth: 0 }}>
+                        <h3 style={{ fontSize: '12px', fontWeight: 800, color: '#14532d', margin: 0, letterSpacing: '-0.01em' }}>
+                          AI Recommendations
+                        </h3>
+                        <p style={{ fontSize: '10.5px', color: '#166534', margin: '1px 0 0 0' }}>
+                          {recoCards.length} of {cards.length} cards
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Recommendation Items */}
+                    {recoCards.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '20px 8px', color: '#86efac', fontSize: '11.5px' }}>
+                        No AI recommendations yet
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {recoCards.map((card, idx) => (
+                          <div
+                            key={card.id || idx}
+                            onClick={() => setSelectedCard(card)}
+                            style={{
+                              background: '#ffffff',
+                              border: '1px solid #bbf7d0',
+                              borderRadius: '8px',
+                              padding: '9px 10px',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.borderColor = '#4ade80'
+                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.12)'
+                              e.currentTarget.style.transform = 'translateX(2px)'
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.borderColor = '#bbf7d0'
+                              e.currentTarget.style.boxShadow = 'none'
+                              e.currentTarget.style.transform = 'translateX(0)'
+                            }}
+                          >
+                            {/* Card number + title */}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginBottom: '5px' }}>
+                              <span style={{
+                                minWidth: '18px', height: '18px',
+                                background: '#dcfce7', border: '1px solid #bbf7d0',
+                                borderRadius: '50%', display: 'inline-flex',
+                                alignItems: 'center', justifyContent: 'center',
+                                fontSize: '9px', fontWeight: 800, color: '#15803d',
+                                flexShrink: 0, marginTop: '1px'
+                              }}>{idx + 1}</span>
+                              <span style={{
+                                fontSize: '11px', fontWeight: 700, color: '#0f172a',
+                                lineHeight: 1.3,
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden'
+                              }}>
+                                {card.title || card.content?.slice(0, 35)}
+                              </span>
+                            </div>
+                            {/* Type tag */}
+                            <span style={{
+                              fontSize: '9.5px', fontWeight: 700, color: '#64748b',
+                              background: '#f1f5f9', border: '1px solid #e2e8f0',
+                              padding: '1px 5px', borderRadius: '4px',
+                              textTransform: 'uppercase', display: 'inline-block',
+                              marginBottom: '5px'
+                            }}>
+                              {normalizeDisplayType(card.card_type)}
+                            </span>
+                            {/* Recommendation text */}
+                            <p style={{
+                              fontSize: '11px', color: '#166534', margin: 0,
+                              lineHeight: 1.45,
+                              display: '-webkit-box',
+                              WebkitLineClamp: 3,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden'
+                            }}>
+                              ✦ {card.ai_suggestion}
+                            </p>
+                            <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700, display: 'block', marginTop: '5px', textAlign: 'right' }}>
+                              Open →
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {/* ── RIGHT COLUMN: All Cards (stats bar + filters + cards grid) ── */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+
             {/* Knowledge Overview Stats Bar */}
             <div style={{
               display: 'flex',
@@ -1551,9 +1677,12 @@ export default function BriefPage() {
               <span className="bpage-pg-showing">Showing {filteredCards.length} of {totalCount} total items</span>
             </div>
 
-          </div>
+              </div>{/* end right column */}
+            </div>{/* end 2-column flex */}
 
-        </div>
+          </div>{/* end bpage-cards-area */}
+
+        </div>{/* end bpage-main-layout */}
 
         {/* CARD DETAIL FLOATING MODAL LAYER (WITH BACKDROP BLUR) */}
         {selectedCard && (

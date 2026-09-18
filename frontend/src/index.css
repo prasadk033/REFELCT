@@ -5060,14 +5060,14 @@ a {
   background: #ffffff;
   border: 1.5px solid #e2e8f0;
   border-radius: 12px;
-  padding: 18px 16px 14px 16px;
+  padding: 14px 13px 11px 13px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
   position: relative;
-  min-height: 230px;
+  min-height: 165px;
 }
 
 .unified-category-card:hover {
@@ -5087,13 +5087,13 @@ a {
 }
 
 .category-icon-wrapper {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   transition: transform 0.15s ease;
 }
 
@@ -5102,10 +5102,10 @@ a {
 }
 
 .category-title-text {
-  font-size: 14.5px;
+  font-size: 12.5px;
   font-weight: 700;
   color: #0f172a;
-  margin: 0 0 6px 0;
+  margin: 0 0 4px 0;
   letter-spacing: -0.01em;
 }
 
@@ -5114,29 +5114,29 @@ a {
 }
 
 .category-desc-text {
-  font-size: 11px;
+  font-size: 10.5px;
   color: #64748b;
-  line-height: 1.45;
-  margin: 0 0 14px 0;
-  min-height: 32px;
+  line-height: 1.4;
+  margin: 0 0 10px 0;
+  min-height: 24px;
 }
 
 .category-metrics-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 10px 0;
+  gap: 6px;
+  padding: 8px 0;
   border-top: 1px solid #f1f5f9;
   border-bottom: 1px solid #f1f5f9;
-  margin-bottom: 12px;
+  margin-bottom: 9px;
 }
 
 .category-metric-val {
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 800;
   color: #0284c7;
   line-height: 1;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 
 .category-metric-val.under-review-val {
@@ -5153,7 +5153,7 @@ a {
 }
 
 .category-metric-lbl {
-  font-size: 11px;
+  font-size: 10px;
   color: #64748b;
   font-weight: 500;
 }
@@ -5165,17 +5165,17 @@ a {
 
 .category-view-btn {
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
   border: 1px solid #e2e8f0;
   background: #f8fafc;
   color: #1e293b;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   transition: all 0.15s ease;
   cursor: pointer;
 }
