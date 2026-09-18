@@ -91,18 +91,8 @@ function ProductSection({ navigate }) {
             </div>
           </div>
 
-          {/* Right – sketch image with clean label above it */}
+          {/* Right – sketch image */}
           <div>
-            {/* Handwritten label sits ABOVE the image in its own row */}
-            <div style={{ textAlign: 'right', marginBottom: 10 }}>
-              <span style={{
-                fontFamily: '"Comic Sans MS", "Segoe Script", cursive',
-                fontSize: 19, color: '#111', lineHeight: 1.3,
-                display: 'inline-block', transform: 'rotate(3deg)',
-              }}>
-                Ideas<br />into<br /><em style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>Spaces</em>
-              </span>
-            </div>
             <img
               src="/hero-sketch.jpg"
               alt="Architectural Modern Villa Concept Sketch"
@@ -248,12 +238,6 @@ function HowItWorksSection({ navigate }) {
             </p>
           </div>
           <div>
-            {/* Label above image */}
-            <div style={{ textAlign: 'right', marginBottom: 10 }}>
-              <span style={{ fontFamily: '"Comic Sans MS", cursive', fontSize: 16, color: '#111', lineHeight: 1.35, display: 'inline-block', transform: 'rotate(3deg)' }}>
-                A clearer<br />path from<br /><em>information</em><br />to design.
-              </span>
-            </div>
             <img src="/hero-sketch.jpg" alt="Architectural sketch" style={{ width: '100%', height: 240, objectFit: 'cover', borderRadius: 12, border: '1px solid #e5e7eb', display: 'block' }} />
           </div>
         </div>
@@ -378,12 +362,6 @@ function ForArchitectsSection({ navigate }) {
             </p>
           </div>
           <div>
-            {/* Label above image */}
-            <div style={{ textAlign: 'right', marginBottom: 10 }}>
-              <span style={{ fontFamily: '"Comic Sans MS", cursive', fontSize: 17, color: '#111', lineHeight: 1.35, display: 'inline-block', transform: 'rotate(2.5deg)' }}>
-                More time<br /><em>to think.</em>
-              </span>
-            </div>
             <img src="/hero-sketch.jpg" alt="Architectural sketch" style={{ width: '100%', height: 260, objectFit: 'cover', borderRadius: 12, border: '1px solid #e5e7eb', display: 'block' }} />
           </div>
         </div>
@@ -485,12 +463,6 @@ function ContactSection() {
           {/* Right – Info */}
           <div>
             <div style={{ marginBottom: 28 }}>
-              {/* Label above image */}
-              <div style={{ textAlign: 'right', marginBottom: 10 }}>
-                <span style={{ fontFamily: '"Comic Sans MS", cursive', fontSize: 15, color: '#111', lineHeight: 1.35, display: 'inline-block', transform: 'rotate(2deg)' }}>
-                  Better<br /><em>Spaces</em><br />Together.
-                </span>
-              </div>
               <img src="/hero-sketch.jpg" alt="Architectural sketch" style={{ width: '100%', height: 190, objectFit: 'cover', borderRadius: 10, border: '1px solid #e5e7eb', display: 'block' }} />
             </div>
             <h3 style={{ fontSize: 14, fontWeight: 700, color: '#000', marginBottom: 16 }}>Other ways to reach us</h3>
