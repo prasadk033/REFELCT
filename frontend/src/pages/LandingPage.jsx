@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-/* ── Shared wrapper: full-width section → centred inner ─────────── */
-const W = { maxWidth: 1100, margin: '0 auto', width: '100%', padding: '0 40px', boxSizing: 'border-box' }
+/* ── Shared wrapper: full-width section → proportional padding ──── */
+const W = { width: '100%', padding: '0 5%', boxSizing: 'border-box' }
 
 /* ─── Navbar ─────────────────────────────────────────────────────── */
 function Navbar({ navigate }) {
@@ -91,25 +91,17 @@ function ProductSection({ navigate }) {
             </div>
           </div>
 
-          {/* Right – sketch image with label badge OUTSIDE the image, cleanly positioned */}
-          <div style={{ position: 'relative' }}>
-            {/* "Ideas into Spaces" badge – top-right corner OUTSIDE the image, above it */}
-            <div style={{
-              position: 'absolute',
-              top: -36,
-              right: 0,
-              background: 'transparent',
-              fontFamily: '"Comic Sans MS", "Segoe Script", cursive',
-              fontSize: 19,
-              color: '#111',
-              lineHeight: 1.3,
-              textAlign: 'right',
-              pointerEvents: 'none',
-              zIndex: 2,
-              transform: 'rotate(3deg)',
-              textShadow: 'none'
-            }}>
-              Ideas<br />into<br /><em style={{ fontStyle: 'italic', textDecoration: 'underline', textUnderlineOffset: 3 }}>Spaces</em>
+          {/* Right – sketch image with clean label above it */}
+          <div>
+            {/* Handwritten label sits ABOVE the image in its own row */}
+            <div style={{ textAlign: 'right', marginBottom: 10 }}>
+              <span style={{
+                fontFamily: '"Comic Sans MS", "Segoe Script", cursive',
+                fontSize: 19, color: '#111', lineHeight: 1.3,
+                display: 'inline-block', transform: 'rotate(3deg)',
+              }}>
+                Ideas<br />into<br /><em style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>Spaces</em>
+              </span>
             </div>
             <img
               src="/hero-sketch.jpg"
@@ -255,14 +247,12 @@ function HowItWorksSection({ navigate }) {
               Reflect turns your project documents into structured knowledge, helping you move from information to clear architectural decisions.
             </p>
           </div>
-          <div style={{ position: 'relative' }}>
-            <div style={{
-              position: 'absolute', top: -30, right: 0,
-              fontFamily: '"Comic Sans MS", "Segoe Script", cursive',
-              fontSize: 17, color: '#111', lineHeight: 1.35, textAlign: 'right',
-              transform: 'rotate(3deg)', zIndex: 2, pointerEvents: 'none'
-            }}>
-              A clearer<br />path from<br /><em style={{ fontStyle: 'italic' }}>information</em><br />to design.
+          <div>
+            {/* Label above image */}
+            <div style={{ textAlign: 'right', marginBottom: 10 }}>
+              <span style={{ fontFamily: '"Comic Sans MS", cursive', fontSize: 16, color: '#111', lineHeight: 1.35, display: 'inline-block', transform: 'rotate(3deg)' }}>
+                A clearer<br />path from<br /><em>information</em><br />to design.
+              </span>
             </div>
             <img src="/hero-sketch.jpg" alt="Architectural sketch" style={{ width: '100%', height: 240, objectFit: 'cover', borderRadius: 12, border: '1px solid #e5e7eb', display: 'block' }} />
           </div>
@@ -387,14 +377,12 @@ function ForArchitectsSection({ navigate }) {
               Reflect is designed with and for architects — to help you manage complexity, explore possibilities and focus on what matters most: great architecture.
             </p>
           </div>
-          <div style={{ position: 'relative' }}>
-            <div style={{
-              position: 'absolute', top: -28, right: 0,
-              fontFamily: '"Comic Sans MS", cursive',
-              fontSize: 18, color: '#111', lineHeight: 1.35, textAlign: 'right',
-              transform: 'rotate(2.5deg)', zIndex: 2, pointerEvents: 'none'
-            }}>
-              More time<br /><em style={{ fontStyle: 'italic' }}>to think.</em>
+          <div>
+            {/* Label above image */}
+            <div style={{ textAlign: 'right', marginBottom: 10 }}>
+              <span style={{ fontFamily: '"Comic Sans MS", cursive', fontSize: 17, color: '#111', lineHeight: 1.35, display: 'inline-block', transform: 'rotate(2.5deg)' }}>
+                More time<br /><em>to think.</em>
+              </span>
             </div>
             <img src="/hero-sketch.jpg" alt="Architectural sketch" style={{ width: '100%', height: 260, objectFit: 'cover', borderRadius: 12, border: '1px solid #e5e7eb', display: 'block' }} />
           </div>
@@ -496,9 +484,12 @@ function ContactSection() {
 
           {/* Right – Info */}
           <div>
-            <div style={{ position: 'relative', marginBottom: 30 }}>
-              <div style={{ position: 'absolute', top: -26, right: 0, fontFamily: '"Comic Sans MS", cursive', fontSize: 16, color: '#111', lineHeight: 1.35, textAlign: 'right', transform: 'rotate(2deg)', zIndex: 2, pointerEvents: 'none' }}>
-                Better<br /><em>Spaces</em><br />Together.
+            <div style={{ marginBottom: 28 }}>
+              {/* Label above image */}
+              <div style={{ textAlign: 'right', marginBottom: 10 }}>
+                <span style={{ fontFamily: '"Comic Sans MS", cursive', fontSize: 15, color: '#111', lineHeight: 1.35, display: 'inline-block', transform: 'rotate(2deg)' }}>
+                  Better<br /><em>Spaces</em><br />Together.
+                </span>
               </div>
               <img src="/hero-sketch.jpg" alt="Architectural sketch" style={{ width: '100%', height: 190, objectFit: 'cover', borderRadius: 10, border: '1px solid #e5e7eb', display: 'block' }} />
             </div>
