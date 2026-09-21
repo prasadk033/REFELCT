@@ -3,14 +3,13 @@ Brief Orchestrator — end-to-end Brief processing pipeline.
 
 Pipeline:
 1. Load all project sources from DB
-2. Parse documents (Haystack + python-docx)
-3. Extract images and run TurboOCR
-4. Combine extracted content
-5. Inject project metadata
-6. Call Brief agent
-7. Call Card generation
-8. Store Brief version and Cards in PostgreSQL
-9. Update processing status
+2. Parse documents (Haystack + python-docx / Qwen-VL Vision)
+3. Combine extracted and approved content
+4. Inject project metadata
+5. Call Brief agent
+6. Call Card generation
+7. Store Brief version and Cards in PostgreSQL
+8. Update processing status
 """
 import uuid
 import json
@@ -20,7 +19,6 @@ from typing import List
 
 from db import SessionLocal, Source, Brief, BriefSource, Card, ProcessingJob, Project
 from documents.loader import DocumentLoader
-from documents.turboocr import turbo_ocr
 from agents.brief_agent import BriefAgent, format_project_context
 from storage import file_store
 

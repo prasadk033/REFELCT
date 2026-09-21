@@ -36,7 +36,7 @@
 ├────────────────────────────────────────────────────────┤
 │  • Brief Agent (Qwen LLM Orchestration)                │
 │  • Document Loaders (PDF, DOCX, TXT)                   │
-│  • TurboOCR (Image & Diagram Text Extraction)          │
+│  • Qwen-VL Vision (Multimodal & Diagram Analysis)      │
 │  • Storage Layer (Local Cache + Async MinIO S3)        │
 └────────┬───────────────────────────────┬───────────────┘
          │                               │
