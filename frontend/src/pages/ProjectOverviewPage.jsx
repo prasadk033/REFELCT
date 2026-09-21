@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, analyzeBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion } from '../api.js'
+import { getProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
 import ExtractingProgressModal from '../components/ExtractingProgressModal.jsx'
@@ -95,10 +95,13 @@ export default function ProjectOverviewPage() {
 
   // Analysis Blocking & Progress
   const [analyzing, setAnalyzing] = useState(false)
+  const [showAnalysisModal, setShowAnalysisModal] = useState(true)
   const [extracting, setExtracting] = useState(false)
+  const [showExtractModal, setShowExtractModal] = useState(true)
   const [analysisStep, setAnalysisStep] = useState('Initiating analysis...')
   const [analysisJobId, setAnalysisJobId] = useState(null)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
+  const [showExtractCompleteModal, setShowExtractCompleteModal] = useState(false)
   const [analysisSummary, setAnalysisSummary] = useState(null)
   const [analysisError, setAnalysisError] = useState(null)
   const [analyzingSeconds, setAnalyzingSeconds] = useState(0)
@@ -108,7 +111,8 @@ export default function ProjectOverviewPage() {
   const [extractModalOpen, setExtractModalOpen] = useState(false)
   const [extractDocName, setExtractDocName] = useState('Document')
   const [extractDocCount, setExtractDocCount] = useState(1)
-  const [extractEstSeconds, setExtractEstSeconds] = useState(25)
+  const [extractTotalPages, setExtractTotalPages] = useState(20)
+  const [extractEstSeconds, setExtractEstSeconds] = useState(35)
   const [extractElapsedSeconds, setExtractElapsedSeconds] = useState(0)
   const extractTimerRef = useRef(null)
 
@@ -117,12 +121,27 @@ export default function ProjectOverviewPage() {
   useEffect(() => {
     if (projectId) {
       loadProjectData()
+      checkActiveBackgroundJob()
     }
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
       if (extractTimerRef.current) clearInterval(extractTimerRef.current)
     }
   }, [projectId])
+
+  async function checkActiveBackgroundJob() {
+    try {
+      const statusRes = await getBriefStatus(projectId)
+      if (statusRes && ['queued', 'parsing', 'extracting_images', 'processing_brief', 'generating_cards'].includes(statusRes.status)) {
+        setAnalyzing(true)
+        setShowAnalysisModal(false) // If returning to page while job runs, stay in non-blocking background mode
+        setAnalysisStep(statusRes.current_step || 'Processing brief in background...')
+        startPollingStatus()
+      }
+    } catch (e) {
+      // No active job found
+    }
+  }
 
   function handleFileSelected(file) {
     if (!file) return
@@ -212,6 +231,97 @@ export default function ProjectOverviewPage() {
     }
   }
 
+  function startPollingStatus() {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+    pollIntervalRef.current = setInterval(async () => {
+      setAnalyzingSeconds(s => s + 1)
+      try {
+        const statusRes = await getBriefStatus(projectId)
+        if (statusRes.current_step) {
+          setAnalysisStep(statusRes.current_step)
+        }
+
+        if (statusRes.status === 'completed' || statusRes.current_step === 'Ready for Review') {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+          setAnalyzing(false)
+          setShowAnalysisModal(false)
+          
+          // Reload updated project data
+          const [freshCards, freshProj] = await Promise.all([
+            listCards(projectId).catch(() => []),
+            getProject(projectId).catch(() => null),
+            loadProjectData()
+          ])
+          
+          const docGeneratedCount = typeof statusRes.cards_generated === 'number'
+            ? statusRes.cards_generated
+            : 0
+          const qCount = typeof statusRes.questions_count === 'number'
+            ? statusRes.questions_count
+            : (freshCards || []).filter(c => c.card_type === 'QUESTION').length
+          const cCount = typeof statusRes.conflicts_count === 'number'
+            ? statusRes.conflicts_count
+            : (freshCards || []).filter(c => c.card_type === 'CONFLICT' || c.card_type === 'TENSION').length
+          
+          setAnalysisSummary({
+            cardsGenerated: docGeneratedCount,
+            projectTotalCards: (freshCards || []).length,
+            questions: qCount,
+            conflicts: cCount,
+            documents: statusRes.document_names || sources.map(s => s.file_name).join(', ')
+          })
+          setShowCompleteModal(true)
+          showToast(`✦ ${docGeneratedCount} Brief Cards generated for "${freshProj?.name || project?.name || 'Project'}"!`)
+        } else if (statusRes.status === 'failed') {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+          setAnalyzing(false)
+          setShowAnalysisModal(false)
+          setAnalysisError(statusRes.error || 'Analysis failed. Please try again.')
+          loadProjectData().catch(() => {})
+        } else if (statusRes.status === 'cancelled') {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+          setAnalyzing(false)
+          setShowAnalysisModal(false)
+          loadProjectData().catch(() => {})
+        }
+      } catch (pollErr) {
+        console.error('Polling error:', pollErr)
+      }
+    }, 1500)
+  }
+
+  async function handleCancelAnalysis() {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
+    try {
+      await cancelBrief(projectId)
+      showToast('Brief generation cancelled.')
+    } catch (err) {
+      console.warn('Cancel error:', err)
+    } finally {
+      setAnalyzing(false)
+      setShowAnalysisModal(false)
+      await loadProjectData()
+    }
+  }
+
+  function handleCancelExtract() {
+    if (extractTimerRef.current) {
+      clearInterval(extractTimerRef.current)
+      extractTimerRef.current = null
+    }
+    setExtractModalOpen(false)
+    setShowExtractModal(false)
+    setExtracting(false)
+    setRowExtractingId(null)
+    showToast('Document extraction cancelled.')
+  }
+
   async function handleRunAnalysis() {
     if (sources.length === 0) {
       showToast('Please upload at least one project document first.')
@@ -238,6 +348,7 @@ export default function ProjectOverviewPage() {
     setAnalysisEstimate(estimate)
 
     setAnalyzing(true)
+    setShowAnalysisModal(true)
     setAnalysisError(null)
     setAnalyzingSeconds(0)
     setAnalysisStep('Initiating multi-agent analysis...')
@@ -245,62 +356,10 @@ export default function ProjectOverviewPage() {
     try {
       const job = await analyzeBrief(projectId)
       setAnalysisJobId(job.id)
-
-      // Start polling for status with 1-second ticks
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
-      pollIntervalRef.current = setInterval(async () => {
-        setAnalyzingSeconds(s => s + 1)
-        try {
-          const statusRes = await getBriefStatus(projectId)
-          if (statusRes.current_step) {
-            setAnalysisStep(statusRes.current_step)
-          }
-
-          if (statusRes.status === 'completed' || statusRes.current_step === 'Ready for Review') {
-            clearInterval(pollIntervalRef.current)
-            pollIntervalRef.current = null
-            setAnalyzing(false)
-            
-            // Reload updated project data
-            const [freshCards, freshProj] = await Promise.all([
-              listCards(projectId).catch(() => []),
-              getProject(projectId).catch(() => null),
-              loadProjectData()
-            ])
-            
-            const docGeneratedCount = typeof statusRes.cards_generated === 'number'
-              ? statusRes.cards_generated
-              : 0
-            const qCount = typeof statusRes.questions_count === 'number'
-              ? statusRes.questions_count
-              : (freshCards || []).filter(c => c.card_type === 'QUESTION').length
-            const cCount = typeof statusRes.conflicts_count === 'number'
-              ? statusRes.conflicts_count
-              : (freshCards || []).filter(c => c.card_type === 'CONFLICT' || c.card_type === 'TENSION').length
-            
-            setAnalysisSummary({
-              cardsGenerated: docGeneratedCount,
-              projectTotalCards: (freshCards || []).length,
-              questions: qCount,
-              conflicts: cCount,
-              documents: statusRes.document_names || sources.map(s => s.file_name).join(', ')
-            })
-            setShowCompleteModal(true)
-            showToast(`✦ ${docGeneratedCount} Brief Cards generated for "${freshProj?.name || project?.name || 'Project'}"!`)
-          } else if (statusRes.status === 'failed') {
-            clearInterval(pollIntervalRef.current)
-            pollIntervalRef.current = null
-            setAnalyzing(false)
-            setAnalysisError(statusRes.error || 'Analysis failed. Please try again.')
-            loadProjectData().catch(() => {})
-          }
-        } catch (pollErr) {
-          console.error('Polling error:', pollErr)
-        }
-      }, 1500)
-
+      startPollingStatus()
     } catch (err) {
       setAnalyzing(false)
+      setShowAnalysisModal(false)
       setAnalysisError(err.message)
     }
   }
@@ -363,13 +422,22 @@ export default function ProjectOverviewPage() {
   async function handleExtractSingle(source) {
     const ext = source.file_name?.split('.').pop()?.toLowerCase() || ''
     const isImg = source.file_type === 'image' || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
-    const estSec = isImg ? 6 : 28
+    let totalP = 1
+    if (!isImg) {
+      const pm = (source.file_name || '').match(/(\d+)\s*pages?/i)
+      if (pm) totalP = parseInt(pm[1], 10)
+      else if (source.file_size && source.file_size > 500000) totalP = Math.max(2, Math.round(source.file_size / (120 * 1024)))
+      else totalP = 20
+    }
+    const estSec = isImg ? 8 : Math.max(25, totalP * 2)
 
     setExtractDocName(source.file_name || 'Document')
     setExtractDocCount(1)
+    setExtractTotalPages(totalP)
     setExtractEstSeconds(estSec)
     setExtractElapsedSeconds(0)
     setExtractModalOpen(true)
+    setShowExtractModal(true)
     setRowExtractingId(source.id)
 
     if (extractTimerRef.current) clearInterval(extractTimerRef.current)
@@ -399,6 +467,7 @@ export default function ProjectOverviewPage() {
         extractTimerRef.current = null
       }
       setExtractModalOpen(false)
+      setShowExtractModal(false)
       setRowExtractingId(null)
     }
   }
@@ -406,13 +475,28 @@ export default function ProjectOverviewPage() {
   async function handleExtractAllPending() {
     const docs = pendingBatchSources.length > 0 ? pendingBatchSources : sources.filter(s => !s.extracted_text)
     const docCount = docs.length || 1
-    const estSec = Math.max(15, docCount * 25)
+    let totalP = 0
+    docs.forEach(d => {
+      const ext = d.file_name?.split('.').pop()?.toLowerCase() || ''
+      const isImg = d.file_type === 'image' || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
+      if (isImg) totalP += 1
+      else {
+        const pm = (d.file_name || '').match(/(\d+)\s*pages?/i)
+        if (pm) totalP += parseInt(pm[1], 10)
+        else if (d.file_size && d.file_size > 500000) totalP += Math.max(2, Math.round(d.file_size / (120 * 1024)))
+        else totalP += 20
+      }
+    })
+    totalP = Math.max(1, totalP)
+    const estSec = Math.max(20, totalP * 2)
 
     setExtractDocName(docs[0]?.file_name || 'Pending Documents')
     setExtractDocCount(docCount)
+    setExtractTotalPages(totalP)
     setExtractEstSeconds(estSec)
     setExtractElapsedSeconds(0)
     setExtractModalOpen(true)
+    setShowExtractModal(true)
     setExtracting(true)
 
     if (extractTimerRef.current) clearInterval(extractTimerRef.current)
@@ -424,6 +508,7 @@ export default function ProjectOverviewPage() {
       await extractSources(projectId)
       const updated = await listSources(projectId)
       setSources(updated || [])
+      setShowExtractCompleteModal(true)
       showToast('✓ Extraction completed for pending sources')
     } catch (err) {
       console.error('Batch extraction error:', err)
@@ -438,6 +523,7 @@ export default function ProjectOverviewPage() {
         extractTimerRef.current = null
       }
       setExtractModalOpen(false)
+      setShowExtractModal(false)
       setExtracting(false)
     }
   }
@@ -531,8 +617,99 @@ export default function ProjectOverviewPage() {
           </div>
         </header>
 
+        {/* BACKGROUND STATUS BANNERS */}
+        {analyzing && !showAnalysisModal && (
+          <div style={{
+            background: '#eff6ff',
+            border: '1.5px solid #93c5fd',
+            borderRadius: '10px',
+            padding: '14px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            marginBottom: '16px',
+            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.08)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className="bui-spinner-inline" style={{ width: '18px', height: '18px', borderWidth: '2.5px' }} />
+              <div>
+                <strong style={{ fontSize: '13.5px', color: '#1e40af', display: 'block' }}>
+                  Generating Brief Cards in background ({analyzingSeconds}s elapsed)
+                </strong>
+                <span style={{ fontSize: '12px', color: '#3b82f6' }}>
+                  {analysisStep || 'Analyzing project documents and synthesizing cards...'}
+                </span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                className="bui-btn"
+                style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 600, background: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                onClick={() => setShowAnalysisModal(true)}
+              >
+                View Progress
+              </button>
+              <button
+                type="button"
+                className="bui-btn"
+                style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 600, background: '#ffffff', color: '#ef4444', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer' }}
+                onClick={handleCancelAnalysis}
+              >
+                Cancel Task
+              </button>
+            </div>
+          </div>
+        )}
+
+        {extractModalOpen && !showExtractModal && (
+          <div style={{
+            background: '#f8fafc',
+            border: '1.5px solid #cbd5e1',
+            borderRadius: '10px',
+            padding: '14px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            marginBottom: '16px',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.05)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className="bui-spinner-inline" style={{ width: '18px', height: '18px', borderWidth: '2.5px', borderColor: '#0f172a', borderTopColor: 'transparent' }} />
+              <div>
+                <strong style={{ fontSize: '13.5px', color: '#0f172a', display: 'block' }}>
+                  Extracting documents in background ({extractElapsedSeconds}s elapsed)
+                </strong>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Analyzing {extractDocName} • Workspace will update automatically
+                </span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                className="bui-btn bui-btn-outline"
+                style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 600, color: '#0f172a', borderColor: '#cbd5e1', borderRadius: '6px', cursor: 'pointer' }}
+                onClick={() => setShowExtractModal(true)}
+              >
+                View Progress
+              </button>
+              <button
+                type="button"
+                className="bui-btn"
+                style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 600, background: '#ffffff', color: '#ef4444', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer' }}
+                onClick={handleCancelExtract}
+              >
+                Cancel Task
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* SECTION 1: Project Overview Hero Card */}
-        <section className="pov-hero-card">
+        <section className="pov-hero-card" style={analyzing || extractModalOpen ? { transition: 'all 0.3s' } : {}}>
           <div className="pov-hero-content">
             <div className="pov-hero-header">
               <h2 className="pov-section-title">Project Overview</h2>
@@ -565,7 +742,7 @@ export default function ProjectOverviewPage() {
             </div>
 
             {/* Action Row */}
-            <div className="pov-analyse-action-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div className="pov-analyse-action-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', ...(analyzing || extractModalOpen ? { opacity: 0.65, pointerEvents: 'none' } : {}) }}>
               
               {sources.length === 0 ? (
                 /* 1. No documents yet: Add Source CTA */
@@ -581,22 +758,7 @@ export default function ProjectOverviewPage() {
                 /* 2. Newly uploaded documents requiring extraction */
                 <button
                   className="pov-btn-analyse"
-                  onClick={async () => {
-                    try {
-                      setExtracting(true)
-                      await extractSources(projectId)
-                      navigate(`/projects/${projectId}/extract`)
-                    } catch (err) {
-                      if (err.message?.includes('AI services') || err.status === 503) {
-                        setAiFallbackErrorMsg("It might take some time, AI services are temporarily low.")
-                        setAiFallbackModalOpen(true)
-                      } else {
-                        showToast('Extraction failed: ' + err.message)
-                      }
-                    } finally {
-                      setExtracting(false)
-                    }
-                  }}
+                  onClick={handleExtractAllPending}
                   disabled={extracting || analyzing}
                 >
                   <span className="pov-sparkle">📄</span>
@@ -707,7 +869,22 @@ export default function ProjectOverviewPage() {
 
               {/* 1. Render Pending Extraction Group at Top (New In-flight Documents) */}
               {pendingBatchSources.length > 0 && (
-                <div className="pov-version-group-card" style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '10px', overflow: 'hidden' }}>
+                <div
+                  className="pov-version-group-card"
+                  style={{
+                    background: '#ffffff',
+                    border: '1px dashed #cbd5e1',
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    transition: 'all 0.25s',
+                    ...((extractModalOpen && !showExtractModal) || (analyzing && !showAnalysisModal) ? {
+                      opacity: 0.55,
+                      filter: 'blur(0.5px)',
+                      pointerEvents: 'none',
+                      userSelect: 'none'
+                    } : {})
+                  }}
+                >
                   
                   {/* Single Pending Group Header */}
                   <div style={{ background: '#f8fafc', borderBottom: '1px dashed #cbd5e1', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1202,7 +1379,11 @@ export default function ProjectOverviewPage() {
                   ref={modalFileInputRef}
                   style={{ display: 'none' }}
                   accept={uploadCategory === 'document' ? '.pdf,.docx,.doc,.txt' : '.jpg,.jpeg,.png,.webp'}
-                  onChange={(e) => handleFileSelected(e.target.files?.[0])}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) handleFileSelected(f)
+                    e.target.value = ''
+                  }}
                 />
 
                 {/* Step 2: File Selector / Dropzone */}
@@ -1217,6 +1398,16 @@ export default function ProjectOverviewPage() {
                     transition: 'all 0.15s'
                   }}
                   onClick={() => modalFileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    const f = e.dataTransfer?.files?.[0]
+                    if (f) handleFileSelected(f)
+                  }}
                 >
                   {selectedFile ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
@@ -1401,23 +1592,65 @@ export default function ProjectOverviewPage() {
         )}
 
         {/* DYNAMIC ANALYSIS IN-PROGRESS MODAL */}
-        {analyzing && (
+        {analyzing && showAnalysisModal && (
           <GeneratingProgressModal
             estimate={analysisEstimate}
             elapsedSeconds={analyzingSeconds}
             serverStep={analysisStep}
             projectName={project?.name || 'Project'}
+            onRunInBackground={() => setShowAnalysisModal(false)}
+            onCancel={handleCancelAnalysis}
           />
         )}
 
         {/* DYNAMIC EXTRACTION IN-PROGRESS MODAL */}
-        {extractModalOpen && (
+        {extractModalOpen && showExtractModal && (
           <ExtractingProgressModal
             documentName={extractDocName}
             docCount={extractDocCount}
+            totalPages={extractTotalPages}
             estimatedSeconds={extractEstSeconds}
             elapsedSeconds={extractElapsedSeconds}
+            onRunInBackground={() => setShowExtractModal(false)}
+            onCancel={handleCancelExtract}
           />
+        )}
+
+        {/* EXTRACTION COMPLETE SUCCESS MODAL */}
+        {showExtractCompleteModal && (
+          <div className="bui-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
+            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px', textAlign: 'center', padding: '30px 24px', background: '#ffffff', borderRadius: '12px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.15)' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '22px' }}>
+                ✓
+              </div>
+              <h2 style={{ fontSize: '19px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                Extraction Completed
+              </h2>
+              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '22px', lineHeight: 1.5 }}>
+                Documents have been extracted and prepared. You can now review the extracted content or proceed to generate Brief Cards.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="bui-btn bui-btn-outline"
+                  style={{ padding: '8px 16px', fontSize: '13px', color: '#64748b', borderColor: '#cbd5e1' }}
+                  onClick={() => setShowExtractCompleteModal(false)}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  style={{ background: '#000000', color: '#ffffff', padding: '8px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                  onClick={() => {
+                    setShowExtractCompleteModal(false)
+                    navigate(`/projects/${projectId}/extract`)
+                  }}
+                >
+                  Review Extracted Data →
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ANALYSIS COMPLETE SUCCESS MODAL */}

@@ -5,9 +5,11 @@ export default function GeneratingProgressModal({
   estimate,
   elapsedSeconds = 0,
   serverStep = null,
-  projectName = 'Project'
+  projectName = 'Project',
+  onRunInBackground = null,
+  onCancel = null
 }) {
-  const estSeconds = estimate?.estimatedSeconds || 30
+  const estSeconds = estimate?.estimatedSeconds || 45
   const progressPercent = Math.min(95, Math.max(8, Math.round((elapsedSeconds / estSeconds) * 90)))
   const remainingSeconds = Math.max(1, Math.round(estSeconds - elapsedSeconds))
   const stepText = serverStep && serverStep !== 'Initiating analysis...' && serverStep !== 'Initiating multi-agent analysis...' && serverStep !== 'Initiating Brief analysis pipeline...'
@@ -64,7 +66,7 @@ export default function GeneratingProgressModal({
           Analyzing approved sources for <strong style={{ color: '#0f172a' }}>{projectName}</strong>:
           <br />
           <span style={{ color: '#2563eb', fontWeight: 600 }}>
-            {estimate?.docCount || 1} Document{estimate?.docCount > 1 ? 's' : ''} • ~{estimate?.totalPages || 1} Pages • {estimate?.totalChars?.toLocaleString() || '0'} characters
+            {estimate?.docCount || 1} Document{estimate?.docCount > 1 ? 's' : ''} • ~{estimate?.totalPages || 1} Pages
           </span>
         </p>
 
@@ -83,7 +85,7 @@ export default function GeneratingProgressModal({
           <div>
             <span style={{ fontSize: '11px', color: '#64748b', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Estimated</span>
             <strong style={{ fontSize: '15px', color: '#0f172a', display: 'block', marginTop: '2px' }}>
-              ~{estimate?.formattedTime || '35s'}
+              ~{estimate?.formattedTime || '45s'}
             </strong>
           </div>
           <div style={{ borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0' }}>
@@ -157,6 +159,54 @@ export default function GeneratingProgressModal({
           <span style={{ fontSize: '12.5px', color: '#0f172a', fontWeight: 600, lineHeight: 1.4 }}>
             {stepText}
           </span>
+        </div>
+
+        {/* Actions: Run in Background & Cancel */}
+        <div style={{
+          display: 'flex',
+          gap: '10px',
+          marginTop: '20px',
+          justifyContent: 'center',
+          flexWrap: 'wrap'
+        }}>
+          {onRunInBackground && (
+            <button
+              type="button"
+              className="bui-btn bui-btn-outline"
+              style={{
+                padding: '8px 18px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: '#2563eb',
+                borderColor: '#93c5fd',
+                background: '#eff6ff',
+                borderRadius: '8px'
+              }}
+              onClick={onRunInBackground}
+              title="Continue generating in background while you browse"
+            >
+              ⚙ Run in Background
+            </button>
+          )}
+          {onCancel && (
+            <button
+              type="button"
+              className="bui-btn"
+              style={{
+                padding: '8px 16px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: '#ef4444',
+                background: '#ffffff',
+                border: '1px solid #fecaca',
+                borderRadius: '8px'
+              }}
+              onClick={onCancel}
+              title="Cancel the generation task"
+            >
+              ✕ Cancel Task
+            </button>
+          )}
         </div>
 
         <p style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '16px', marginBottom: 0 }}>

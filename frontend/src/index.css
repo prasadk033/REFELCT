@@ -1958,12 +1958,14 @@ a {
 
 /* ── Global Overview Page Content ──────────────────────────── */
 .gov-container {
-  max-width: 1160px;
+  max-width: 1520px;
+  width: 100%;
   margin: 0 auto;
-  padding: 32px 36px 60px 36px;
+  padding: 24px 32px 60px 32px;
   display: flex;
   flex-direction: column;
   gap: 28px;
+  box-sizing: border-box;
 }
 
 .gov-header {
@@ -2509,12 +2511,14 @@ a {
 
 /* ── Project Overview Page Content ─────────────────────────── */
 .pov-container {
-  max-width: 1160px;
+  max-width: 1520px;
+  width: 100%;
   margin: 0 auto;
-  padding: 28px 36px 60px 36px;
+  padding: 24px 32px 60px 32px;
   display: flex;
   flex-direction: column;
   gap: 24px;
+  box-sizing: border-box;
 }
 
 .pov-top-bar {
@@ -4645,12 +4649,14 @@ a {
    ═══════════════════════════════════════════════════════════════ */
 
 .gov-container {
-  max-width: 1100px;
+  max-width: 1520px;
+  width: 100%;
   margin: 0 auto;
-  padding: 32px 40px 60px 40px;
+  padding: 24px 32px 60px 32px;
   display: flex;
   flex-direction: column;
   gap: 28px;
+  box-sizing: border-box;
 }
 
 /* Header */

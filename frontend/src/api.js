@@ -179,6 +179,12 @@ export async function getBriefStatus(projectId) {
   return apiFetch(`/api/projects/${projectId}/brief/status`);
 }
 
+export async function cancelBrief(projectId) {
+  return apiFetch(`/api/projects/${projectId}/brief/cancel`, {
+    method: "POST",
+  });
+}
+
 export async function getCurrentBrief(projectId) {
   return apiFetch(`/api/projects/${projectId}/brief`);
 }

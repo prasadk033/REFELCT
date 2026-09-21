@@ -188,6 +188,31 @@ def get_brief_status(
     return ProcessingStatusResponse.model_validate(job)
 
 
+@router.post("/{project_id}/brief/cancel")
+def cancel_brief_job(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Cancel any running/queued brief processing job for this project."""
+    _get_user_project(db, project_id, user.id)
+
+    active_jobs = (
+        db.query(ProcessingJob)
+        .filter(
+            ProcessingJob.project_id == project_id,
+            ProcessingJob.status.in_(["queued", "parsing", "extracting_images", "processing_brief", "generating_cards"])
+        )
+        .all()
+    )
+    for aj in active_jobs:
+        aj.status = "cancelled"
+        aj.current_step = "Cancelled by user"
+    db.commit()
+    logger.info(f"User cancelled {len(active_jobs)} active brief jobs for project {project_id}")
+    return {"message": "Active processing job cancelled", "cancelled_count": len(active_jobs)}
+
+
 @router.get("/{project_id}/brief", response_model=BriefResponse)
 def get_current_brief(
     project_id: str,

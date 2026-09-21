@@ -29,31 +29,39 @@ export function calculateBriefEstimate(sourcesToProcess = []) {
     const textLen = text.length
     totalChars += textLen
 
-    // Check for explicit page markers from page-by-page vision extraction
-    const pageMatches = text.match(/Page:\s*\d+/gi)
-    if (pageMatches && pageMatches.length > 0) {
-      // Find highest page number or match count
-      totalPages += pageMatches.length
+    // 1. Check for explicit page markers from page-by-page vision extraction
+    const pageNumMatches = [...text.matchAll(/Page:\s*(\d+)/gi)].map(m => parseInt(m[1], 10))
+    const pageOfMatches = [...text.matchAll(/(\d+)\s*(?:of|\/)\s*(\d+)/gi)].map(m => parseInt(m[2], 10))
+    
+    if (pageNumMatches.length > 0 || pageOfMatches.length > 0) {
+      const allFound = [...pageNumMatches, ...pageOfMatches]
+      const maxFound = Math.max(...allFound)
+      totalPages += Math.max(maxFound, pageNumMatches.length)
     } else {
-      // Check if filename contains page info (e.g. jub(8PAGES).pdf)
+      // 2. Check if filename contains page info (e.g. Brief_document(25pages).pdf)
       const filenameMatch = (s.file_name || '').match(/(\d+)\s*pages?/i)
       if (filenameMatch) {
         totalPages += parseInt(filenameMatch[1], 10)
+      } else if (s.file_size && s.file_size > 500000 && (s.file_name || '').endsWith('.pdf')) {
+        // PDF size estimation: architectural PDFs average ~120KB per page
+        const estFromSize = Math.max(2, Math.round(s.file_size / (120 * 1024)))
+        totalPages += estFromSize
       } else {
-        // Estimate based on standard density (~3,000 characters per page)
-        const est = Math.max(1, Math.round(textLen / 3000))
+        // 3. Fallback estimate based on standard density
+        const est = Math.max(1, Math.round(textLen / 2200))
         totalPages += est
       }
     }
   })
 
-  // Dynamic formula calibrated from production logs
-  const baselineOverhead = 18 // Initialization & LiteLLM handshake
+  // Dynamic formula calibrated from production logs + 30s safe side buffer
+  const baselineOverhead = 22 // Initialization & handshake
   const charProcessingTime = (totalChars / 1000) * 1.65
   const multiDocCrossTime = sourcesToProcess.length > 1 ? (sourcesToProcess.length - 1) * 12 : 0
+  const safeBuffer = 30 // Safe-side buffer requested by user
 
-  let estimatedSeconds = Math.round(baselineOverhead + charProcessingTime + multiDocCrossTime)
-  if (estimatedSeconds < 25) estimatedSeconds = 25
+  let estimatedSeconds = Math.round(baselineOverhead + charProcessingTime + multiDocCrossTime + safeBuffer)
+  if (estimatedSeconds < 35) estimatedSeconds = 35
 
   let formattedTime = ''
   if (estimatedSeconds < 60) {

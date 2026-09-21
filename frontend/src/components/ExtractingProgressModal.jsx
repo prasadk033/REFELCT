@@ -3,20 +3,28 @@ import React from 'react'
 export default function ExtractingProgressModal({
   documentName = 'Document',
   docCount = 1,
-  estimatedSeconds = 25,
+  totalPages = 20,
+  estimatedSeconds = 35,
   elapsedSeconds = 0,
+  onRunInBackground = null,
+  onCancel = null
 }) {
-  const estSeconds = Math.max(8, estimatedSeconds)
-  const progressPercent = Math.min(95, Math.max(10, Math.round((elapsedSeconds / estSeconds) * 92)))
+  const estSeconds = Math.max(10, estimatedSeconds)
+  const progressPercent = Math.min(95, Math.max(8, Math.round((elapsedSeconds / estSeconds) * 92)))
   const remainingSeconds = Math.max(1, Math.round(estSeconds - elapsedSeconds))
 
-  let stepText = 'Reading document structure & pages...'
-  if (progressPercent >= 30 && progressPercent < 60) {
-    stepText = 'Extracting spatial parameters, schedules & data...'
-  } else if (progressPercent >= 60 && progressPercent < 85) {
-    stepText = 'Structuring architectural observations & context...'
-  } else if (progressPercent >= 85) {
-    stepText = 'Finalizing extraction for review...'
+  // Dynamically estimate current page being processed based on progress
+  const safeTotalPages = Math.max(1, totalPages)
+  const currentPage = Math.min(safeTotalPages, Math.max(1, Math.floor((progressPercent / 100) * safeTotalPages) + 1))
+  const currentDocIndex = Math.min(docCount, Math.max(1, Math.floor((progressPercent / 100) * docCount) + 1))
+
+  let stepText = `Extracting architectural details from page ${currentPage} of ${safeTotalPages}...`
+  if (progressPercent >= 40 && progressPercent < 75) {
+    stepText = `Structuring spatial parameters, drawings, and tables (page ${currentPage}/${safeTotalPages})...`
+  } else if (progressPercent >= 75 && progressPercent < 90) {
+    stepText = `Compiling multi-page observations & context...`
+  } else if (progressPercent >= 90) {
+    stepText = `Finalizing extraction and preparing review...`
   }
 
   return (
@@ -25,7 +33,7 @@ export default function ExtractingProgressModal({
         className="bui-modal"
         onClick={e => e.stopPropagation()}
         style={{
-          maxWidth: '500px',
+          maxWidth: '520px',
           textAlign: 'center',
           padding: '36px 32px',
           background: '#ffffff',
@@ -59,14 +67,31 @@ export default function ExtractingProgressModal({
           Extracting Data & Review
         </h2>
 
-        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '22px', lineHeight: 1.45 }}>
+        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px', lineHeight: 1.45 }}>
           Analyzing <strong style={{ color: '#0f172a' }}>{documentName}</strong>
           {docCount > 1 && ` and ${docCount - 1} other source(s)`}
-          <br />
-          <span style={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
-            This might take a moment while document pages and observations are structured.
-          </span>
         </p>
+
+        {/* Live Progress Pill (Requested: Documents [1/20] Pages [3/20] %) */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '12px',
+          background: '#f1f5f9',
+          border: '1px solid #e2e8f0',
+          borderRadius: '20px',
+          padding: '6px 14px',
+          marginBottom: '20px',
+          fontSize: '12px',
+          fontWeight: 600,
+          color: '#334155'
+        }}>
+          <span>Documents: <strong style={{ color: '#2563eb' }}>[{currentDocIndex}/{docCount}]</strong></span>
+          <span style={{ color: '#cbd5e1' }}>•</span>
+          <span>Pages: <strong style={{ color: '#059669' }}>[Page {currentPage}/{safeTotalPages}]</strong></span>
+          <span style={{ color: '#cbd5e1' }}>•</span>
+          <span style={{ color: '#0f172a' }}>{progressPercent}%</span>
+        </div>
 
         {/* Time Metrics */}
         <div style={{
@@ -103,9 +128,9 @@ export default function ExtractingProgressModal({
         {/* Progress Bar */}
         <div style={{
           width: '100%',
-          height: '8px',
+          height: '9px',
           background: '#e2e8f0',
-          borderRadius: '4px',
+          borderRadius: '6px',
           overflow: 'hidden',
           marginBottom: '16px'
         }}>
@@ -113,22 +138,75 @@ export default function ExtractingProgressModal({
             height: '100%',
             width: `${progressPercent}%`,
             background: 'linear-gradient(90deg, #0f172a 0%, #2563eb 100%)',
-            borderRadius: '4px',
+            borderRadius: '6px',
             transition: 'width 0.6s ease'
           }} />
         </div>
 
         {/* Step Status with Spinner */}
         <div style={{
-          display: 'inline-flex',
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: '10px',
+          padding: '10px 14px',
+          display: 'flex',
           alignItems: 'center',
-          gap: '8px',
+          gap: '10px',
           fontSize: '12.5px',
           fontWeight: 600,
-          color: '#334155'
+          color: '#334155',
+          textAlign: 'left'
         }}>
-          <span className="bui-spinner-inline" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: '#0f172a', borderTopColor: 'transparent' }} />
+          <span className="bui-spinner-inline" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: '#0f172a', borderTopColor: 'transparent', flexShrink: 0 }} />
           <span>{stepText}</span>
+        </div>
+
+        {/* Actions: Run in Background & Cancel */}
+        <div style={{
+          display: 'flex',
+          gap: '10px',
+          marginTop: '20px',
+          justifyContent: 'center',
+          flexWrap: 'wrap'
+        }}>
+          {onRunInBackground && (
+            <button
+              type="button"
+              className="bui-btn bui-btn-outline"
+              style={{
+                padding: '8px 18px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: '#2563eb',
+                borderColor: '#93c5fd',
+                background: '#eff6ff',
+                borderRadius: '8px'
+              }}
+              onClick={onRunInBackground}
+              title="Continue extracting in background while you browse"
+            >
+              ⚙ Run in Background
+            </button>
+          )}
+          {onCancel && (
+            <button
+              type="button"
+              className="bui-btn"
+              style={{
+                padding: '8px 16px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: '#ef4444',
+                background: '#ffffff',
+                border: '1px solid #fecaca',
+                borderRadius: '8px'
+              }}
+              onClick={onCancel}
+              title="Cancel the extraction task"
+            >
+              ✕ Cancel Task
+            </button>
+          )}
         </div>
       </div>
     </div>
