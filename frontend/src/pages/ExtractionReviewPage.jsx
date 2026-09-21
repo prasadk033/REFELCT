@@ -12,6 +12,8 @@ import {
   listCards
 } from '../api.js'
 import AiHealthBanner from '../components/AiHealthBanner.jsx'
+import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
+import { calculateBriefEstimate } from '../utils/estimate.js'
 
 export default function ExtractionReviewPage() {
   const { projectId } = useParams()
@@ -32,6 +34,7 @@ export default function ExtractionReviewPage() {
   const [analysisSummary, setAnalysisSummary] = useState(null)
   const [analysisError, setAnalysisError] = useState(null)
   const [analyzingSeconds, setAnalyzingSeconds] = useState(0)
+  const [analysisEstimate, setAnalysisEstimate] = useState(null)
   const pollIntervalRef = useRef(null)
 
   const [toastMsg, setToastMsg] = useState(null)
@@ -158,6 +161,10 @@ export default function ExtractionReviewPage() {
 
   async function handleAnalyseAll() {
     try {
+      const docsToProcess = pendingSources.length > 0 ? pendingSources : sources
+      const estimate = calculateBriefEstimate(docsToProcess)
+      setAnalysisEstimate(estimate)
+
       setAnalyzing(true)
       setAnalysisError(null)
       setAnalyzingSeconds(0)
@@ -165,9 +172,9 @@ export default function ExtractionReviewPage() {
       
       await analyzeBrief(projectId)
 
-      // Start polling status
+      // Start polling status with 1-second ticks
       pollIntervalRef.current = setInterval(async () => {
-        setAnalyzingSeconds(s => s + 1.5)
+        setAnalyzingSeconds(s => s + 1)
         try {
           const statusRes = await getBriefStatus(projectId)
           const step = statusRes.current_step || statusRes.status
@@ -566,49 +573,14 @@ export default function ExtractionReviewPage() {
 
       </div>
 
-      {/* ANALYSIS IN-PROGRESS BLOCKING OVERLAY */}
+      {/* DYNAMIC ANALYSIS IN-PROGRESS MODAL */}
       {analyzing && (
-        <div className="bui-modal-overlay" style={{ background: 'rgba(5, 7, 12, 0.85)', backdropFilter: 'blur(6px)', zIndex: 1000 }}>
-          <div className="bui-modal" style={{ maxWidth: '480px', textAlign: 'center', padding: '36px 28px', background: '#ffffff', borderRadius: '12px', color: '#0f172a' }}>
-            <div style={{ marginBottom: '20px' }}>
-              <span className="bui-spinner" style={{ width: '40px', height: '40px', borderWidth: '3px', margin: '0 auto', borderColor: '#000000', borderTopColor: 'transparent' }} />
-            </div>
-            <h2 style={{ fontSize: '20px', color: '#0f172a', fontWeight: 700, marginBottom: '8px' }}>
-              Generating Project Brief Cards
-            </h2>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px', lineHeight: 1.5 }}>
-              Analyzing verified project information, extracting architectural parameters, and formulating candidate Brief Cards.
-            </p>
-
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 16px', textAlign: 'left', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ color: '#000000', fontWeight: 700 }}>✦</span>
-                <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{analysisStep}</span>
-              </div>
-            </div>
-
-              {analysisStep === 'Ready for Review' && (
-                <button
-                  style={{
-                    width: '100%',
-                    background: '#000000',
-                    color: '#ffffff',
-                    border: '1px solid #000000',
-                    padding: '12px 20px',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    marginTop: '8px',
-                    transition: 'all 0.15s'
-                  }}
-                  onClick={() => navigate(`/projects/${projectId}/brief`)}
-                >
-                  Open Brief Workspace →
-                </button>
-              )}
-          </div>
-        </div>
+        <GeneratingProgressModal
+          estimate={analysisEstimate}
+          elapsedSeconds={analyzingSeconds}
+          serverStep={analysisStep}
+          projectName={project?.name || 'Project'}
+        />
       )}
 
 
