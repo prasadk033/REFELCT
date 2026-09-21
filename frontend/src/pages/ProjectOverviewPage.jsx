@@ -547,7 +547,7 @@ export default function ProjectOverviewPage() {
                 >
                   <span className="pov-sparkle">📄</span>
                   <span>
-                    {extracting ? 'Extracting with Qwen-VL...' : 'Extract Data & Review'}
+                    {extracting ? 'Extracting Data...' : 'Extract Data & Review'}
                   </span>
                 </button>
               ) : pendingNeedsReview ? (
@@ -684,7 +684,7 @@ export default function ProjectOverviewPage() {
                         }}
                         onClick={handleExtractAllPending}
                         disabled={extracting}
-                        title="Extract observations & text from all pending documents with Qwen-VL"
+                        title="Extract observations & text from all pending documents"
                       >
                         {extracting ? (
                           <>
@@ -772,7 +772,7 @@ export default function ProjectOverviewPage() {
                                       cursor: 'pointer'
                                     }}
                                     onClick={() => setViewingSource(s)}
-                                    title="View Qwen extracted observations & text"
+                                    title="View extracted observations & text"
                                   >
                                     <span>📄</span>
                                     <span>Extracted Data</span>
@@ -796,7 +796,7 @@ export default function ProjectOverviewPage() {
                                     }}
                                     onClick={() => handleExtractSingle(s)}
                                     disabled={rowExtractingId === s.id}
-                                    title="Run Qwen vision & text extraction on this source"
+                                    title="Run visual analysis & text extraction on this source"
                                   >
                                     {rowExtractingId === s.id ? '⚡ Extracting...' : '⚡ Extract Data'}
                                   </button>
@@ -989,7 +989,7 @@ export default function ProjectOverviewPage() {
                     </span>
                     {viewingSource.file_type === 'image' && (
                       <span style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '2px 7px', borderRadius: '10px', fontSize: '10.5px', fontWeight: 600 }}>
-                        ✦ Qwen-VL Vision Analyzed
+                        ✦ Visual Analysis Complete
                       </span>
                     )}
                     {viewingSource.approval_status === 'approved' && (
@@ -1014,7 +1014,7 @@ export default function ProjectOverviewPage() {
 
               <div style={{ marginBottom: '18px' }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '8px' }}>
-                  {viewingSource.file_type === 'image' ? 'Qwen-VL Visual Observations & Extracted Text' : 'Extracted Document Content'}
+                  {viewingSource.file_type === 'image' ? 'Visual Site Observations & Extracted Text' : 'Extracted Document Content'}
                 </span>
                 <div style={{
                   maxHeight: '400px',
@@ -1236,7 +1236,7 @@ export default function ProjectOverviewPage() {
                   )}
                 </div>
 
-                {/* Step 2b: Image Presence Option — Only for Documents (PDF, DOCX, TXT); Images route directly to Qwen */}
+                {/* Step 2b: Image Presence Option — Only for Documents (PDF, DOCX, TXT); Images route directly to vision */}
                 {uploadCategory === 'document' ? (
                   <div style={{ marginTop: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', textAlign: 'left' }}>
                     <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
@@ -1252,7 +1252,7 @@ export default function ProjectOverviewPage() {
                           style={{ cursor: 'pointer' }}
                         />
                         <span style={{ fontWeight: containsImages ? 700 : 500 }}>Yes</span>
-                        <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>Qwen Vision</span>
+                        <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>Visual Analysis</span>
                       </label>
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#1e293b', cursor: 'pointer' }}>
                         <input
@@ -1268,7 +1268,7 @@ export default function ProjectOverviewPage() {
                     </div>
                     <p style={{ fontSize: '11.5px', color: '#64748b', margin: '8px 0 0 0', lineHeight: 1.45 }}>
                       {containsImages 
-                        ? "✦ Every page will be rendered as an image and analyzed by Qwen Vision for drawings, architectural annotations, tables, and photos."
+                        ? "✦ Every page will be analyzed for visual elements, architectural drawings, annotations, tables, and photos."
                         : "Standard pipeline: Fast native text extraction from document paragraphs and tables without vision processing."}
                     </p>
                   </div>
@@ -1276,7 +1276,7 @@ export default function ProjectOverviewPage() {
                   <div style={{ marginTop: '14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 14px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '14px', color: '#2563eb' }}>✦</span>
                     <span style={{ fontSize: '12px', color: '#1e40af', fontWeight: 600 }}>
-                      Direct Qwen Vision Pipeline: Automatically analyzed for architectural site observations & text annotations.
+                      Direct Visual Pipeline: Automatically analyzed for architectural site observations & text annotations.
                     </span>
                   </div>
                 )}

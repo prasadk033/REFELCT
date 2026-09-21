@@ -76,14 +76,14 @@ export function calculateBriefEstimate(sourcesToProcess = []) {
 
 export function getProgressStep(progressPercent) {
   if (progressPercent < 20) {
-    return 'Reading verified sources & building architectural context...'
+    return 'Reading verified project sources & compiling context...'
   } else if (progressPercent < 50) {
-    return 'Qwen LLM extracting parameters & formulating candidate Brief Cards...'
+    return 'Extracting architectural parameters & synthesizing candidate cards...'
   } else if (progressPercent < 75) {
-    return 'Classifying cards (Requirements, Project Parameters, Client Info)...'
+    return 'Structuring parameters, requirements, and client information...'
   } else if (progressPercent < 92) {
-    return 'Evaluating cross-document tensions, conflicts, and missing gaps...'
+    return 'Evaluating cross-document correlations, tensions, and project gaps...'
   } else {
-    return 'Finalizing card taxonomy and saving Brief Version...'
+    return 'Finalizing brief intelligence and preparing workspace...'
   }
 }

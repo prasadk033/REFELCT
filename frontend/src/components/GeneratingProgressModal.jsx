@@ -159,8 +159,8 @@ export default function GeneratingProgressModal({
           </span>
         </div>
 
-        <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '16px', marginBottom: 0 }}>
-          Cards are formulated across 9 architectural taxonomies and validated before appearing in your workspace.
+        <p style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '16px', marginBottom: 0 }}>
+          Information is verified and structured into actionable Brief Cards for your review.
         </p>
       </div>
     </div>

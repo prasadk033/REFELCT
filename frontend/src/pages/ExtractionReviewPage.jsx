@@ -126,7 +126,7 @@ export default function ExtractionReviewPage() {
     try {
       setActionLoading(true)
       setReparsing(true)
-      showToast(`Extracting ${selectedSource.file_name} with Qwen-VL...`)
+      showToast(`Extracting ${selectedSource.file_name}...`)
       const reparsed = await reparseSource(projectId, selectedSource.id)
       setSources(prev => prev.map(s => s.id === reparsed.id ? reparsed : s))
       setEditingText(reparsed.extracted_text || '')
