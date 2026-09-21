@@ -136,9 +136,12 @@ export default function ProjectOverviewPage() {
     if (!selectedFile) return
     setUploading(true)
     setError(null)
+    const ext = selectedFile.name.split('.').pop()?.toLowerCase()
+    const isImageUpload = uploadCategory === 'image' || ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tiff'].includes(ext)
+    const willUseVision = isImageUpload ? true : Boolean(containsImages)
     try {
-      await uploadSource(projectId, selectedFile, uploadDescription, containsImages)
-      showToast(`Source "${selectedFile.name}" added successfully (${containsImages ? 'Vision Pipeline' : 'Standard Pipeline'})`)
+      await uploadSource(projectId, selectedFile, uploadDescription, willUseVision)
+      showToast(`Source "${selectedFile.name}" added successfully (${willUseVision ? 'Vision Pipeline' : 'Standard Pipeline'})`)
       closeUploadModal()
       await loadProjectData()
     } catch (err) {
@@ -1226,41 +1229,50 @@ export default function ProjectOverviewPage() {
                   )}
                 </div>
 
-                {/* Step 2b: Image Presence Option */}
-                <div style={{ marginTop: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', textAlign: 'left' }}>
-                  <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
-                    Does this document contain images, drawings, or visual diagrams?
-                  </label>
-                  <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#1e293b', cursor: 'pointer' }}>
-                      <input
-                        type="radio"
-                        name="containsImagesOption"
-                        checked={containsImages === true}
-                        onChange={() => setContainsImages(true)}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <span style={{ fontWeight: containsImages ? 700 : 500 }}>Yes</span>
-                      <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>Qwen Vision</span>
+                {/* Step 2b: Image Presence Option — Only for Documents (PDF, DOCX, TXT); Images route directly to Qwen */}
+                {uploadCategory === 'document' ? (
+                  <div style={{ marginTop: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', textAlign: 'left' }}>
+                    <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+                      Does this document contain images, drawings, or visual diagrams?
                     </label>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#1e293b', cursor: 'pointer' }}>
-                      <input
-                        type="radio"
-                        name="containsImagesOption"
-                        checked={containsImages === false}
-                        onChange={() => setContainsImages(false)}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <span style={{ fontWeight: !containsImages ? 700 : 500 }}>No</span>
-                      <span style={{ fontSize: '11px', color: '#64748b', background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>Standard Text</span>
-                    </label>
+                    <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#1e293b', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="containsImagesOption"
+                          checked={containsImages === true}
+                          onChange={() => setContainsImages(true)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span style={{ fontWeight: containsImages ? 700 : 500 }}>Yes</span>
+                        <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>Qwen Vision</span>
+                      </label>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#1e293b', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="containsImagesOption"
+                          checked={containsImages === false}
+                          onChange={() => setContainsImages(false)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span style={{ fontWeight: !containsImages ? 700 : 500 }}>No</span>
+                        <span style={{ fontSize: '11px', color: '#64748b', background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>Standard Text</span>
+                      </label>
+                    </div>
+                    <p style={{ fontSize: '11.5px', color: '#64748b', margin: '8px 0 0 0', lineHeight: 1.45 }}>
+                      {containsImages 
+                        ? "✦ Every page will be rendered as an image and analyzed by Qwen Vision for drawings, architectural annotations, tables, and photos."
+                        : "Standard pipeline: Fast native text extraction from document paragraphs and tables without vision processing."}
+                    </p>
                   </div>
-                  <p style={{ fontSize: '11.5px', color: '#64748b', margin: '8px 0 0 0', lineHeight: 1.45 }}>
-                    {containsImages 
-                      ? "✦ Every page will be rendered as an image and analyzed by Qwen Vision for drawings, architectural annotations, tables, and photos."
-                      : "Standard pipeline: Fast native text extraction from document paragraphs and tables without vision processing."}
-                  </p>
-                </div>
+                ) : (
+                  <div style={{ marginTop: '14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 14px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '14px', color: '#2563eb' }}>✦</span>
+                    <span style={{ fontSize: '12px', color: '#1e40af', fontWeight: 600 }}>
+                      Direct Qwen Vision Pipeline: Automatically analyzed for architectural site observations & text annotations.
+                    </span>
+                  </div>
+                )}
 
                 <div style={{ marginTop: '14px', textAlign: 'left' }}>
                   <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155', display: 'block', marginBottom: '4px' }}>
