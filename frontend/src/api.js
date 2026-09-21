@@ -121,6 +121,12 @@ export async function reparseSource(projectId, sourceId) {
   });
 }
 
+export async function cancelSourceExtraction(projectId) {
+  return apiFetch(`/api/projects/${projectId}/sources/cancel`, {
+    method: "POST",
+  });
+}
+
 export async function updateSourceContent(projectId, sourceId, extractedText) {
   return apiFetch(`/api/projects/${projectId}/sources/${sourceId}/content`, {
     method: "PUT",

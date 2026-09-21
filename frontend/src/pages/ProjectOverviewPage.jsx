@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion } from '../api.js'
+import { getProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, cancelSourceExtraction, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
 import ExtractingProgressModal from '../components/ExtractingProgressModal.jsx'
@@ -38,6 +38,10 @@ export default function ProjectOverviewPage() {
   const [rowExtractingId, setRowExtractingId] = useState(null)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
+
+  // Custom Confirmation Dialog (Replaces browser window.confirm)
+  const [confirmModal, setConfirmModal] = useState(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
 
   // AI Service Fallback Modal
   const [aiFallbackModalOpen, setAiFallbackModalOpen] = useState(false)
@@ -310,16 +314,22 @@ export default function ProjectOverviewPage() {
     }
   }
 
-  function handleCancelExtract() {
+  async function handleCancelExtract() {
     if (extractTimerRef.current) {
       clearInterval(extractTimerRef.current)
       extractTimerRef.current = null
+    }
+    try {
+      await cancelSourceExtraction(projectId)
+    } catch (e) {
+      console.warn('Extraction cancel notification error:', e)
     }
     setExtractModalOpen(false)
     setShowExtractModal(false)
     setExtracting(false)
     setRowExtractingId(null)
-    showToast('Document extraction cancelled.')
+    showToast('Document extraction cancelled. You can extract again when ready.')
+    await loadProjectData()
   }
 
   async function handleRunAnalysis() {
@@ -375,38 +385,57 @@ export default function ProjectOverviewPage() {
     })
   }
 
-  async function handleDeleteSource(sourceId, fileName) {
-    if (!window.confirm(`Delete document "${fileName}" from project?`)) return
-    try {
-      await deleteSource(projectId, sourceId)
-      showToast(`Document "${fileName}" deleted`)
-      await loadProjectData()
-    } catch (err) {
-      setError(err.message)
-    }
+  function handleDeleteSource(sourceId, fileName) {
+    setConfirmModal({
+      title: 'Delete Document',
+      message: `Are you sure you want to delete "${fileName}"? Any active background extraction will be stopped immediately and all parsed data will be permanently removed.`,
+      confirmLabel: 'Delete Document',
+      confirmStyle: 'danger',
+      action: async () => {
+        try {
+          await deleteSource(projectId, sourceId)
+          showToast(`Document "${fileName}" deleted and active processes halted.`)
+          await loadProjectData()
+        } catch (err) {
+          setError(err.message)
+        }
+      }
+    })
   }
 
-  async function handleDeleteProject() {
-    if (!window.confirm(`Are you sure you want to delete project "${project?.name || 'this project'}"? All associated documents, brief versions, and cards will be permanently removed.`)) {
-      return
-    }
-    try {
-      await deleteProject(projectId)
-      navigate('/overview')
-    } catch (err) {
-      setError(err.message)
-    }
+  function handleDeleteProject() {
+    setConfirmModal({
+      title: 'Delete Project',
+      message: `Are you sure you want to delete project "${project?.name || 'this project'}"? All associated documents, brief versions, cards, and questions will be permanently removed. This cannot be undone.`,
+      confirmLabel: 'Delete Project',
+      confirmStyle: 'danger',
+      action: async () => {
+        try {
+          await deleteProject(projectId)
+          navigate('/overview')
+        } catch (err) {
+          setError(err.message)
+        }
+      }
+    })
   }
 
-  async function handleResetVersion(ver) {
-    if (!window.confirm(`Reset Version ${ver} to re-generate Brief Cards? All documents in Version ${ver} will return to pending.`)) return
-    try {
-      await resetVersion(projectId, ver)
-      showToast(`Version ${ver} reset to pending.`)
-      await loadProjectData()
-    } catch (err) {
-      showToast(`Reset failed: ${err.message}`)
-    }
+  function handleResetVersion(ver) {
+    setConfirmModal({
+      title: `Reset Version ${ver}`,
+      message: `Reset Version ${ver} to re-generate Brief Cards? All documents in Version ${ver} will return to pending extraction and synthesis.`,
+      confirmLabel: `Reset Version ${ver}`,
+      confirmStyle: 'warning',
+      action: async () => {
+        try {
+          await resetVersion(projectId, ver)
+          showToast(`Version ${ver} reset to pending.`)
+          await loadProjectData()
+        } catch (err) {
+          showToast(`Reset failed: ${err.message}`)
+        }
+      }
+    })
   }
 
   async function handleResetSourceVersion(sourceId) {
@@ -1746,6 +1775,93 @@ export default function ProjectOverviewPage() {
                   }}
                 >
                   Generate Brief Again
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* CUSTOM CONFIRMATION MODAL */}
+        {confirmModal && (
+          <div className="bui-modal-overlay" onClick={() => !confirmLoading && setConfirmModal(null)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(5px)', zIndex: 1200 }}>
+            <div
+              className="bui-modal"
+              onClick={e => e.stopPropagation()}
+              style={{
+                maxWidth: '460px',
+                width: '90%',
+                background: '#ffffff',
+                borderRadius: '14px',
+                padding: '28px 26px',
+                color: '#0f172a',
+                boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+                border: '1px solid #e2e8f0',
+                textAlign: 'center'
+              }}
+            >
+              <div style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '50%',
+                background: confirmModal.confirmStyle === 'danger' ? '#fef2f2' : '#fffbeb',
+                border: `1.5px solid ${confirmModal.confirmStyle === 'danger' ? '#fecaca' : '#fde68a'}`,
+                color: confirmModal.confirmStyle === 'danger' ? '#dc2626' : '#d97706',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px auto',
+                fontSize: '22px'
+              }}>
+                {confirmModal.confirmStyle === 'danger' ? '🗑' : '⚠️'}
+              </div>
+
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: '0 0 8px 0' }}>
+                {confirmModal.title}
+              </h3>
+
+              <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.5, margin: '0 0 24px 0' }}>
+                {confirmModal.message}
+              </p>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="bui-btn bui-btn-outline"
+                  style={{ padding: '10px 20px', fontSize: '13px', fontWeight: 600, color: '#475569', borderColor: '#cbd5e1', borderRadius: '8px', cursor: 'pointer' }}
+                  onClick={() => setConfirmModal(null)}
+                  disabled={confirmLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    background: confirmModal.confirmStyle === 'danger' ? '#dc2626' : '#0f172a',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '10px 22px',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    cursor: confirmLoading ? 'not-allowed' : 'pointer',
+                    opacity: confirmLoading ? 0.7 : 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: confirmModal.confirmStyle === 'danger' ? '0 4px 12px rgba(220, 38, 38, 0.25)' : 'none'
+                  }}
+                  onClick={async () => {
+                    setConfirmLoading(true)
+                    try {
+                      await confirmModal.action()
+                    } finally {
+                      setConfirmLoading(false)
+                      setConfirmModal(null)
+                    }
+                  }}
+                  disabled={confirmLoading}
+                >
+                  {confirmLoading ? 'Processing...' : confirmModal.confirmLabel}
                 </button>
               </div>
             </div>

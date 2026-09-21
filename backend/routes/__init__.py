@@ -160,9 +160,12 @@ def delete_project(
     project = _get_user_project(db, project_id, user.id)
     project_name = project.name
 
-    # Delete storage files for all project sources
+    # Cancel ongoing extractions and delete storage files for all project sources
+    from documents.loader import cancel_extraction
     sources = db.query(Source).filter(Source.project_id == project_id).all()
     for s in sources:
+        abs_p = file_store.get_absolute_path(s.storage_path) if s.storage_path else None
+        cancel_extraction(source_id=s.id, file_path=abs_p)
         if s.storage_path:
             try:
                 file_store.delete_file(s.storage_path)

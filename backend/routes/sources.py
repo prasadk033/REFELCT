@@ -31,15 +31,22 @@ ALLOWED_EXTENSIONS = {
 
 def _extract_source_text(source: Source, db: Optional[Session] = None) -> str:
     """Extract raw text or image vision analysis strictly based on user contains_images selection."""
+    from documents.loader import is_extraction_cancelled
     loader = DocumentLoader()
-    abs_path = file_store.get_absolute_path(source.storage_path)
+    abs_path = file_store.get_absolute_path(source.storage_path) if source.storage_path else None
+    
+    if not abs_path or not Path(abs_path).exists() or is_extraction_cancelled(source_id=source.id, file_path=abs_path):
+        logger.info(f"Source {source.id} ({source.file_name}) was cancelled or deleted before extraction started.")
+        return ""
+
     try:
         is_image_doc = source.file_type == 'image' or bool(source.contains_images)
         text, _ = loader.extract_text_combined(
             abs_path,
             contains_images=is_image_doc,
             filename=source.file_name,
-            file_type=source.file_type
+            file_type=source.file_type,
+            source_id=source.id
         )
         source.extracted_text = text or f"[{source.file_name} — No readable text found]"
         source.processing_status = "extracted"
@@ -48,6 +55,11 @@ def _extract_source_text(source: Source, db: Optional[Session] = None) -> str:
         if db:
             db.commit()
         return source.extracted_text
+    except RuntimeError as r_err:
+        if "cancelled" in str(r_err).lower() or "halted" in str(r_err).lower():
+            logger.info(f"Extraction halted gracefully for source {source.id} ({source.file_name}): {r_err}")
+            return ""
+        raise r_err
     except AIServiceError as ai_err:
         logger.error(f"AI service error during extraction for source {source.id} ({source.file_name}): {ai_err}")
         source.processing_status = "failed"
@@ -471,6 +483,11 @@ def delete_source(
 
     file_name = source.file_name
     storage_path = source.storage_path
+    abs_path = file_store.get_absolute_path(storage_path) if storage_path else None
+
+    # Immediately register cancellation so ongoing Qwen vision/extraction loops abort immediately
+    from documents.loader import cancel_extraction
+    cancel_extraction(source_id=source_id, file_path=abs_path)
 
     # Clean up junction table links
     db.query(BriefSource).filter(BriefSource.source_id == source_id).delete(synchronize_session=False)
@@ -495,6 +512,29 @@ def delete_source(
     )
 
     return {"message": "Source deleted successfully"}
+
+
+@router.post("/{project_id}/sources/cancel")
+def cancel_sources_extraction(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Cancel all active or pending extractions for a project."""
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.user_id == user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    from documents.loader import cancel_extraction
+    sources = db.query(Source).filter(Source.project_id == project_id).all()
+    for s in sources:
+        abs_p = file_store.get_absolute_path(s.storage_path) if s.storage_path else None
+        cancel_extraction(source_id=s.id, file_path=abs_p)
+
+    return {"message": "All extractions cancelled successfully"}
 
 
 @router.post("/{project_id}/sources/{source_id}/reset-version", response_model=SourceResponse)

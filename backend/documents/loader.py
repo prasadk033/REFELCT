@@ -30,6 +30,36 @@ from documents.qwen_vision import qwen_vision, AIServiceError
 
 logger = logging.getLogger(__name__)
 
+# Active cancellation registry for immediate termination of background extractions
+_cancelled_sources: set = set()
+_cancelled_files: set = set()
+
+def cancel_extraction(source_id: Optional[str] = None, file_path: Optional[str] = None):
+    """Mark a source or file as cancelled/deleted so active vision extraction loops abort immediately."""
+    if source_id:
+        _cancelled_sources.add(str(source_id))
+    if file_path:
+        _cancelled_files.add(str(Path(file_path).resolve()))
+    logger.info(f"Cancellation registered: source_id={source_id}, file_path={file_path}")
+
+def is_extraction_cancelled(source_id: Optional[str] = None, file_path: Optional[str] = None) -> bool:
+    """Check if an extraction has been cancelled or if file was deleted."""
+    if source_id and str(source_id) in _cancelled_sources:
+        return True
+    if file_path:
+        p = Path(file_path)
+        if not p.exists():
+            return True
+        if str(p.resolve()) in _cancelled_files:
+            return True
+    return False
+
+def clear_cancelled(source_id: Optional[str] = None, file_path: Optional[str] = None):
+    if source_id and str(source_id) in _cancelled_sources:
+        _cancelled_sources.discard(str(source_id))
+    if file_path:
+        _cancelled_files.discard(str(Path(file_path).resolve()))
+
 
 class DocumentLoader:
     """Loads and extracts text and visual data from PDF, DOCX, TXT, and image documents."""
@@ -105,7 +135,7 @@ class DocumentLoader:
 
     # ── 2. Qwen-VL Vision Extraction (Page-by-Page) ──────────────────────────
 
-    def extract_with_vision(self, file_path: str, filename: str = "", file_type: str = "") -> str:
+    def extract_with_vision(self, file_path: str, filename: str = "", file_type: str = "", source_id: Optional[str] = None) -> str:
         """
         Complete vision extraction pipeline using Qwen-VL.
         Used strictly when user indicates the document contains images or drawings.
@@ -113,14 +143,14 @@ class DocumentLoader:
         Strict Policy: NO silent fallbacks. If Qwen-VL fails, raises AIServiceError.
         """
         path = Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Document not found: {file_path}")
+        if not path.exists() or is_extraction_cancelled(source_id=source_id, file_path=file_path):
+            raise RuntimeError(f"Extraction halted: document not found or cancelled: {file_path}")
 
         ext = path.suffix.lower()
         doc_name = filename or path.name
 
         if ext == '.pdf':
-            return self._extract_pdf_pages_vision(str(path), doc_name)
+            return self._extract_pdf_pages_vision(str(path), doc_name, source_id=source_id)
 
         elif ext in ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'):
             return self._extract_image_vision(str(path), doc_name)
@@ -132,6 +162,8 @@ class DocumentLoader:
             if images:
                 image_analyses = []
                 for idx, img in enumerate(images[:5], start=1):
+                    if is_extraction_cancelled(source_id=source_id, file_path=file_path):
+                        raise RuntimeError(f"Extraction cancelled for {doc_name}")
                     res = qwen_vision.extract_from_image(img["data"], filename=f"{doc_name}_image_{idx}.png")
                     if res.get("success") and res.get("text"):
                         image_analyses.append(f"Source: {doc_name}\nEmbedded Image: {idx}\nExtraction:\n{res['text']}")
@@ -147,7 +179,7 @@ class DocumentLoader:
         else:
             raise ValueError(f"Unsupported document type for vision processing: {ext}")
 
-    def _extract_pdf_pages_vision(self, file_path: str, filename: str) -> str:
+    def _extract_pdf_pages_vision(self, file_path: str, filename: str, source_id: Optional[str] = None) -> str:
         """
         Convert PDF page-by-page into optimized JPEG images, dispatch each page to Qwen-VL,
         and combine the structured extraction while strictly preserving page provenance.
@@ -168,6 +200,12 @@ class DocumentLoader:
         try:
             for page_idx in range(total_pages):
                 page_num = page_idx + 1
+
+                # Immediate Cancellation / Deletion Check
+                if is_extraction_cancelled(source_id=source_id, file_path=file_path) or not Path(file_path).exists():
+                    logger.warning(f"Extraction halted for {filename} (page {page_num}/{total_pages}): source cancelled or deleted.")
+                    raise RuntimeError(f"Extraction cancelled for {filename}")
+
                 logger.info(f"Rendering page {page_num}/{total_pages} of {filename} for Qwen-VL")
                 
                 # Render full page (scale=2 = 144 DPI)
@@ -293,7 +331,8 @@ class DocumentLoader:
         file_path: str,
         contains_images: bool = False,
         filename: str = "",
-        file_type: str = ""
+        file_type: str = "",
+        source_id: Optional[str] = None
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Main extraction entry point adhering strictly to user selection:
@@ -302,8 +341,11 @@ class DocumentLoader:
         
         Strict error handling with zero silent fallback.
         """
+        if is_extraction_cancelled(source_id=source_id, file_path=file_path) or not Path(file_path).exists():
+            raise RuntimeError(f"Extraction halted: source {filename} was deleted or cancelled.")
+
         if contains_images:
-            text = self.extract_with_vision(file_path, filename=filename, file_type=file_type)
+            text = self.extract_with_vision(file_path, filename=filename, file_type=file_type, source_id=source_id)
         else:
             text = self.extract_standard_text(file_path, filename=filename, file_type=file_type)
 

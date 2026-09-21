@@ -16,6 +16,10 @@ export default function GlobalOverviewPage() {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState(null)
 
+  // Custom Delete Project Modal
+  const [confirmDeleteProject, setConfirmDeleteProject] = useState(null)
+  const [deleting, setDeleting] = useState(false)
+
   const [formData, setFormData] = useState({
     name: '',
     project_type: 'Residential Project',
@@ -41,16 +45,22 @@ export default function GlobalOverviewPage() {
     }
   }
 
-  async function handleDeleteProject(e, projectId, projectName) {
+  function handleDeleteProject(e, projectId, projectName) {
     e.stopPropagation()
-    if (!window.confirm(`Are you sure you want to delete project "${projectName}"? All associated documents, brief versions, and cards will be permanently removed.`)) {
-      return
-    }
+    setConfirmDeleteProject({ id: projectId, name: projectName })
+  }
+
+  async function executeDeleteProject() {
+    if (!confirmDeleteProject) return
+    setDeleting(true)
     try {
-      await deleteProject(projectId)
-      setProjects(prev => prev.filter(p => p.id !== projectId))
+      await deleteProject(confirmDeleteProject.id)
+      setProjects(prev => prev.filter(p => p.id !== confirmDeleteProject.id))
+      setConfirmDeleteProject(null)
     } catch (err) {
       alert(`Failed to delete project: ${err.message}`)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -318,6 +328,85 @@ export default function GlobalOverviewPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOM DELETE PROJECT MODAL */}
+      {confirmDeleteProject && (
+        <div className="bui-modal-overlay" onClick={() => !deleting && setConfirmDeleteProject(null)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(5px)', zIndex: 1200 }}>
+          <div
+            className="bui-modal"
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: '460px',
+              width: '90%',
+              background: '#ffffff',
+              borderRadius: '14px',
+              padding: '28px 26px',
+              color: '#0f172a',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+              border: '1px solid #e2e8f0',
+              textAlign: 'center'
+            }}
+          >
+            <div style={{
+              width: '52px',
+              height: '52px',
+              borderRadius: '50%',
+              background: '#fef2f2',
+              border: '1.5px solid #fecaca',
+              color: '#dc2626',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px auto',
+              fontSize: '22px'
+            }}>
+              🗑
+            </div>
+
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: '0 0 8px 0' }}>
+              Delete Project
+            </h3>
+
+            <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.5, margin: '0 0 24px 0' }}>
+              Are you sure you want to delete project <strong>"{confirmDeleteProject.name}"</strong>? All associated documents, brief versions, cards, and questions will be permanently removed. This action cannot be undone.
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="bui-btn bui-btn-outline"
+                style={{ padding: '10px 20px', fontSize: '13px', fontWeight: 600, color: '#475569', borderColor: '#cbd5e1', borderRadius: '8px', cursor: 'pointer' }}
+                onClick={() => setConfirmDeleteProject(null)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={{
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '10px 22px',
+                  borderRadius: '8px',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  cursor: deleting ? 'not-allowed' : 'pointer',
+                  opacity: deleting ? 0.7 : 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)'
+                }}
+                onClick={executeDeleteProject}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete Project'}
+              </button>
+            </div>
           </div>
         </div>
       )}
