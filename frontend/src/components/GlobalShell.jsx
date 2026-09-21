@@ -103,9 +103,33 @@ export default function GlobalShell({ children }) {
           <p className="g-plan-desc">Virtual Architect Pro</p>
         </div>
 
-        {/* User profile moved to TopHeader */}
-        <div className="g-sidebar-footer" style={{ borderTop: 'none', padding: '16px', display: 'flex', justifyContent: 'center' }}>
-          <span style={{ fontSize: '11px', color: '#4b5563' }}>Reflect v1.0.0</span>
+        {/* Sidebar footer with version & sign out */}
+        <div className="g-sidebar-footer" style={{ borderTop: 'none', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Reflect v1.0.0</span>
+          <button
+            onClick={logout}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 500,
+              color: '#ef4444',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 6px',
+              borderRadius: '4px'
+            }}
+            title="Sign out of account"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="13" height="13">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Sign out</span>
+          </button>
         </div>
       </aside>
 

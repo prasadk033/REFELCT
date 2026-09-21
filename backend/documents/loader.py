@@ -149,10 +149,11 @@ class DocumentLoader:
 
     def _extract_pdf_pages_vision(self, file_path: str, filename: str) -> str:
         """
-        Convert PDF page-by-page into images, dispatch each full page to Qwen-VL,
+        Convert PDF page-by-page into optimized JPEG images, dispatch each page to Qwen-VL,
         and combine the structured extraction while strictly preserving page provenance.
         """
         import pypdfium2 as pdfium
+        from PIL import Image
 
         try:
             pdf = pdfium.PdfDocument(file_path)
@@ -169,23 +170,42 @@ class DocumentLoader:
                 page_num = page_idx + 1
                 logger.info(f"Rendering page {page_num}/{total_pages} of {filename} for Qwen-VL")
                 
-                # Render full page as high-resolution image (scale=2 = 144 DPI)
+                # Render full page (scale=2 = 144 DPI)
                 page = pdf[page_idx]
                 pil_image = page.render(scale=2).to_pil()
 
-                # Convert to PNG bytes in-memory
+                # Ensure RGB mode (handles alpha channel or palette modes)
+                if pil_image.mode in ('RGBA', 'LA', 'P'):
+                    rgb_img = Image.new('RGB', pil_image.size, (255, 255, 255))
+                    if pil_image.mode == 'RGBA':
+                        rgb_img.paste(pil_image, mask=pil_image.split()[3])
+                    else:
+                        rgb_img.paste(pil_image)
+                    pil_image = rgb_img
+                elif pil_image.mode != 'RGB':
+                    pil_image = pil_image.convert('RGB')
+
+                # Resize if max dimension > 1500px to maintain high architectural detail without token explosion
+                max_dim = 1500
+                if max(pil_image.size) > max_dim:
+                    scale_factor = max_dim / max(pil_image.size)
+                    new_w = max(1, int(pil_image.width * scale_factor))
+                    new_h = max(1, int(pil_image.height * scale_factor))
+                    pil_image = pil_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+                # Convert to optimized JPEG in-memory (drops 6MB uncompressed PNG to ~180-250KB JPEG)
                 img_byte_arr = io.BytesIO()
-                pil_image.save(img_byte_arr, format='PNG')
+                pil_image.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
                 page_bytes = img_byte_arr.getvalue()
 
-                # Clean up in-memory PIL image immediately to conserve memory
+                # Clean up in-memory PIL image immediately to conserve RAM
                 del pil_image
                 img_byte_arr.close()
 
                 # Dispatch page image to Qwen-VL
                 res = qwen_vision.extract_from_image(
                     image_data=page_bytes,
-                    filename=f"{filename}_page_{page_num}.png"
+                    filename=f"{filename}_page_{page_num}.jpg"
                 )
 
                 # STRICT NO-FALLBACK CHECK:
@@ -220,9 +240,36 @@ class DocumentLoader:
         return combined_result
 
     def _extract_image_vision(self, file_path: str, filename: str) -> str:
-        """Analyze a standalone site photograph or drawing image with Qwen-VL."""
-        with open(file_path, "rb") as f:
-            image_bytes = f.read()
+        """Analyze a standalone site photograph or drawing image with Qwen-VL (with optimization)."""
+        from PIL import Image
+
+        # Optimize image size and compression before sending to model
+        try:
+            with Image.open(file_path) as img:
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'RGBA':
+                        rgb_img.paste(img, mask=img.split()[3])
+                    else:
+                        rgb_img.paste(img)
+                    img = rgb_img
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                max_dim = 1500
+                if max(img.size) > max_dim:
+                    scale_factor = max_dim / max(img.size)
+                    new_w = max(1, int(img.width * scale_factor))
+                    new_h = max(1, int(img.height * scale_factor))
+                    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+                img_byte_arr = io.BytesIO()
+                img.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+                image_bytes = img_byte_arr.getvalue()
+        except Exception as opt_err:
+            logger.warning(f"Could not optimize image {filename}, using raw bytes: {opt_err}")
+            with open(file_path, "rb") as f:
+                image_bytes = f.read()
 
         res = qwen_vision.extract_from_image(image_bytes, filename=filename)
         if not res.get("success") or not res.get("text"):

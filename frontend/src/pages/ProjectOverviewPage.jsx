@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, analyzeBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
+import ExtractingProgressModal from '../components/ExtractingProgressModal.jsx'
 import { calculateBriefEstimate } from '../utils/estimate.js'
 
 
@@ -65,6 +66,7 @@ export default function ProjectOverviewPage() {
   function openUploadModal(category = 'document') {
     setUploadCategory(category)
     setSelectedFile(null)
+    setUploading(false)
     setUploadDescription('')
     setContainsImages(category === 'image')
     setFileTypeError(null)
@@ -76,6 +78,7 @@ export default function ProjectOverviewPage() {
   function closeUploadModal() {
     setShowUploadModal(false)
     setSelectedFile(null)
+    setUploading(false)
     setUploadDescription('')
     setContainsImages(false)
     setFileTypeError(null)
@@ -101,6 +104,14 @@ export default function ProjectOverviewPage() {
   const [analyzingSeconds, setAnalyzingSeconds] = useState(0)
   const [analysisEstimate, setAnalysisEstimate] = useState(null)
 
+  // Document Extraction Progress Modal
+  const [extractModalOpen, setExtractModalOpen] = useState(false)
+  const [extractDocName, setExtractDocName] = useState('Document')
+  const [extractDocCount, setExtractDocCount] = useState(1)
+  const [extractEstSeconds, setExtractEstSeconds] = useState(25)
+  const [extractElapsedSeconds, setExtractElapsedSeconds] = useState(0)
+  const extractTimerRef = useRef(null)
+
   const pollIntervalRef = useRef(null)
 
   useEffect(() => {
@@ -109,6 +120,7 @@ export default function ProjectOverviewPage() {
     }
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+      if (extractTimerRef.current) clearInterval(extractTimerRef.current)
     }
   }, [projectId])
 
@@ -349,8 +361,23 @@ export default function ProjectOverviewPage() {
   }
 
   async function handleExtractSingle(source) {
+    const ext = source.file_name?.split('.').pop()?.toLowerCase() || ''
+    const isImg = source.file_type === 'image' || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
+    const estSec = isImg ? 6 : 28
+
+    setExtractDocName(source.file_name || 'Document')
+    setExtractDocCount(1)
+    setExtractEstSeconds(estSec)
+    setExtractElapsedSeconds(0)
+    setExtractModalOpen(true)
+    setRowExtractingId(source.id)
+
+    if (extractTimerRef.current) clearInterval(extractTimerRef.current)
+    extractTimerRef.current = setInterval(() => {
+      setExtractElapsedSeconds(s => s + 1)
+    }, 1000)
+
     try {
-      setRowExtractingId(source.id)
       await reparseSource(projectId, source.id)
       const updated = await listSources(projectId)
       setSources(updated || [])
@@ -367,13 +394,33 @@ export default function ProjectOverviewPage() {
       setAiFallbackErrorMsg(msg)
       setAiFallbackModalOpen(true)
     } finally {
+      if (extractTimerRef.current) {
+        clearInterval(extractTimerRef.current)
+        extractTimerRef.current = null
+      }
+      setExtractModalOpen(false)
       setRowExtractingId(null)
     }
   }
 
   async function handleExtractAllPending() {
+    const docs = pendingBatchSources.length > 0 ? pendingBatchSources : sources.filter(s => !s.extracted_text)
+    const docCount = docs.length || 1
+    const estSec = Math.max(15, docCount * 25)
+
+    setExtractDocName(docs[0]?.file_name || 'Pending Documents')
+    setExtractDocCount(docCount)
+    setExtractEstSeconds(estSec)
+    setExtractElapsedSeconds(0)
+    setExtractModalOpen(true)
+    setExtracting(true)
+
+    if (extractTimerRef.current) clearInterval(extractTimerRef.current)
+    extractTimerRef.current = setInterval(() => {
+      setExtractElapsedSeconds(s => s + 1)
+    }, 1000)
+
     try {
-      setExtracting(true)
       await extractSources(projectId)
       const updated = await listSources(projectId)
       setSources(updated || [])
@@ -386,6 +433,11 @@ export default function ProjectOverviewPage() {
       setAiFallbackErrorMsg(msg)
       setAiFallbackModalOpen(true)
     } finally {
+      if (extractTimerRef.current) {
+        clearInterval(extractTimerRef.current)
+        extractTimerRef.current = null
+      }
+      setExtractModalOpen(false)
       setExtracting(false)
     }
   }
@@ -420,8 +472,10 @@ export default function ProjectOverviewPage() {
   if (loading && !project) {
     return (
       <ProjectShell project={{ id: projectId }}>
-        <div className="brief-ui-loading">
-          <span className="bui-spinner" /> Loading project...
+        <div className="brief-ui-loading" style={{ minHeight: 'calc(100vh - 140px)' }}>
+          <div className="bui-spinner bui-spinner-lg" />
+          <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '15px' }}>Loading project...</div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>Retrieving project sources and workspace parameters</div>
         </div>
       </ProjectShell>
     )
@@ -666,40 +720,8 @@ export default function ProjectOverviewPage() {
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <button
-                        type="button"
-                        className="bui-btn"
-                        style={{
-                          padding: '4px 12px',
-                          fontSize: '11.5px',
-                          fontWeight: 600,
-                          background: '#2563eb',
-                          color: '#ffffff',
-                          borderRadius: '6px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px'
-                        }}
-                        onClick={handleExtractAllPending}
-                        disabled={extracting}
-                        title="Extract observations & text from all pending documents"
-                      >
-                        {extracting ? (
-                          <>
-                            <span className="bui-spinner-inline" />
-                            <span>Extracting...</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>⚡</span>
-                            <span>Extract All Pending</span>
-                          </>
-                        )}
-                      </button>
                       <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 600 }}>
-                        ○ In Progress
+                        ○ Pending Extraction
                       </span>
                     </div>
                   </div>
@@ -753,7 +775,7 @@ export default function ProjectOverviewPage() {
                                   </span>
                                 )}
 
-                                {/* Beside the status option: Extracted Data button */}
+                                {/* Beside the status option: Extract Data & Review (Black) or Extracted Data badge */}
                                 {s.extracted_text ? (
                                   <button
                                     type="button"
@@ -782,11 +804,11 @@ export default function ProjectOverviewPage() {
                                     type="button"
                                     className="bui-btn"
                                     style={{
-                                      padding: '2px 8px',
+                                      padding: '4px 10px',
                                       fontSize: '11px',
                                       fontWeight: 600,
                                       color: '#ffffff',
-                                      background: '#2563eb',
+                                      background: '#000000',
                                       borderRadius: '4px',
                                       border: 'none',
                                       display: 'inline-flex',
@@ -796,15 +818,15 @@ export default function ProjectOverviewPage() {
                                     }}
                                     onClick={() => handleExtractSingle(s)}
                                     disabled={rowExtractingId === s.id}
-                                    title="Run visual analysis & text extraction on this source"
+                                    title="Extract data and review observations"
                                   >
-                                    {rowExtractingId === s.id ? '⚡ Extracting...' : '⚡ Extract Data'}
+                                    {rowExtractingId === s.id ? 'Extracting Data...' : 'Extract Data & Review'}
                                   </button>
                                 )}
                               </div>
                             </td>
                             <td style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                              {s.extracted_text ? (
+                              {s.extracted_text && (
                                 <button
                                   type="button"
                                   className="bui-btn bui-btn-outline"
@@ -813,17 +835,6 @@ export default function ProjectOverviewPage() {
                                   title="Inspect extracted text & observations"
                                 >
                                   📄 View
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="bui-btn bui-btn-outline"
-                                  style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#93c5fd', fontWeight: 600 }}
-                                  onClick={() => handleExtractSingle(s)}
-                                  disabled={rowExtractingId === s.id}
-                                  title="Extract this document"
-                                >
-                                  {rowExtractingId === s.id ? 'Extracting...' : '⚡ Extract'}
                                 </button>
                               )}
                               <button
@@ -1236,11 +1247,11 @@ export default function ProjectOverviewPage() {
                   )}
                 </div>
 
-                {/* Step 2b: Image Presence Option — Only for Documents (PDF, DOCX, TXT); Images route directly to vision */}
+                {/* Step 2b: Image Presence Option — Only for Documents (PDF, DOCX, TXT); Images route directly to visual pipeline */}
                 {uploadCategory === 'document' ? (
                   <div style={{ marginTop: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', textAlign: 'left' }}>
                     <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
-                      Does this document contain images, drawings, or visual diagrams?
+                      Does this document include drawings, plans, or visual diagrams?
                     </label>
                     <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#1e293b', cursor: 'pointer' }}>
@@ -1252,7 +1263,7 @@ export default function ProjectOverviewPage() {
                           style={{ cursor: 'pointer' }}
                         />
                         <span style={{ fontWeight: containsImages ? 700 : 500 }}>Yes</span>
-                        <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>Visual Analysis</span>
+                        <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>Full Document Analysis</span>
                       </label>
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#1e293b', cursor: 'pointer' }}>
                         <input
@@ -1263,20 +1274,20 @@ export default function ProjectOverviewPage() {
                           style={{ cursor: 'pointer' }}
                         />
                         <span style={{ fontWeight: !containsImages ? 700 : 500 }}>No</span>
-                        <span style={{ fontSize: '11px', color: '#64748b', background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>Standard Text</span>
+                        <span style={{ fontSize: '11px', color: '#64748b', background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>Standard Processing</span>
                       </label>
                     </div>
                     <p style={{ fontSize: '11.5px', color: '#64748b', margin: '8px 0 0 0', lineHeight: 1.45 }}>
                       {containsImages 
-                        ? "✦ Every page will be analyzed for visual elements, architectural drawings, annotations, tables, and photos."
-                        : "Standard pipeline: Fast native text extraction from document paragraphs and tables without vision processing."}
+                        ? "✦ Comprehensive document processing including diagrams, drawings, plans, and embedded visual content."
+                        : "Standard pipeline: Fast structured text and tabular data extraction for standard text documents, specifications, and reports."}
                     </p>
                   </div>
                 ) : (
                   <div style={{ marginTop: '14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 14px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '14px', color: '#2563eb' }}>✦</span>
                     <span style={{ fontSize: '12px', color: '#1e40af', fontWeight: 600 }}>
-                      Direct Visual Pipeline: Automatically analyzed for architectural site observations & text annotations.
+                      Detailed architectural image processing for site context, orientation, and visual references.
                     </span>
                   </div>
                 )}
@@ -1396,6 +1407,16 @@ export default function ProjectOverviewPage() {
             elapsedSeconds={analyzingSeconds}
             serverStep={analysisStep}
             projectName={project?.name || 'Project'}
+          />
+        )}
+
+        {/* DYNAMIC EXTRACTION IN-PROGRESS MODAL */}
+        {extractModalOpen && (
+          <ExtractingProgressModal
+            documentName={extractDocName}
+            docCount={extractDocCount}
+            estimatedSeconds={extractEstSeconds}
+            elapsedSeconds={extractElapsedSeconds}
           />
         )}
 

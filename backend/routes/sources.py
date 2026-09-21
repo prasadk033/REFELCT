@@ -248,7 +248,7 @@ def extract_all_sources(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Strictly target ONLY pending batch sources that have not been approved
+    # Strictly target ONLY pending batch sources that have not been approved (ordered by upload time)
     pending_sources = (
         db.query(Source)
         .filter(
@@ -256,6 +256,7 @@ def extract_all_sources(
             Source.version.is_(None),
             Source.approval_status != "approved"
         )
+        .order_by(Source.upload_timestamp.asc())
         .all()
     )
 
@@ -267,6 +268,7 @@ def extract_all_sources(
                 Source.project_id == project_id,
                 Source.version.is_(None)
             )
+            .order_by(Source.upload_timestamp.asc())
             .all()
         )
 
