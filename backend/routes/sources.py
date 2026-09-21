@@ -17,6 +17,7 @@ from auth.dependencies import get_current_user
 from schemas.models import SourceResponse, SourceContentUpdate
 from storage import file_store
 from documents.loader import DocumentLoader
+from documents.qwen_vision import AIServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -28,21 +29,41 @@ ALLOWED_EXTENSIONS = {
 }
 
 
-def _extract_source_text(source: Source) -> str:
-    """Extract raw text or image OCR from a source document without LLM agents."""
+def _extract_source_text(source: Source, db: Optional[Session] = None) -> str:
+    """Extract raw text or image vision analysis strictly based on user contains_images selection."""
     loader = DocumentLoader()
     abs_path = file_store.get_absolute_path(source.storage_path)
     try:
-        text, _ = loader.extract_text_combined(abs_path)
+        is_image_doc = source.file_type == 'image' or bool(source.contains_images)
+        text, _ = loader.extract_text_combined(
+            abs_path,
+            contains_images=is_image_doc,
+            filename=source.file_name,
+            file_type=source.file_type
+        )
         source.extracted_text = text or f"[{source.file_name} — No readable text found]"
         source.processing_status = "extracted"
         source.approval_status = "pending_review"
         source.processing_error = None
+        if db:
+            db.commit()
         return source.extracted_text
+    except AIServiceError as ai_err:
+        logger.error(f"AI service error during extraction for source {source.id} ({source.file_name}): {ai_err}")
+        source.processing_status = "failed"
+        source.processing_error = f"Vision extraction failed: {str(ai_err)}"
+        if db:
+            db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="It might take some time, AI services are temporarily low."
+        )
     except Exception as e:
         logger.error(f"Extraction failed for source {source.id} ({source.file_name}): {e}")
         source.processing_status = "failed"
         source.processing_error = str(e)
+        if db:
+            db.commit()
         raise e
 
 
@@ -51,6 +72,7 @@ async def upload_source(
     project_id: str,
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
+    contains_images: Optional[str] = Form("false"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -99,6 +121,8 @@ async def upload_source(
         file_data=file.file,
     )
 
+    has_images = str(contains_images).strip().lower() in ("true", "1", "yes") or file_type == 'image'
+
     # Create source record — initially unversioned and pending extraction
     source = Source(
         id=source_id,
@@ -108,6 +132,7 @@ async def upload_source(
         file_size=file_size,
         description=description.strip() if description and description.strip() else None,
         storage_path=storage_path,
+        contains_images=has_images,
         processing_status="uploaded",
         approval_status="pending_review",
         version=None,
@@ -245,14 +270,25 @@ def extract_all_sources(
             .all()
         )
 
+    ai_service_issue = False
     for source in pending_sources:
-        if not source.extracted_text or source.processing_status == "uploaded":
+        if not source.extracted_text or source.processing_status in ("uploaded", "failed"):
             try:
-                _extract_source_text(source)
+                _extract_source_text(source, db=db)
+            except HTTPException as http_exc:
+                if http_exc.status_code == 503:
+                    ai_service_issue = True
+                logger.warning(f"Extraction error for {source.file_name}: {http_exc.detail}")
             except Exception as e:
                 logger.warning(f"Extraction error for {source.file_name}: {e}")
 
     db.commit()
+
+    if ai_service_issue and all(s.processing_status == "failed" for s in pending_sources if not s.extracted_text):
+        raise HTTPException(
+            status_code=503,
+            detail="It might take some time, AI services are temporarily low."
+        )
 
     if pending_sources:
         log_activity(
@@ -290,7 +326,7 @@ def reparse_single_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    _extract_source_text(source)
+    _extract_source_text(source, db=db)
     source.approval_status = "pending_review"
     db.commit()
     db.refresh(source)

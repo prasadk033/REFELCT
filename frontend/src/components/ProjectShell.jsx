@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import AiHealthBanner from './AiHealthBanner.jsx'
+import TopHeader from './TopHeader.jsx'
 
 export default function ProjectShell({ children, project }) {
   const navigate = useNavigate()
@@ -123,37 +124,22 @@ export default function ProjectShell({ children, project }) {
         </nav>
 
         {/* Project Sidebar Footer */}
-        <div className="p-sidebar-footer">
-          <button className="p-nav-item-settings" onClick={() => navigate('/settings')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-            <span>Settings</span>
-          </button>
-
-          <div className="p-user-info">
-            <div className="p-avatar">
-              {user?.picture ? <img src={user.picture} alt="Avatar" /> : <span>{user?.name?.[0] || 'A'}</span>}
-            </div>
-            <div className="p-user-text">
-              <span className="p-user-name">{user?.name || 'Architect'}</span>
-            </div>
-            <button className="p-signout-btn" onClick={logout} title="Sign Out">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-            </button>
-          </div>
+        <div className="p-sidebar-footer" style={{ borderTop: 'none', padding: '16px', display: 'flex', justifyContent: 'center' }}>
+          <span style={{ fontSize: '11px', color: '#4b5563' }}>Reflect v1.0.0</span>
         </div>
       </aside>
 
       {/* Main Workspace Area */}
       <main className="p-main">
-        <AiHealthBanner />
-        {children}
+        <TopHeader breadcrumbs={[
+          { label: 'Projects', path: '/overview' },
+          { label: project?.name || 'Loading...', path: `/projects/${projectId}` },
+          ...(isBrief ? [{ label: 'Brief Workspace' }] : [])
+        ]} />
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <AiHealthBanner />
+          {children}
+        </div>
       </main>
     </div>
   )

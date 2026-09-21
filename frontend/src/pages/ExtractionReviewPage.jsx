@@ -35,6 +35,8 @@ export default function ExtractionReviewPage() {
   const pollIntervalRef = useRef(null)
 
   const [toastMsg, setToastMsg] = useState(null)
+  const [aiFallbackModalOpen, setAiFallbackModalOpen] = useState(false)
+  const [aiFallbackErrorMsg, setAiFallbackErrorMsg] = useState('It might take some time, AI services are temporarily low.')
 
   function showToast(msg) {
     setToastMsg(msg)
@@ -121,14 +123,19 @@ export default function ExtractionReviewPage() {
     try {
       setActionLoading(true)
       setReparsing(true)
-      showToast(`Reparsing ${selectedSource.file_name}...`)
+      showToast(`Extracting ${selectedSource.file_name} with Qwen-VL...`)
       const reparsed = await reparseSource(projectId, selectedSource.id)
       setSources(prev => prev.map(s => s.id === reparsed.id ? reparsed : s))
       setEditingText(reparsed.extracted_text || '')
       setIsSaved(true)
-      showToast(`Reparsing complete for ${reparsed.file_name}`)
+      showToast(`✓ Extraction complete for ${reparsed.file_name}`)
     } catch (err) {
-      showToast('Reparse failed: ' + err.message)
+      if (err.message?.includes('AI services') || err.status === 503) {
+        setAiFallbackErrorMsg("It might take some time, AI services are temporarily low.")
+        setAiFallbackModalOpen(true)
+      } else {
+        showToast('Extraction failed: ' + err.message)
+      }
     } finally {
       setActionLoading(false)
       setReparsing(false)
@@ -248,15 +255,52 @@ export default function ExtractionReviewPage() {
 
           <div className="extract-divider-vert" />
 
-          <button className="extract-back-btn" onClick={() => navigate(`/projects/${projectId}`)}>
-            ← Back to Project Overview
-          </button>
-          
-          <div className="extract-divider-vert" />
-
-          <div className="extract-project-title-group">
-            <span className="extract-proj-label">Extraction Review</span>
-            <h1 className="extract-proj-name">{project?.name || 'Project'}</h1>
+          {/* Breadcrumbs Navigation */}
+          <div className="th-breadcrumbs" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '6px' }}>
+            <span 
+              className="th-crumb clickable"
+              onClick={() => navigate('/overview')}
+              style={{ cursor: 'pointer', color: '#64748b', fontSize: '13px', fontWeight: 500 }}
+              title="Return to Projects Overview"
+            >
+              Projects
+            </span>
+            <span className="th-separator" style={{ color: '#cbd5e1', fontSize: '12px' }}>/</span>
+            <span 
+              className="th-crumb clickable"
+              onClick={() => navigate(`/projects/${projectId}`)}
+              style={{ cursor: 'pointer', color: '#64748b', fontSize: '13px', fontWeight: 500 }}
+              title={`Return to ${project?.name || 'Project'} Overview`}
+            >
+              {project?.name || 'Project'}
+            </span>
+            <span className="th-separator" style={{ color: '#cbd5e1', fontSize: '12px' }}>/</span>
+            <span 
+              className="th-crumb clickable"
+              onClick={() => navigate(`/projects/${projectId}`)}
+              style={{ cursor: 'pointer', color: '#64748b', fontSize: '13px', fontWeight: 500 }}
+              title="Return to Project Sources"
+            >
+              Sources
+            </span>
+            {selectedSource?.file_name && (
+              <>
+                <span className="th-separator" style={{ color: '#cbd5e1', fontSize: '12px' }}>/</span>
+                <span 
+                  style={{ color: '#475569', fontSize: '13px', fontWeight: 500, maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  title={selectedSource.file_name}
+                >
+                  {selectedSource.file_name}
+                </span>
+              </>
+            )}
+            <span className="th-separator" style={{ color: '#cbd5e1', fontSize: '12px' }}>/</span>
+            <span 
+              className="th-crumb active"
+              style={{ color: '#0f172a', fontSize: '13px', fontWeight: 700 }}
+            >
+              Extraction
+            </span>
           </div>
         </div>
 
@@ -656,6 +700,44 @@ export default function ExtractionReviewPage() {
             >
               Open Brief Workspace →
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* AI SERVICES TEMPORARILY LOW FALLBACK MODAL */}
+      {aiFallbackModalOpen && (
+        <div className="bui-modal-overlay" onClick={() => setAiFallbackModalOpen(false)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1100 }}>
+          <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px', width: '90%', background: '#ffffff', borderRadius: '12px', padding: '24px 28px', color: '#0f172a', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#fef3c7', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '24px' }}>
+              ⚠️
+            </div>
+            <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+              AI Service Notice
+            </h3>
+            <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.55, marginBottom: '22px' }}>
+              {aiFallbackErrorMsg || "It might take some time, AI services are temporarily low."}
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="bui-btn bui-btn-outline"
+                style={{ padding: '8px 18px', fontSize: '12.5px', color: '#64748b', borderColor: '#cbd5e1' }}
+                onClick={() => setAiFallbackModalOpen(false)}
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                className="bui-btn"
+                style={{ background: '#2563eb', color: '#ffffff', padding: '8px 20px', borderRadius: '6px', fontWeight: 600, border: 'none', cursor: 'pointer', fontSize: '12.5px' }}
+                onClick={() => {
+                  setAiFallbackModalOpen(false)
+                  handleReparseSingle()
+                }}
+              >
+                Try Again
+              </button>
+            </div>
           </div>
         </div>
       )}

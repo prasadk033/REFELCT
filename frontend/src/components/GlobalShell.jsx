@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { listProjects } from '../api.js'
 import AiHealthBanner from './AiHealthBanner.jsx'
+import TopHeader from './TopHeader.jsx'
 
 export default function GlobalShell({ children }) {
   const navigate = useNavigate()
@@ -102,31 +103,22 @@ export default function GlobalShell({ children }) {
           <p className="g-plan-desc">Virtual Architect Pro</p>
         </div>
 
-        {/* User / Sign out */}
-        <div className="g-sidebar-footer">
-          <div className="g-user-info">
-            <div className="g-avatar">
-              {user?.picture ? <img src={user.picture} alt="Avatar" /> : <span>{user?.name?.[0] || 'A'}</span>}
-            </div>
-            <div className="g-user-text">
-              <span className="g-user-name" title={user?.name || user?.email}>{user?.name || 'Architect'}</span>
-              <span className="g-user-role">Studio</span>
-            </div>
-            <button className="g-signout-btn" onClick={logout} title="Sign Out">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-            </button>
-          </div>
+        {/* User profile moved to TopHeader */}
+        <div className="g-sidebar-footer" style={{ borderTop: 'none', padding: '16px', display: 'flex', justifyContent: 'center' }}>
+          <span style={{ fontSize: '11px', color: '#4b5563' }}>Reflect v1.0.0</span>
         </div>
       </aside>
 
       {/* Main Global Content Area */}
       <main className="g-main">
-        <AiHealthBanner />
-        {children}
+        <TopHeader breadcrumbs={[
+          { label: 'Projects Overview', path: currentPath.includes('/settings') ? undefined : '/overview' },
+          ...(currentPath.includes('/settings') ? [{ label: 'Settings' }] : [])
+        ]} />
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <AiHealthBanner />
+          {children}
+        </div>
       </main>
     </div>
   )

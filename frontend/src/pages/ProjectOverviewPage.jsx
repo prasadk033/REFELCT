@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, listSources, uploadSource, deleteSource, extractSources, analyzeBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion } from '../api.js'
+import { getProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, analyzeBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 
 
@@ -32,8 +32,18 @@ export default function ProjectOverviewPage() {
   const [cards, setCards] = useState([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [rowExtractingId, setRowExtractingId] = useState(null)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
+
+  // AI Service Fallback Modal
+  const [aiFallbackModalOpen, setAiFallbackModalOpen] = useState(false)
+  const [aiFallbackErrorMsg, setAiFallbackErrorMsg] = useState('It might take some time, AI services are temporarily low.')
+
+  function showToast(msg) {
+    setToast(msg)
+    setTimeout(() => setToast(null), 3500)
+  }
 
   // Document Text Inspector Modal
   const [viewingSource, setViewingSource] = useState(null)
@@ -47,12 +57,14 @@ export default function ProjectOverviewPage() {
   const [uploadCategory, setUploadCategory] = useState('document') // 'document' or 'image'
   const [selectedFile, setSelectedFile] = useState(null)
   const [uploadDescription, setUploadDescription] = useState('')
+  const [containsImages, setContainsImages] = useState(false)
   const [fileTypeError, setFileTypeError] = useState(null)
 
   function openUploadModal(category = 'document') {
     setUploadCategory(category)
     setSelectedFile(null)
     setUploadDescription('')
+    setContainsImages(category === 'image')
     setFileTypeError(null)
     setError(null)
     if (modalFileInputRef.current) modalFileInputRef.current.value = ''
@@ -63,6 +75,7 @@ export default function ProjectOverviewPage() {
     setShowUploadModal(false)
     setSelectedFile(null)
     setUploadDescription('')
+    setContainsImages(false)
     setFileTypeError(null)
     if (modalFileInputRef.current) modalFileInputRef.current.value = ''
   }
@@ -70,6 +83,7 @@ export default function ProjectOverviewPage() {
   function switchUploadCategory(cat) {
     setUploadCategory(cat)
     setSelectedFile(null)
+    setContainsImages(cat === 'image')
     setFileTypeError(null)
     if (modalFileInputRef.current) modalFileInputRef.current.value = ''
   }
@@ -123,8 +137,8 @@ export default function ProjectOverviewPage() {
     setUploading(true)
     setError(null)
     try {
-      await uploadSource(projectId, selectedFile, uploadDescription)
-      showToast(`Source "${selectedFile.name}" added successfully`)
+      await uploadSource(projectId, selectedFile, uploadDescription, containsImages)
+      showToast(`Source "${selectedFile.name}" added successfully (${containsImages ? 'Vision Pipeline' : 'Standard Pipeline'})`)
       closeUploadModal()
       await loadProjectData()
     } catch (err) {
@@ -324,6 +338,48 @@ export default function ProjectOverviewPage() {
     }
   }
 
+  async function handleExtractSingle(source) {
+    try {
+      setRowExtractingId(source.id)
+      await reparseSource(projectId, source.id)
+      const updated = await listSources(projectId)
+      setSources(updated || [])
+      const current = updated?.find(s => s.id === source.id)
+      if (current && current.extracted_text) {
+        showToast(`✓ Extracted data for "${source.file_name}"`)
+        setViewingSource(current)
+      }
+    } catch (err) {
+      console.error('Source extraction error:', err)
+      const msg = err.message?.includes('AI services') || err.status === 503
+        ? 'It might take some time, AI services are temporarily low.'
+        : `Extraction failed: ${err.message}`
+      setAiFallbackErrorMsg(msg)
+      setAiFallbackModalOpen(true)
+    } finally {
+      setRowExtractingId(null)
+    }
+  }
+
+  async function handleExtractAllPending() {
+    try {
+      setExtracting(true)
+      await extractSources(projectId)
+      const updated = await listSources(projectId)
+      setSources(updated || [])
+      showToast('✓ Extraction completed for pending sources')
+    } catch (err) {
+      console.error('Batch extraction error:', err)
+      const msg = err.message?.includes('AI services') || err.status === 503
+        ? 'It might take some time, AI services are temporarily low.'
+        : `Extraction failed: ${err.message}`
+      setAiFallbackErrorMsg(msg)
+      setAiFallbackModalOpen(true)
+    } finally {
+      setExtracting(false)
+    }
+  }
+
   // Real Counts & Status Breakdown
   const totalCards = cards.length
   const pendingCards = cards.filter(c => {
@@ -467,7 +523,12 @@ export default function ProjectOverviewPage() {
                       await extractSources(projectId)
                       navigate(`/projects/${projectId}/extract`)
                     } catch (err) {
-                      showToast('Extraction failed: ' + err.message)
+                      if (err.message?.includes('AI services') || err.status === 503) {
+                        setAiFallbackErrorMsg("It might take some time, AI services are temporarily low.")
+                        setAiFallbackModalOpen(true)
+                      } else {
+                        showToast('Extraction failed: ' + err.message)
+                      }
                     } finally {
                       setExtracting(false)
                     }
@@ -476,7 +537,7 @@ export default function ProjectOverviewPage() {
                 >
                   <span className="pov-sparkle">📄</span>
                   <span>
-                    {extracting ? 'Extracting Data...' : 'Extract Data & Review'}
+                    {extracting ? 'Extracting with Qwen-VL...' : 'Extract Data & Review'}
                   </span>
                 </button>
               ) : pendingNeedsReview ? (
@@ -594,9 +655,43 @@ export default function ProjectOverviewPage() {
                         {pendingBatchSources.length} New Document{pendingBatchSources.length !== 1 ? 's' : ''}
                       </span>
                     </div>
-                    <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 600 }}>
-                      ○ In Progress
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <button
+                        type="button"
+                        className="bui-btn"
+                        style={{
+                          padding: '4px 12px',
+                          fontSize: '11.5px',
+                          fontWeight: 600,
+                          background: '#2563eb',
+                          color: '#ffffff',
+                          borderRadius: '6px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px'
+                        }}
+                        onClick={handleExtractAllPending}
+                        disabled={extracting}
+                        title="Extract observations & text from all pending documents with Qwen-VL"
+                      >
+                        {extracting ? (
+                          <>
+                            <span className="bui-spinner-inline" />
+                            <span>Extracting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>⚡</span>
+                            <span>Extract All Pending</span>
+                          </>
+                        )}
+                      </button>
+                      <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 600 }}>
+                        ○ In Progress
+                      </span>
+                    </div>
                   </div>
 
                   <table className="pov-sources-table" style={{ margin: 0 }}>
@@ -605,7 +700,7 @@ export default function ProjectOverviewPage() {
                         <th>Name</th>
                         <th>Type</th>
                         <th>Uploaded On</th>
-                        <th>Status</th>
+                        <th>Status & Extracted Data</th>
                         <th style={{ textAlign: 'right' }}>Actions</th>
                       </tr>
                     </thead>
@@ -628,41 +723,105 @@ export default function ProjectOverviewPage() {
                             <td className="td-date">
                               {s.upload_timestamp ? new Date(s.upload_timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Recently'}
                             </td>
-                            <td className="td-ver">
-                              {isApproved ? (
-                                <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
-                                  ✓ Approved
-                                </span>
-                              ) : isExtracted ? (
-                                <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
-                                  ○ Extracted (Needs Review)
-                                </span>
-                              ) : isFailed ? (
-                                <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
-                                  ✕ Failed
-                                </span>
-                              ) : (
-                                <span style={{ background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
-                                  ○ Pending Extraction
-                                </span>
-                              )}
+                            <td className="td-ver" style={{ verticalAlign: 'middle' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                {isApproved ? (
+                                  <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
+                                    ✓ Approved
+                                  </span>
+                                ) : isExtracted ? (
+                                  <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
+                                    ○ Extracted
+                                  </span>
+                                ) : isFailed ? (
+                                  <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
+                                    ✕ Extraction Failed
+                                  </span>
+                                ) : (
+                                  <span style={{ background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
+                                    ○ Pending
+                                  </span>
+                                )}
+
+                                {/* Beside the status option: Extracted Data button */}
+                                {s.extracted_text ? (
+                                  <button
+                                    type="button"
+                                    className="bui-btn bui-btn-outline"
+                                    style={{
+                                      padding: '2px 8px',
+                                      fontSize: '11px',
+                                      fontWeight: 600,
+                                      color: '#2563eb',
+                                      borderColor: '#93c5fd',
+                                      background: '#eff6ff',
+                                      borderRadius: '4px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      cursor: 'pointer'
+                                    }}
+                                    onClick={() => setViewingSource(s)}
+                                    title="View Qwen extracted observations & text"
+                                  >
+                                    <span>📄</span>
+                                    <span>Extracted Data</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="bui-btn"
+                                    style={{
+                                      padding: '2px 8px',
+                                      fontSize: '11px',
+                                      fontWeight: 600,
+                                      color: '#ffffff',
+                                      background: '#2563eb',
+                                      borderRadius: '4px',
+                                      border: 'none',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      cursor: 'pointer'
+                                    }}
+                                    onClick={() => handleExtractSingle(s)}
+                                    disabled={rowExtractingId === s.id}
+                                    title="Run Qwen vision & text extraction on this source"
+                                  >
+                                    {rowExtractingId === s.id ? '⚡ Extracting...' : '⚡ Extract Data'}
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                              <button
-                                type="button"
-                                className="bui-btn bui-btn-outline"
-                                style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
-                                onClick={() => setViewingSource(s)}
-                                title="Inspect extracted text"
-                              >
-                                📄 View
-                              </button>
+                              {s.extracted_text ? (
+                                <button
+                                  type="button"
+                                  className="bui-btn bui-btn-outline"
+                                  style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
+                                  onClick={() => setViewingSource(s)}
+                                  title="Inspect extracted text & observations"
+                                >
+                                  📄 View
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="bui-btn bui-btn-outline"
+                                  style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#93c5fd', fontWeight: 600 }}
+                                  onClick={() => handleExtractSingle(s)}
+                                  disabled={rowExtractingId === s.id}
+                                  title="Extract this document"
+                                >
+                                  {rowExtractingId === s.id ? 'Extracting...' : '⚡ Extract'}
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="bui-btn bui-btn-outline"
                                 style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#cbd5e1' }}
                                 onClick={() => navigate(`/projects/${projectId}/extract`)}
-                                title="Review & Approve"
+                                title="Review & Approve in editor"
                               >
                                 ✏ Review
                               </button>
@@ -724,7 +883,7 @@ export default function ProjectOverviewPage() {
                           <th>Name</th>
                           <th>Type</th>
                           <th>Uploaded On</th>
-                          <th>Status</th>
+                          <th>Status & Extracted Data</th>
                           <th style={{ textAlign: 'right' }}>Actions</th>
                         </tr>
                       </thead>
@@ -742,10 +901,36 @@ export default function ProjectOverviewPage() {
                             <td className="td-date">
                               {s.upload_timestamp ? new Date(s.upload_timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Recently'}
                             </td>
-                            <td className="td-ver">
-                              <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
-                                ✓ Approved
-                              </span>
+                            <td className="td-ver" style={{ verticalAlign: 'middle' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
+                                  ✓ Approved
+                                </span>
+                                {s.extracted_text && (
+                                  <button
+                                    type="button"
+                                    className="bui-btn bui-btn-outline"
+                                    style={{
+                                      padding: '2px 8px',
+                                      fontSize: '11px',
+                                      fontWeight: 600,
+                                      color: '#2563eb',
+                                      borderColor: '#93c5fd',
+                                      background: '#eff6ff',
+                                      borderRadius: '4px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      cursor: 'pointer'
+                                    }}
+                                    onClick={() => setViewingSource(s)}
+                                    title="View extracted observations & text"
+                                  >
+                                    <span>📄</span>
+                                    <span>Extracted Data</span>
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
                               <button
@@ -753,9 +938,9 @@ export default function ProjectOverviewPage() {
                                 className="bui-btn bui-btn-outline"
                                 style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
                                 onClick={() => setViewingSource(s)}
-                                title="Inspect extracted text"
+                                title="Inspect extracted text & observations"
                               >
-                                📄 View
+                                📄 View Data
                               </button>
                               <button
                                 type="button"
@@ -792,6 +977,11 @@ export default function ProjectOverviewPage() {
                     <span style={{ fontSize: '12px', color: '#64748b' }}>
                       {(viewingSource.file_type || 'PDF').toUpperCase()} • {viewingSource.file_size ? `${(viewingSource.file_size / 1024).toFixed(0)} KB` : ''}
                     </span>
+                    {viewingSource.file_type === 'image' && (
+                      <span style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '2px 7px', borderRadius: '10px', fontSize: '10.5px', fontWeight: 600 }}>
+                        ✦ Qwen-VL Vision Analyzed
+                      </span>
+                    )}
                     {viewingSource.approval_status === 'approved' && (
                       <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '2px 7px', borderRadius: '10px', fontSize: '10.5px', fontWeight: 600 }}>
                         ✓ Approved
@@ -814,7 +1004,7 @@ export default function ProjectOverviewPage() {
 
               <div style={{ marginBottom: '18px' }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '8px' }}>
-                  Extracted Document Text
+                  {viewingSource.file_type === 'image' ? 'Qwen-VL Visual Observations & Extracted Text' : 'Extracted Document Content'}
                 </span>
                 <div style={{
                   maxHeight: '400px',
@@ -836,11 +1026,60 @@ export default function ProjectOverviewPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button
                   type="button"
+                  className="bui-btn bui-btn-outline"
+                  style={{ padding: '8px 16px', fontSize: '12.5px', color: '#2563eb', borderColor: '#cbd5e1' }}
+                  onClick={() => {
+                    setViewingSource(null)
+                    navigate(`/projects/${projectId}/extract`)
+                  }}
+                >
+                  ✏ Open in Review Editor →
+                </button>
+                <button
+                  type="button"
                   className="bui-btn"
                   style={{ background: '#0f172a', color: '#ffffff', padding: '8px 18px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
                   onClick={() => setViewingSource(null)}
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* AI SERVICES TEMPORARILY LOW FALLBACK MODAL */}
+        {aiFallbackModalOpen && (
+          <div className="bui-modal-overlay" onClick={() => setAiFallbackModalOpen(false)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1100 }}>
+            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px', width: '90%', background: '#ffffff', borderRadius: '12px', padding: '24px 28px', color: '#0f172a', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#fef3c7', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '24px' }}>
+                ⚠️
+              </div>
+              <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                AI Service Notice
+              </h3>
+              <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.55, marginBottom: '22px' }}>
+                {aiFallbackErrorMsg || "It might take some time, AI services are temporarily low."}
+              </p>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="bui-btn bui-btn-outline"
+                  style={{ padding: '8px 18px', fontSize: '12.5px', color: '#64748b', borderColor: '#cbd5e1' }}
+                  onClick={() => setAiFallbackModalOpen(false)}
+                >
+                  Dismiss
+                </button>
+                <button
+                  type="button"
+                  className="bui-btn"
+                  style={{ background: '#2563eb', color: '#ffffff', padding: '8px 20px', borderRadius: '6px', fontWeight: 600, border: 'none', cursor: 'pointer', fontSize: '12.5px' }}
+                  onClick={() => {
+                    setAiFallbackModalOpen(false)
+                    handleExtractAllPending()
+                  }}
+                >
+                  Try Again
                 </button>
               </div>
             </div>
@@ -985,6 +1224,42 @@ export default function ProjectOverviewPage() {
                       </span>
                     </div>
                   )}
+                </div>
+
+                {/* Step 2b: Image Presence Option */}
+                <div style={{ marginTop: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', textAlign: 'left' }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+                    Does this document contain images, drawings, or visual diagrams?
+                  </label>
+                  <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#1e293b', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="containsImagesOption"
+                        checked={containsImages === true}
+                        onChange={() => setContainsImages(true)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span style={{ fontWeight: containsImages ? 700 : 500 }}>Yes</span>
+                      <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>Qwen Vision</span>
+                    </label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#1e293b', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="containsImagesOption"
+                        checked={containsImages === false}
+                        onChange={() => setContainsImages(false)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span style={{ fontWeight: !containsImages ? 700 : 500 }}>No</span>
+                      <span style={{ fontSize: '11px', color: '#64748b', background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>Standard Text</span>
+                    </label>
+                  </div>
+                  <p style={{ fontSize: '11.5px', color: '#64748b', margin: '8px 0 0 0', lineHeight: 1.45 }}>
+                    {containsImages 
+                      ? "✦ Every page will be rendered as an image and analyzed by Qwen Vision for drawings, architectural annotations, tables, and photos."
+                      : "Standard pipeline: Fast native text extraction from document paragraphs and tables without vision processing."}
+                  </p>
                 </div>
 
                 <div style={{ marginTop: '14px', textAlign: 'left' }}>

@@ -78,6 +78,7 @@ class SourceResponse(BaseModel):
     extracted_text: Optional[str] = None
     ocr_text: Optional[str] = None
     ocr_status: Optional[str] = None
+    contains_images: Optional[bool] = False
     processing_error: Optional[str] = None
 
     class Config:

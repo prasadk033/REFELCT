@@ -110,6 +110,7 @@ class Source(Base):
     extracted_text = Column(Text, nullable=True)
     ocr_text = Column(Text, nullable=True)
     ocr_status = Column(String, nullable=True)  # None, processing, completed, failed, skipped
+    contains_images = Column(Boolean, default=False, nullable=True)  # User selection: whether doc contains images/drawings
     processing_error = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utc_now)
 
@@ -257,6 +258,7 @@ def init_db():
                 ("approval_status", "VARCHAR DEFAULT 'pending_review'"),
                 ("version", "INTEGER DEFAULT 1"),
                 ("description", "TEXT"),
+                ("contains_images", "BOOLEAN DEFAULT FALSE"),
             ]:
                 if col not in source_cols:
                     try:

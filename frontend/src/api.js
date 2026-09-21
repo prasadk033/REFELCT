@@ -92,12 +92,13 @@ export async function deleteProject(projectId) {
 
 // ── Sources ─────────────────────────────────────────────────────────────────
 
-export async function uploadSource(projectId, file, description = "") {
+export async function uploadSource(projectId, file, description = "", containsImages = false) {
   const formData = new FormData();
   formData.append("file", file);
   if (description && description.trim()) {
     formData.append("description", description.trim());
   }
+  formData.append("contains_images", containsImages ? "true" : "false");
   return apiFetch(`/api/projects/${projectId}/sources`, {
     method: "POST",
     body: formData,
