@@ -397,7 +397,8 @@ export default function ExtractionReviewPage() {
                 </div>
                 <div className="extract-source-list">
                   {documentSources.map((doc, idx) => {
-                    const isApproved = doc.approval_status === 'approved' || doc.processing_status === 'approved' || doc.processing_status === 'completed'
+                    const hasExtractedText = Boolean(doc.extracted_text && doc.extracted_text.trim())
+                    const isApproved = (doc.approval_status === 'approved' || doc.processing_status === 'approved' || doc.processing_status === 'completed') && hasExtractedText
                     const isSelected = doc.id === selectedSourceId
                     return (
                       <button
@@ -412,7 +413,13 @@ export default function ExtractionReviewPage() {
                           <span className="extract-item-num">Document {idx + 1}</span>
                           <span className="extract-item-name" title={doc.file_name}>{doc.file_name}</span>
                         </div>
-                        {isApproved && <span className="extract-badge-approved">Approved</span>}
+                        {isApproved ? (
+                          <span className="extract-badge-approved">Approved</span>
+                        ) : !hasExtractedText ? (
+                          <span className="extract-badge-pending" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: '10px', padding: '2px 6px', borderRadius: '4px' }}>
+                            {doc.processing_status === 'failed' ? 'Failed' : 'Needs Extraction'}
+                          </span>
+                        ) : null}
                       </button>
                     )
                   })}
@@ -429,7 +436,8 @@ export default function ExtractionReviewPage() {
                 </div>
                 <div className="extract-source-list">
                   {imageSources.map((img, idx) => {
-                    const isApproved = img.approval_status === 'approved' || img.processing_status === 'approved' || img.processing_status === 'completed'
+                    const hasExtractedText = Boolean(img.extracted_text && img.extracted_text.trim())
+                    const isApproved = (img.approval_status === 'approved' || img.processing_status === 'approved' || img.processing_status === 'completed') && hasExtractedText
                     const isSelected = img.id === selectedSourceId
                     return (
                       <button
@@ -444,7 +452,13 @@ export default function ExtractionReviewPage() {
                           <span className="extract-item-num">Image {idx + 1}</span>
                           <span className="extract-item-name" title={img.file_name}>{img.file_name}</span>
                         </div>
-                        {isApproved && <span className="extract-badge-approved">Approved</span>}
+                        {isApproved ? (
+                          <span className="extract-badge-approved">Approved</span>
+                        ) : !hasExtractedText ? (
+                          <span className="extract-badge-pending" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: '10px', padding: '2px 6px', borderRadius: '4px' }}>
+                            {img.processing_status === 'failed' ? 'Failed' : 'Needs Extraction'}
+                          </span>
+                        ) : null}
                       </button>
                     )
                   })}
@@ -473,7 +487,13 @@ export default function ExtractionReviewPage() {
                 >
                   {analyzing ? 'Launching Analysis...' : 'Generate Brief'}
                 </button>
-                {!allApproved && <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>Approve all sources to unlock</p>}
+                {!allApproved && (
+                  <p style={{ fontSize: '11.5px', color: '#64748b', marginTop: '8px', textAlign: 'center', lineHeight: 1.4 }}>
+                    {displaySources.some(s => !s.extracted_text || !s.extracted_text.trim())
+                      ? 'Extract all documents and approve them to unlock brief generation'
+                      : 'Approve all sources to unlock'}
+                  </p>
+                )}
               </div>
             ) : (
               <div className="extract-sidebar-footer" style={{ padding: '16px 20px', borderTop: '1px solid #e2e8f0', marginTop: 'auto', background: '#f8fafc' }}>
