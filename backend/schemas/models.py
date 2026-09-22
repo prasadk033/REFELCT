@@ -196,6 +196,7 @@ class ProcessingStatusResponse(BaseModel):
     questions_count: Optional[int] = 0
     conflicts_count: Optional[int] = 0
     document_names: Optional[str] = None
+    notification_seen: Optional[bool] = False
     created_at: datetime
     updated_at: datetime
 

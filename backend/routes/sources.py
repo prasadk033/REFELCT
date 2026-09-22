@@ -252,10 +252,12 @@ def list_sources(
     return [SourceResponse.model_validate(s) for s in sources]
 
 
-def _check_active_extraction(db: Session, user_id: str):
+def _check_active_extraction(db: Session, project_id: str):
     """
-    Ensure no other extraction task is running across any project for this user.
+    Ensure no other extraction task is running for this project.
     Handles stale running states (> 30 mins) safely.
+    Scoped to project_id so collaborators cannot run conflicting extractions
+    on the same project, while independent projects are never blocked.
     """
     from datetime import datetime, timezone, timedelta
     from db import ProcessingJob
@@ -265,7 +267,7 @@ def _check_active_extraction(db: Session, user_id: str):
     active_jobs = (
         db.query(ProcessingJob)
         .filter(
-            ProcessingJob.user_id == user_id,
+            ProcessingJob.project_id == project_id,
             ProcessingJob.status.in_(["pending", "extracting"])
         )
         .all()
@@ -283,7 +285,7 @@ def _check_active_extraction(db: Session, user_id: str):
         else:
             raise HTTPException(
                 status_code=409,
-                detail="Another extraction task is currently running in the background. Please wait until it is completed before starting another extraction."
+                detail="Another extraction task is currently running for this project. Please wait until it is completed before starting another extraction."
             )
 
 
@@ -300,8 +302,8 @@ def extract_all_sources(
     from db import ProcessingJob
     from tasks.queue import enqueue_extraction_job
 
-    # Strictly check for active extractions across projects
-    _check_active_extraction(db, user.id)
+    # Strictly check for active extractions on this project
+    _check_active_extraction(db, project_id)
 
     project = db.query(Project).filter(
         Project.id == project_id,
@@ -391,7 +393,7 @@ def reparse_single_source(
     from db import ProcessingJob
     from tasks.queue import enqueue_extraction_job
 
-    _check_active_extraction(db, user.id)
+    _check_active_extraction(db, project_id)
 
     project = db.query(Project).filter(
         Project.id == project_id,
@@ -534,6 +536,7 @@ def approve_all_sources(
     # Identify any unextracted sources that need background extraction
     unextracted = [s for s in pending_sources if not s.extracted_text or s.processing_status in ("uploaded", "failed")]
     if unextracted:
+        _check_active_extraction(db, project_id)
         from tasks.queue import enqueue_extraction_job
         from db import ProcessingJob
         job_id = str(uuid.uuid4())

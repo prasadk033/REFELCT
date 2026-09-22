@@ -274,5 +274,12 @@ export async function checkAiHealth() {
   }
 }
 
+// ── Background Jobs & Notifications ────────────────────────────────────────
 
+export async function getUnacknowledgedJobs() {
+  return apiFetch("/api/jobs/unacknowledged");
+}
 
+export async function acknowledgeJobNotification(jobId) {
+  return apiFetch(`/api/jobs/${jobId}/acknowledge`, { method: "POST" });
+}

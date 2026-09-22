@@ -72,21 +72,9 @@ def analyze_brief(
         batch_raw = f"{project_id}:{','.join(source_ids_sorted)}"
         idempotency_key = hashlib.sha256(batch_raw.encode("utf-8")).hexdigest()[:32]
 
-    # Check for existing active processing job with the same batch identity
-    existing_active = (
-        db.query(ProcessingJob)
-        .filter(
-            ProcessingJob.project_id == project_id,
-            ProcessingJob.idempotency_key == idempotency_key,
-            ProcessingJob.status.in_(["queued", "parsing", "extracting_images", "processing_brief", "generating_cards"])
-        )
-        .first()
-    )
-    if existing_active:
-        logger.info(f"Duplicate generation request for project {project_id}, returning active job {existing_active.id}")
-        return ProcessingStatusResponse.model_validate(existing_active)
-
-    # Mark stale active jobs from earlier attempts (>120s or different batch) as superseded
+    # Check for existing active processing jobs for this project
+    from datetime import timedelta
+    stale_threshold = datetime.now(timezone.utc) - timedelta(minutes=30)
     active_jobs = (
         db.query(ProcessingJob)
         .filter(
@@ -95,10 +83,31 @@ def analyze_brief(
         )
         .all()
     )
+    active_jobs_valid = []
     for aj in active_jobs:
-        aj.status = "superseded"
-        aj.current_step = "Superseded by new analysis run"
-    db.commit()
+        job_updated = aj.updated_at
+        if job_updated and job_updated.tzinfo is None:
+            job_updated = job_updated.replace(tzinfo=timezone.utc)
+        if job_updated and job_updated < stale_threshold:
+            logger.warning(f"Marking stale generation job {aj.id} as failed (last updated {aj.updated_at})")
+            aj.status = "failed"
+            aj.error = "Generation task timed out"
+            db.commit()
+        else:
+            active_jobs_valid.append(aj)
+
+    if active_jobs_valid:
+        # If identical idempotency key is submitted, safely return the existing active job
+        for aj in active_jobs_valid:
+            if aj.idempotency_key == idempotency_key:
+                logger.info(f"Duplicate generation request for project {project_id}, returning active job {aj.id}")
+                return ProcessingStatusResponse.model_validate(aj)
+        
+        # Conflicting generation request for a different batch -> Reject with HTTP 409
+        raise HTTPException(
+            status_code=409,
+            detail="Another generation task is already running for this project. Please wait until it is completed."
+        )
 
     # Import here to avoid circular imports
     from agents.brief_orchestrator import run_brief_pipeline

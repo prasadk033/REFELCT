@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
+import { ActiveJobProvider } from './contexts/ActiveJobContext.jsx'
 import LandingPage from './pages/LandingPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import GlobalOverviewPage from './pages/GlobalOverviewPage.jsx'
@@ -54,7 +55,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <ActiveJobProvider>
+          <AppRoutes />
+        </ActiveJobProvider>
       </AuthProvider>
     </BrowserRouter>
   )

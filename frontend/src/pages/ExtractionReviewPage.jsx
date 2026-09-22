@@ -596,6 +596,10 @@ export default function ExtractionReviewPage() {
           elapsedSeconds={analyzingSeconds}
           serverStep={analysisStep}
           projectName={project?.name || 'Project'}
+          onRunInBackground={() => {
+            setAnalyzing(false)
+            navigate(`/projects/${projectId}`)
+          }}
         />
       )}
 
@@ -739,7 +743,10 @@ export default function ExtractionReviewPage() {
           totalPages={extractTotalPages}
           estimatedSeconds={extractEstSeconds}
           elapsedSeconds={extractElapsedSeconds}
-          onRunInBackground={() => setExtractModalOpen(false)}
+          onRunInBackground={() => {
+            setExtractModalOpen(false)
+            navigate(`/projects/${projectId}`)
+          }}
         />
       )}
 

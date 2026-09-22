@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, cancelSourceExtraction, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion } from '../api.js'
+import { getProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, cancelSourceExtraction, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion, acknowledgeJobNotification } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
 import ExtractingProgressModal from '../components/ExtractingProgressModal.jsx'
@@ -163,6 +163,16 @@ export default function ProjectOverviewPage() {
           if (typeof statusRes.questions_count === 'number' && statusRes.questions_count > 0) setExtractDocCount(statusRes.questions_count)
           if (statusRes.current_step) setExtractServerStep(statusRes.current_step)
           startExtractionPolling()
+        } else if (statusRes.status === 'completed' && !statusRes.notification_seen) {
+          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
+          showToast(`✓ Background task completed for "${project?.name || 'this project'}"`)
+          await loadProjectData()
+        } else if ((statusRes.status === 'failed' || statusRes.status === 'partial') && !statusRes.notification_seen) {
+          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
+          const rawErr = statusRes.error || ''
+          const isAiDown = rawErr.includes('AI services') || rawErr.includes('unavailable') || rawErr.includes('timed out') || rawErr.includes('503') || rawErr.includes('low')
+          showToast(`✕ Task ${statusRes.status}: ${isAiDown ? 'AI services are temporarily unavailable. Please try again later.' : (rawErr || 'Error occurred.')}`)
+          await loadProjectData()
         }
       }
     } catch (e) {
@@ -285,6 +295,7 @@ export default function ProjectOverviewPage() {
             setShowExtractModal(false)
             await loadProjectData()
             setShowExtractCompleteModal(true)
+            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
             showToast('✓ Extraction completed for all pending sources')
           } else if (statusRes.status === 'partial') {
             clearInterval(extractTimerRef.current)
@@ -303,6 +314,7 @@ export default function ProjectOverviewPage() {
             setAiFallbackBadge(`${completedCount} / ${totalCount} Documents Completed`)
             setAiFallbackErrorMsg(msg)
             setAiFallbackModalOpen(true)
+            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
             showToast(`⚠ Partial extraction (${completedCount}/${totalCount} completed)`)
             await loadProjectData()
           } else if (statusRes.status === 'failed') {
@@ -321,6 +333,7 @@ export default function ProjectOverviewPage() {
             setAiFallbackBadge(`0 / ${totalCount} Documents Completed`)
             setAiFallbackErrorMsg(msg)
             setAiFallbackModalOpen(true)
+            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
             showToast('✕ Extraction failed')
             await loadProjectData()
           }
@@ -372,6 +385,7 @@ export default function ProjectOverviewPage() {
             documents: statusRes.document_names || sources.map(s => s.file_name).join(', ')
           })
           setShowCompleteModal(true)
+          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
           showToast(`✦ ${docGeneratedCount} Brief Cards generated for "${freshProj?.name || project?.name || 'Project'}"!`)
         } else if (statusRes.status === 'failed') {
           clearInterval(pollIntervalRef.current)
@@ -381,6 +395,7 @@ export default function ProjectOverviewPage() {
           const rawErr = statusRes.error || statusRes.error_message || ''
           const isAiDown = !rawErr || rawErr.includes('AI services') || rawErr.includes('unavailable') || rawErr.includes('timed out') || rawErr.includes('503') || rawErr.includes('low')
           setAnalysisError(isAiDown ? 'AI services are temporarily unavailable. Please try again later.' : rawErr)
+          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
           loadProjectData().catch(() => {})
         } else if (statusRes.status === 'cancelled') {
           clearInterval(pollIntervalRef.current)
@@ -703,6 +718,7 @@ export default function ProjectOverviewPage() {
 
   // Unique completed version numbers sorted descending (latest on top: Version 1, Version 0)
   const completedVersions = Array.from(new Set(versionedSources.map(s => Number(s.version)))).sort((a, b) => b - a)
+  const authoritativeTargetVersion = completedVersions.length === 0 ? 0 : completedVersions[0] + 1
 
   // Check pending status
   const pendingNeedsExtraction = pendingBatchSources.some(s => s.processing_status === 'uploaded' || !s.extracted_text)
@@ -1042,22 +1058,27 @@ export default function ProjectOverviewPage() {
                 >
                   
                   {/* Single Pending Group Header */}
-                  <div style={{ background: (extracting && !showExtractModal) ? '#eff6ff' : '#f8fafc', borderBottom: '1px dashed #cbd5e1', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.3s' }}>
+                  <div style={{ background: (extracting && !showExtractModal) ? '#eff6ff' : (analyzing && !showAnalysisModal) ? '#eff6ff' : '#f8fafc', borderBottom: '1px dashed #cbd5e1', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.3s' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       {(extracting && !showExtractModal) ? (
-                        <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '4px', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                           <span className="bui-spinner-inline" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderColor: 'rgba(255,255,255,0.4)', borderTopColor: '#ffffff', display: 'inline-block', verticalAlign: 'middle' }} />
-                          Extraction Running in Background
+                          Version {authoritativeTargetVersion} — ⏳ Extraction in Background
+                        </span>
+                      ) : (analyzing && !showAnalysisModal) ? (
+                        <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '4px', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="bui-spinner-inline" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderColor: 'rgba(255,255,255,0.4)', borderTopColor: '#ffffff', display: 'inline-block', verticalAlign: 'middle' }} />
+                          Version {authoritativeTargetVersion} — ⏳ Processing in Background
                         </span>
                       ) : (
-                        <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
-                          Pending Extraction
+                        <span style={{ background: '#0f172a', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+                          Version {authoritativeTargetVersion} (Pending Extraction)
                         </span>
                       )}
                       <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
                         {pendingBatchSources.length} Document{pendingBatchSources.length !== 1 ? 's' : ''}
                       </span>
-                      {pendingNeedsExtraction && !(extracting && !showExtractModal) && (
+                      {pendingNeedsExtraction && !(extracting && !showExtractModal) && !(analyzing && !showAnalysisModal) && (
                         <button
                           type="button"
                           className="bui-btn"
@@ -1088,7 +1109,15 @@ export default function ProjectOverviewPage() {
                       {(extracting && !showExtractModal) ? (
                         <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                           <span className="bui-spinner-inline" style={{ width: '12px', height: '12px', borderWidth: '2px', borderColor: '#bfdbfe', borderTopColor: '#2563eb', display: 'inline-block' }} />
-                          All extracting...
+                          {(() => {
+                            const pMatch = (extractServerStep || '').match(/Page\s+(\d+)\s+of\s+(\d+)/i)
+                            return pMatch ? `Page ${pMatch[1]} / ${pMatch[2]} processed` : 'All extracting in background...'
+                          })()}
+                        </span>
+                      ) : (analyzing && !showAnalysisModal) ? (
+                        <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                          <span className="bui-spinner-inline" style={{ width: '12px', height: '12px', borderWidth: '2px', borderColor: '#bfdbfe', borderTopColor: '#2563eb', display: 'inline-block' }} />
+                          Brief synthesis in progress...
                         </span>
                       ) : !pendingNeedsExtraction ? (
                         <button

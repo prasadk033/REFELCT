@@ -196,6 +196,7 @@ class ProcessingJob(Base):
     conflicts_count = Column(Integer, default=0, nullable=True)
     document_names = Column(String, nullable=True)
     idempotency_key = Column(String, nullable=True, index=True)
+    notification_seen = Column(Boolean, default=False, nullable=True)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
@@ -299,6 +300,7 @@ def init_db():
                 ("conflicts_count", "INTEGER DEFAULT 0"),
                 ("document_names", "VARCHAR"),
                 ("idempotency_key", "VARCHAR"),
+                ("notification_seen", "BOOLEAN DEFAULT FALSE"),
             ]:
                 if col not in job_cols:
                     try:
