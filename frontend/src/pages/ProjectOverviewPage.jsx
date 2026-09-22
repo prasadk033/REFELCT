@@ -165,13 +165,9 @@ export default function ProjectOverviewPage() {
           startExtractionPolling()
         } else if (statusRes.status === 'completed' && !statusRes.notification_seen) {
           if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
-          showToast(`✓ Background task completed for "${project?.name || 'this project'}"`)
           await loadProjectData()
         } else if ((statusRes.status === 'failed' || statusRes.status === 'partial') && !statusRes.notification_seen) {
           if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
-          const rawErr = statusRes.error || ''
-          const isAiDown = rawErr.includes('AI services') || rawErr.includes('unavailable') || rawErr.includes('timed out') || rawErr.includes('503') || rawErr.includes('low')
-          showToast(`✕ Task ${statusRes.status}: ${isAiDown ? 'AI services are temporarily unavailable. Please try again later.' : (rawErr || 'Error occurred.')}`)
           await loadProjectData()
         }
       }
