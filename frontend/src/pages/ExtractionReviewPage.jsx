@@ -11,6 +11,7 @@ import {
   getBriefStatus,
   listCards
 } from '../api.js'
+import TopHeader from '../components/TopHeader.jsx'
 import AiHealthBanner from '../components/AiHealthBanner.jsx'
 import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
 import ExtractingProgressModal from '../components/ExtractingProgressModal.jsx'
@@ -55,6 +56,14 @@ export default function ExtractionReviewPage() {
     setTimeout(() => setToastMsg(null), 3000)
   }
 
+  function formatFileSize(bytes) {
+    if (!bytes) return ''
+    if (bytes >= 1024 * 1024) {
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+    }
+    return Math.round(bytes / 1024) + ' KB'
+  }
+
   async function loadData() {
     try {
       setLoading(true)
@@ -88,6 +97,39 @@ export default function ExtractionReviewPage() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     }
   }, [projectId])
+
+  // Poll for background extraction status
+  useEffect(() => {
+    let interval = null
+    const isExtracting = sources.some(s => s.processing_status === 'extracting')
+    
+    if (isExtracting || reparsing) {
+      interval = setInterval(async () => {
+        try {
+          const res = await getProject(projectId)
+          setSources(res.sources || [])
+          
+          const stillExtracting = (res.sources || []).some(s => s.processing_status === 'extracting')
+          if (!stillExtracting) {
+            setReparsing(false)
+            if (extractModalOpen) setExtractModalOpen(false)
+            // find selected to update text
+            const updatedSelected = (res.sources || []).find(s => s.id === selectedSourceId)
+            if (updatedSelected && updatedSelected.extracted_text) {
+              setEditingText(updatedSelected.extracted_text)
+              setIsSaved(true)
+            }
+          }
+        } catch (e) {
+          console.warn("Polling error:", e)
+        }
+      }, 2000)
+    }
+
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [sources, reparsing, projectId, selectedSourceId, extractModalOpen])
 
   const selectedSource = sources.find(s => s.id === selectedSourceId)
 
@@ -161,9 +203,7 @@ export default function ExtractionReviewPage() {
 
       const reparsed = await reparseSource(projectId, selectedSource.id)
       setSources(prev => prev.map(s => s.id === reparsed.id ? reparsed : s))
-      setEditingText(reparsed.extracted_text || '')
-      setIsSaved(true)
-      showToast(`✓ Extraction complete for ${reparsed.file_name}`)
+      // DO NOT set editing text or show toast here, let the polling handle it when status changes
     } catch (err) {
       if (err.message?.includes('AI services') || err.status === 503) {
         setAiFallbackErrorMsg("It might take some time, AI services are temporarily low.")
@@ -171,14 +211,15 @@ export default function ExtractionReviewPage() {
       } else {
         showToast('Extraction failed: ' + err.message)
       }
+      setExtractModalOpen(false)
+      setActionLoading(false)
+      setReparsing(false)
     } finally {
       if (extractTimerRef.current) {
         clearInterval(extractTimerRef.current)
         extractTimerRef.current = null
       }
-      setExtractModalOpen(false)
       setActionLoading(false)
-      setReparsing(false)
     }
   }
 
@@ -285,71 +326,17 @@ export default function ExtractionReviewPage() {
       {toastMsg && <div className="extract-toast-banner">{toastMsg}</div>}
 
       {/* Top Header */}
-      <header className="extract-top-nav">
-        <div className="extract-nav-left">
-          {/* Reflect Logo */}
-          <div
-            onClick={() => navigate('/overview')}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', textDecoration: 'none', marginRight: '4px' }}
-            title="Go to Reflect Overview"
-          >
-            <div className="p-logo-icon">R</div>
-            <span className="p-logo-text" style={{ fontSize: '14px', fontWeight: 800, letterSpacing: '0.08em', color: '#0f172a' }}>REFLECT</span>
-          </div>
-
-          <div className="extract-divider-vert" />
-
-          {/* Breadcrumbs Navigation */}
-          <div className="th-breadcrumbs" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '6px' }}>
-            <span 
-              className="th-crumb clickable"
-              onClick={() => navigate('/overview')}
-              style={{ cursor: 'pointer', color: '#64748b', fontSize: '13px', fontWeight: 500 }}
-              title="Return to Projects Overview"
-            >
-              Projects
-            </span>
-            <span className="th-separator" style={{ color: '#cbd5e1', fontSize: '12px' }}>/</span>
-            <span 
-              className="th-crumb clickable"
-              onClick={() => navigate(`/projects/${projectId}`)}
-              style={{ cursor: 'pointer', color: '#64748b', fontSize: '13px', fontWeight: 500 }}
-              title={`Return to ${project?.name || 'Project'} Overview`}
-            >
-              {project?.name || 'Project'}
-            </span>
-            <span className="th-separator" style={{ color: '#cbd5e1', fontSize: '12px' }}>/</span>
-            <span 
-              className="th-crumb clickable"
-              onClick={() => navigate(`/projects/${projectId}`)}
-              style={{ cursor: 'pointer', color: '#64748b', fontSize: '13px', fontWeight: 500 }}
-              title="Return to Project Sources"
-            >
-              Sources
-            </span>
-            {selectedSource?.file_name && (
-              <>
-                <span className="th-separator" style={{ color: '#cbd5e1', fontSize: '12px' }}>/</span>
-                <span 
-                  style={{ color: '#475569', fontSize: '13px', fontWeight: 500, maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  title={selectedSource.file_name}
-                >
-                  {selectedSource.file_name}
-                </span>
-              </>
-            )}
-            <span className="th-separator" style={{ color: '#cbd5e1', fontSize: '12px' }}>/</span>
-            <span 
-              className="th-crumb active"
-              style={{ color: '#0f172a', fontSize: '13px', fontWeight: 700 }}
-            >
-              Extraction
-            </span>
-          </div>
-        </div>
-
-        <div className="extract-nav-right">
-          <span className="extract-approved-count">
+      <TopHeader breadcrumbs={[
+        { label: 'Projects', path: '/overview' },
+        { label: project?.name || 'Project', path: `/projects/${projectId}` },
+        { label: 'Sources', path: `/projects/${projectId}` },
+        { label: selectedSource?.file_name || 'Extraction', path: null }
+      ]} />
+      
+      {/* Optional Top action bar for approve all */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 24px', borderBottom: '1px solid #e2e8f0', background: '#ffffff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span className="extract-approved-count" style={{ fontSize: '13px', fontWeight: 600, color: '#64748b' }}>
             {sources.filter(s => s.approval_status === 'approved' || s.processing_status === 'approved').length} of {sources.length} Sources Approved
           </span>
           {pendingSources.length > 0 ? (
@@ -357,32 +344,21 @@ export default function ExtractionReviewPage() {
               className="extract-btn-approve-all"
               onClick={handleApproveAll}
               disabled={actionLoading || allApproved}
+              style={{ padding: '6px 14px', fontSize: '12px', background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}
             >
-              Approve All
+              Approve All ({pendingSources.length})
             </button>
           ) : (
-            <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '5px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 600 }}>
-              ✓ All Sources Finalized
-            </span>
+            <button
+              className="extract-btn-approve-all"
+              disabled
+              style={{ padding: '6px 14px', fontSize: '12px', background: '#e2e8f0', color: '#94a3b8', border: 'none', borderRadius: '6px', fontWeight: 600 }}
+            >
+              All Approved
+            </button>
           )}
-          <button
-            className="bui-btn"
-            style={{
-              background: '#ffffff',
-              color: '#0f172a',
-              border: '1px solid #cbd5e1',
-              padding: '7px 14px',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer'
-            }}
-            onClick={() => navigate(`/projects/${projectId}`)}
-          >
-            Project Overview →
-          </button>
         </div>
-      </header>
+      </div>
 
       {/* Split Workspace */}
       <div className="extract-split-layout">
@@ -533,10 +509,10 @@ export default function ExtractionReviewPage() {
                     <button
                       className="extract-btn-action-reparse"
                       onClick={handleReparseSingle}
-                      disabled={actionLoading || reparsing}
+                      disabled={actionLoading || reparsing || selectedSource?.processing_status === 'extracting'}
                       title="Re-extract raw text from file"
                     >
-                      {reparsing ? '↻ Reparsing...' : '↻ Reparse'}
+                      {reparsing || selectedSource?.processing_status === 'extracting' ? '↻ Extracting...' : '↻ Reparse'}
                     </button>
                     
                     {!isSaved && (
@@ -561,14 +537,14 @@ export default function ExtractionReviewPage() {
 
                 <div className="extract-meta-bar">
                   <span className="extract-meta-pill">
-                    Status: <strong>{selectedSource.approval_status === 'approved' ? '✓ Approved for Brief Analysis' : '○ Ready for Review'}</strong>
+                    Status: <strong>{selectedSource.approval_status === 'approved' || selectedSource.processing_status === 'approved' ? '✓ Approved' : selectedSource.processing_status === 'extracting' ? '↻ Extracting' : '○ Ready for Review'}</strong>
                   </span>
                   <span className="extract-meta-pill">
-                    Type: <strong>{selectedSource.file_type?.toUpperCase()}</strong>
+                    Type: <strong>{(selectedSource.file_type || 'PDF').toUpperCase()}</strong>
                   </span>
                   {selectedSource.file_size && (
                     <span className="extract-meta-pill">
-                      Size: <strong>{Math.round(selectedSource.file_size / 1024)} KB</strong>
+                      Size: <strong>{formatFileSize(selectedSource.file_size)}</strong>
                     </span>
                   )}
                   <span className="extract-meta-pill">

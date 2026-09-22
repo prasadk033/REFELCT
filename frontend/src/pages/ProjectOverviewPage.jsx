@@ -107,6 +107,15 @@ export default function ProjectOverviewPage() {
   const [showCompleteModal, setShowCompleteModal] = useState(false)
   const [showExtractCompleteModal, setShowExtractCompleteModal] = useState(false)
   const [analysisSummary, setAnalysisSummary] = useState(null)
+
+  function formatFileSize(bytes) {
+    if (!bytes) return ''
+    if (bytes >= 1024 * 1024) {
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+    }
+    return Math.round(bytes / 1024) + ' KB'
+  }
+
   const [analysisError, setAnalysisError] = useState(null)
   const [analyzingSeconds, setAnalyzingSeconds] = useState(0)
   const [analysisEstimate, setAnalysisEstimate] = useState(null)
@@ -1234,7 +1243,7 @@ export default function ProjectOverviewPage() {
                       {viewingSource.version !== null && viewingSource.version !== undefined ? `Version ${viewingSource.version}` : 'Pending'}
                     </span>
                     <span style={{ fontSize: '12px', color: '#64748b' }}>
-                      {(viewingSource.file_type || 'PDF').toUpperCase()} • {viewingSource.file_size ? `${(viewingSource.file_size / 1024).toFixed(0)} KB` : ''}
+                      {(viewingSource.file_type || 'PDF').toUpperCase()} • {viewingSource.file_size ? formatFileSize(viewingSource.file_size) : ''}
                     </span>
                     {viewingSource.file_type === 'image' && (
                       <span style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '2px 7px', borderRadius: '10px', fontSize: '10.5px', fontWeight: 600 }}>
@@ -1479,7 +1488,7 @@ export default function ProjectOverviewPage() {
                         {selectedFile.name}
                       </strong>
                       <span style={{ fontSize: '11.5px', color: '#64748b' }}>
-                        {Math.round(selectedFile.size / 1024)} KB • Click to change
+                        {formatFileSize(selectedFile.size)} • Click to change
                       </span>
                     </div>
                   ) : (

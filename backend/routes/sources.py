@@ -112,9 +112,12 @@ async def upload_source(
     file_type = file_type_map.get(ext, ext.lstrip("."))
 
     # Check file size (100MB limit)
-    file.file.seek(0, 2)
-    file_size = file.file.tell()
-    file.file.seek(0)
+    file_size = getattr(file, 'size', None)
+    if file_size is None:
+        file.file.seek(0, 2)
+        file_size = file.file.tell()
+        file.file.seek(0)
+        
     MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(
@@ -327,7 +330,10 @@ def reparse_single_source(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Re-run extraction for a single source."""
+    """Re-run extraction for a single source using background worker."""
+    from db import ProcessingJob
+    from tasks.queue import enqueue_extraction_job
+
     project = db.query(Project).filter(
         Project.id == project_id,
         Project.user_id == user.id
@@ -342,10 +348,24 @@ def reparse_single_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    _extract_source_text(source, db=db)
-    source.approval_status = "pending_review"
+    source.processing_status = "extracting"
+    source.extracted_text = None
+    
+    # Create extraction job specifically for this single source
+    job_id = str(uuid.uuid4())
+    job = ProcessingJob(
+        id=job_id,
+        project_id=project_id,
+        job_type="extraction",
+        status="pending",
+        current_step="Queued for Reparsing",
+        document_names=source.file_name
+    )
+    db.add(job)
     db.commit()
     db.refresh(source)
+
+    enqueue_extraction_job(project_id=project_id, source_ids=[source.id], job_id=job_id)
 
     return SourceResponse.model_validate(source)
 
