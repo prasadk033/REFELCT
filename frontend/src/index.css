@@ -5344,6 +5344,7 @@ a {
 .th-crumb {
   color: var(--text-muted);
   transition: color 0.15s;
+  min-width: 0;
 }
 
 .th-crumb.clickable {
