@@ -717,9 +717,9 @@ export default function ProjectOverviewPage() {
   const authoritativeTargetVersion = completedVersions.length === 0 ? 0 : completedVersions[0] + 1
 
   // Check pending status
-  const pendingNeedsExtraction = pendingBatchSources.some(s => s.processing_status === 'uploaded' || !s.extracted_text)
+  const pendingNeedsExtraction = pendingBatchSources.some(s => s.processing_status === 'uploaded' || !s.extracted_text || !s.extracted_text.trim())
   const pendingNeedsReview = pendingBatchSources.length > 0 && !pendingNeedsExtraction && pendingBatchSources.some(s => s.approval_status !== 'approved')
-  const hasApprovedPendingReadyForBrief = pendingBatchSources.length > 0 && pendingBatchSources.every(s => s.approval_status === 'approved')
+  const hasApprovedPendingReadyForBrief = pendingBatchSources.length > 0 && !pendingNeedsExtraction && pendingBatchSources.every(s => s.approval_status === 'approved' && s.extracted_text && s.extracted_text.trim())
   const isAllBriefed = sources.length > 0 && pendingBatchSources.length === 0 && totalCards > 0
 
   if (loading && !project) {
@@ -1074,32 +1074,6 @@ export default function ProjectOverviewPage() {
                       <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
                         {pendingBatchSources.length} Document{pendingBatchSources.length !== 1 ? 's' : ''}
                       </span>
-                      {pendingNeedsExtraction && !(extracting && !showExtractModal) && !(analyzing && !showAnalysisModal) && (
-                        <button
-                          type="button"
-                          className="bui-btn"
-                          onClick={handleExtractAllPending}
-                          disabled={extracting || analyzing}
-                          style={{
-                            background: '#000000',
-                            color: '#ffffff',
-                            padding: '4px 12px',
-                            borderRadius: '6px',
-                            fontSize: '11.5px',
-                            fontWeight: 700,
-                            border: 'none',
-                            cursor: (extracting || analyzing) ? 'not-allowed' : 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                          }}
-                          title="Extract all documents belonging to this version"
-                        >
-                          <span>📄</span>
-                          <span>EXTRACT & REVIEW</span>
-                        </button>
-                      )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       {(extracting && !showExtractModal) ? (
@@ -1115,7 +1089,32 @@ export default function ProjectOverviewPage() {
                           <span className="bui-spinner-inline" style={{ width: '12px', height: '12px', borderWidth: '2px', borderColor: '#bfdbfe', borderTopColor: '#2563eb', display: 'inline-block' }} />
                           Brief synthesis in progress...
                         </span>
-                      ) : !pendingNeedsExtraction ? (
+                      ) : pendingNeedsExtraction ? (
+                        <button
+                          type="button"
+                          className="bui-btn"
+                          onClick={handleExtractAllPending}
+                          disabled={extracting || analyzing}
+                          style={{
+                            background: '#000000',
+                            color: '#ffffff',
+                            padding: '5px 14px',
+                            borderRadius: '6px',
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            border: 'none',
+                            cursor: (extracting || analyzing) ? 'not-allowed' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                          }}
+                          title="Extract all unextracted documents belonging to this version"
+                        >
+                          <span>📄</span>
+                          <span>EXTRACT & REVIEW</span>
+                        </button>
+                      ) : (
                         <button
                           type="button"
                           className="bui-btn bui-btn-outline"
@@ -1133,7 +1132,7 @@ export default function ProjectOverviewPage() {
                         >
                           Review Extracted Data →
                         </button>
-                      ) : null}
+                      )}
                     </div>
                   </div>
 
@@ -1149,9 +1148,10 @@ export default function ProjectOverviewPage() {
                     </thead>
                     <tbody>
                       {pendingBatchSources.map(s => {
-                        const isApproved = s.approval_status === 'approved' || s.processing_status === 'approved'
-                        const isExtracted = s.processing_status === 'extracted'
-                        const isFailed = s.processing_status === 'failed'
+                        const hasValidExtraction = Boolean(s.extracted_text && s.extracted_text.trim())
+                        const isApproved = (s.approval_status === 'approved' || s.processing_status === 'approved') && hasValidExtraction
+                        const isExtracted = s.processing_status === 'extracted' && hasValidExtraction
+                        const isFailed = s.processing_status === 'failed' || (!hasValidExtraction && s.approval_status !== 'approved')
 
                         return (
                           <tr key={s.id}>
@@ -1193,12 +1193,12 @@ export default function ProjectOverviewPage() {
                                   </span>
                                 ) : (
                                   <span style={{ background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
-                                    ○ Pending
+                                    ○ Pending Extraction
                                   </span>
                                 )}
 
                                 {/* Extracted Data quick-view button: only show when extracted text is ready */}
-                                {!(extracting && !showExtractModal) && rowExtractingId !== s.id && s.extracted_text && (
+                                {!(extracting && !showExtractModal) && rowExtractingId !== s.id && hasValidExtraction && (
                                   <button
                                     type="button"
                                     className="bui-btn bui-btn-outline"
@@ -1228,7 +1228,7 @@ export default function ProjectOverviewPage() {
                               {/* Disable all row actions while batch extraction is running in background */}
                               {!(extracting && !showExtractModal) && rowExtractingId !== s.id && (
                                 <>
-                                  {s.extracted_text && (
+                                  {hasValidExtraction ? (
                                     <button
                                       type="button"
                                       className="bui-btn bui-btn-outline"
@@ -1237,6 +1237,17 @@ export default function ProjectOverviewPage() {
                                       title="Inspect extracted text & observations"
                                     >
                                       📄 View
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="bui-btn bui-btn-outline"
+                                      style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#bfdbfe', fontWeight: 600, background: '#eff6ff', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                      onClick={() => handleReparseSource(s)}
+                                      disabled={extracting || analyzing || rowExtractingId === s.id}
+                                      title="Extract data for this document"
+                                    >
+                                      ↻ Extract
                                     </button>
                                   )}
                                   <button

@@ -327,6 +327,13 @@ def init_db():
                         conn.execute(text("UPDATE processing_jobs SET notification_seen = 1 WHERE (notification_seen = 0 OR notification_seen IS NULL) AND created_at < datetime('now', '-15 minutes');"))
                 except Exception:
                     pass
+
+            # Sanitize any unextracted sources that were erroneously approved in the past
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("UPDATE sources SET approval_status = 'pending', processing_status = 'failed' WHERE (extracted_text IS NULL OR TRIM(extracted_text) = '') AND approval_status = 'approved';"))
+            except Exception as clean_src_err:
+                logger.warning(f"Notice sanitizing unextracted sources: {clean_src_err}")
         
         logger.info("Database tables created/verified successfully.")
     except Exception as e:

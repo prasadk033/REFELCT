@@ -309,8 +309,7 @@ export default function ExtractionReviewPage() {
 
   const documentSources = displaySources.filter(s => s.file_type !== 'image' && !['jpg', 'jpeg', 'png', 'webp'].includes(s.file_type?.toLowerCase()))
   const imageSources = displaySources.filter(s => s.file_type === 'image' || ['jpg', 'jpeg', 'png', 'webp'].includes(s.file_type?.toLowerCase()))
-
-  const allApproved = displaySources.length > 0 && displaySources.every(s => s.approval_status === 'approved' || s.processing_status === 'approved' || s.processing_status === 'completed')
+  const allApproved = displaySources.length > 0 && displaySources.every(s => (s.approval_status === 'approved' || s.processing_status === 'approved' || s.processing_status === 'completed') && Boolean(s.extracted_text && s.extracted_text.trim()))
 
   if (loading) {
     return (
@@ -340,17 +339,32 @@ export default function ExtractionReviewPage() {
       <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 24px', borderBottom: '1px solid #e2e8f0', background: '#ffffff' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span className="extract-approved-count" style={{ fontSize: '13px', fontWeight: 600, color: '#64748b' }}>
-            {displaySources.filter(s => s.approval_status === 'approved' || s.processing_status === 'approved').length} of {displaySources.length} Sources Approved
+            {displaySources.filter(s => (s.approval_status === 'approved' || s.processing_status === 'approved') && Boolean(s.extracted_text && s.extracted_text.trim())).length} of {displaySources.length} Sources Approved
           </span>
           {pendingSources.length > 0 ? (
-            <button
-              className="extract-btn-approve-all"
-              onClick={handleApproveAll}
-              disabled={actionLoading || allApproved}
-              style={{ padding: '6px 14px', fontSize: '12px', background: '#059669', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}
-            >
-              Approve All ({pendingSources.length})
-            </button>
+            (() => {
+              const hasUnextracted = pendingSources.some(s => !s.extracted_text || !s.extracted_text.trim())
+              return (
+                <button
+                  className="extract-btn-approve-all"
+                  onClick={handleApproveAll}
+                  disabled={actionLoading || allApproved || hasUnextracted}
+                  style={{
+                    padding: '6px 14px',
+                    fontSize: '12px',
+                    background: hasUnextracted ? '#94a3b8' : '#059669',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    cursor: (actionLoading || allApproved || hasUnextracted) ? 'not-allowed' : 'pointer'
+                  }}
+                  title={hasUnextracted ? "All sources must be extracted before you can approve all" : "Approve all extracted sources"}
+                >
+                  {hasUnextracted ? `Approve All (${pendingSources.length} - Extract First)` : `Approve All (${pendingSources.length})`}
+                </button>
+              )
+            })()
           ) : (
             <button
               className="extract-btn-approve-all"
@@ -528,13 +542,23 @@ export default function ExtractionReviewPage() {
                       </button>
                     )}
 
-                    <button
-                      className={`extract-btn-action-approve ${selectedSource.approval_status === 'approved' ? 'approved' : ''}`}
-                      onClick={handleApproveSingle}
-                      disabled={actionLoading}
-                    >
-                      {selectedSource.approval_status === 'approved' ? '✓ Approved' : 'Approve Source'}
-                    </button>
+                    {(() => {
+                      const hasExtractedText = Boolean(selectedSource.extracted_text && selectedSource.extracted_text.trim())
+                      return (
+                        <button
+                          className={`extract-btn-action-approve ${selectedSource.approval_status === 'approved' ? 'approved' : ''}`}
+                          onClick={handleApproveSingle}
+                          disabled={actionLoading || !hasExtractedText}
+                          style={{
+                            cursor: !hasExtractedText ? 'not-allowed' : 'pointer',
+                            opacity: !hasExtractedText ? 0.6 : 1
+                          }}
+                          title={!hasExtractedText ? "Cannot approve source before data has been extracted" : ""}
+                        >
+                          {selectedSource.approval_status === 'approved' ? '✓ Approved' : hasExtractedText ? 'Approve Source' : 'Needs Extraction'}
+                        </button>
+                      )
+                    })()}
                   </div>
                 </div>
 

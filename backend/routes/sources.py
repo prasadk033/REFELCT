@@ -240,6 +240,14 @@ def list_sources(
                 s.processing_status = "extracted"
             needs_commit = True
 
+        # Healing: Any source without extracted text must NEVER be marked as approved
+        if (not s.extracted_text or not s.extracted_text.strip()) and (s.approval_status == "approved" or s.processing_status == "approved"):
+            logger.info(f"Auto-correcting unextracted source '{s.file_name}': resetting approved status to pending.")
+            s.approval_status = "pending"
+            if s.processing_status == "approved":
+                s.processing_status = "failed"
+            needs_commit = True
+
     if needs_commit:
         try:
             db.commit()
@@ -312,37 +320,29 @@ def extract_all_sources(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Strictly target ONLY pending batch sources that have not been approved (ordered by upload time)
+    # Target all pending batch sources that need extraction (unextracted, empty text, or failed)
     pending_sources = (
         db.query(Source)
         .filter(
             Source.project_id == project_id,
             Source.version.is_(None),
-            Source.approval_status != "approved",
             Source.processing_status != "extracting"
         )
         .order_by(Source.upload_timestamp.asc())
         .all()
     )
 
-    # If all pending already extracted/approved, fall back to any unextracted pending sources
-    if not pending_sources:
-        pending_sources = (
-            db.query(Source)
-            .filter(
-                Source.project_id == project_id,
-                Source.version.is_(None),
-                Source.processing_status != "extracting"
-            )
-            .order_by(Source.upload_timestamp.asc())
-            .all()
-        )
+    # Filter to sources that actually need extraction
+    sources_to_extract = [
+        s for s in pending_sources
+        if not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed")
+    ]
 
-    if not pending_sources:
-        return {"message": "No pending sources to extract.", "job_id": None}
+    if not sources_to_extract:
+        return {"message": "All pending sources are already extracted.", "job_id": None}
 
-    # If ALL pending sources strictly require Qwen Vision, verify health upfront
-    only_vision = all(s.file_type == 'image' or bool(s.contains_images) for s in pending_sources)
+    # If ALL pending sources to extract strictly require Qwen Vision, verify health upfront
+    only_vision = all(s.file_type == 'image' or bool(s.contains_images) for s in sources_to_extract)
     if only_vision:
         from llm.qwen_health import check_qwen_health, AI_UNAVAILABLE_MESSAGE
         q_health = check_qwen_health()
@@ -353,9 +353,9 @@ def extract_all_sources(
             )
 
     # Set status to extracting
-    for source in pending_sources:
-        if not source.extracted_text or source.processing_status in ("uploaded", "failed"):
-            source.processing_status = "extracting"
+    for source in sources_to_extract:
+        source.processing_status = "extracting"
+        source.approval_status = "pending"
     
     # Create extraction job
     job_id = str(uuid.uuid4())
@@ -369,7 +369,7 @@ def extract_all_sources(
     db.add(job)
     db.commit()
 
-    source_ids = [s.id for s in pending_sources]
+    source_ids = [s.id for s in sources_to_extract]
     try:
         enqueue_extraction_job(project_id, source_ids, job_id, user.id)
     except Exception as e:
@@ -379,7 +379,10 @@ def extract_all_sources(
         db.commit()
         raise HTTPException(status_code=500, detail="Failed to start background extraction")
 
-    return {"message": "Extraction started", "job_id": job_id}
+    return {
+        "message": f"Queued extraction for {len(source_ids)} pending source(s).",
+        "job_id": job_id
+    }
 
 
 @router.post("/{project_id}/sources/{source_id}/reparse", response_model=SourceResponse)
@@ -421,25 +424,38 @@ def reparse_single_source(
             )
 
     source.processing_status = "extracting"
-    source.extracted_text = None
-    source.processing_error = None
-    source.ocr_status = None
+    source.approval_status = "pending"
+    db.commit()
 
-    # Create extraction job specifically for this single source
     job_id = str(uuid.uuid4())
     job = ProcessingJob(
         id=job_id,
         project_id=project_id,
-        user_id=user.id,
         status="pending",
-        current_step="Queued for Reparsing",
-        document_names=source.file_name,
+        current_step=f"Queued for Extraction ({source.file_name})",
+        user_id=user.id
     )
     db.add(job)
     db.commit()
-    db.refresh(source)
 
-    enqueue_extraction_job(project_id=project_id, source_ids=[source.id], job_id=job_id, user_id=user.id)
+    try:
+        enqueue_extraction_job(project_id, [source.id], job_id, user.id)
+    except Exception as e:
+        logger.error(f"Failed to enqueue single source extraction: {e}")
+        source.processing_status = "failed"
+        job.status = "failed"
+        job.error = "Could not start extraction task"
+        db.commit()
+        raise HTTPException(status_code=500, detail="Failed to start background extraction")
+
+    log_activity(
+        db=db,
+        user_id=user.id,
+        event_type="source_reparsed",
+        title="Source extraction queued",
+        description=f"Queued re-extraction for {source.file_name}",
+        project_id=project_id,
+    )
 
     return SourceResponse.model_validate(source)
 
@@ -476,7 +492,7 @@ def update_source_content(
 
 
 @router.post("/{project_id}/sources/{source_id}/approve", response_model=SourceResponse)
-def approve_single_source(
+def approve_source(
     project_id: str,
     source_id: str,
     user: User = Depends(get_current_user),
@@ -496,6 +512,13 @@ def approve_single_source(
     ).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
+
+    # Strictly reject approval if document has not been extracted or extraction failed
+    if not source.extracted_text or not source.extracted_text.strip() or source.processing_status in ("uploaded", "failed", "extracting"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot approve source before data has been successfully extracted. Please extract the document first."
+        )
 
     source.approval_status = "approved"
     source.processing_status = "approved"
@@ -534,7 +557,7 @@ def approve_all_sources(
     ).all()
 
     # Identify any unextracted sources that need background extraction
-    unextracted = [s for s in pending_sources if not s.extracted_text or s.processing_status in ("uploaded", "failed")]
+    unextracted = [s for s in pending_sources if not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed")]
     if unextracted:
         _check_active_extraction(db, project_id)
         from tasks.queue import enqueue_extraction_job
@@ -550,11 +573,12 @@ def approve_all_sources(
         db.add(job)
         for s in unextracted:
             s.processing_status = "extracting"
+            s.approval_status = "pending"
         db.commit()
         enqueue_extraction_job(project_id, [s.id for s in unextracted], job_id, user.id)
 
-    # Approve all sources that have completed extraction
-    extracted_sources = [s for s in pending_sources if s.extracted_text and s.processing_status not in ("uploaded", "failed", "extracting")]
+    # Approve ONLY sources that have completed extraction with non-empty text
+    extracted_sources = [s for s in pending_sources if s.extracted_text and s.extracted_text.strip() and s.processing_status not in ("uploaded", "failed", "extracting")]
     for s in extracted_sources:
         s.approval_status = "approved"
         s.processing_status = "approved"
@@ -566,7 +590,7 @@ def approve_all_sources(
         user_id=user.id,
         event_type="all_sources_approved",
         title="All pending sources approved",
-        description=f"Approved {len(pending_sources)} source(s) for brief generation",
+        description=f"Approved {len(extracted_sources)} source(s) for brief generation",
         project_id=project_id,
     )
 
