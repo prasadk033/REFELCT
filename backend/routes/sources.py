@@ -243,7 +243,7 @@ def list_sources(
     return [SourceResponse.model_validate(s) for s in sources]
 
 
-@router.post("/{project_id}/sources/extract", response_model=list[SourceResponse])
+@router.post("/{project_id}/sources/extract")
 def extract_all_sources(
     project_id: str,
     user: User = Depends(get_current_user),
@@ -251,8 +251,11 @@ def extract_all_sources(
 ):
     """
     Incremental extraction: Extract ONLY pending batch sources (version is None and not yet approved).
-    Previously approved, versioned documents are NEVER re-extracted automatically.
+    This now offloads to a background queue to prevent timeouts.
     """
+    from db import ProcessingJob
+    from tasks.queue import enqueue_extraction_job
+
     project = db.query(Project).filter(
         Project.id == project_id,
         Project.user_id == user.id
@@ -284,38 +287,37 @@ def extract_all_sources(
             .all()
         )
 
-    ai_service_issue = False
+    if not pending_sources:
+        return {"message": "No pending sources to extract.", "job_id": None}
+
+    # Set status to extracting
     for source in pending_sources:
         if not source.extracted_text or source.processing_status in ("uploaded", "failed"):
-            try:
-                _extract_source_text(source, db=db)
-            except HTTPException as http_exc:
-                if http_exc.status_code == 503:
-                    ai_service_issue = True
-                logger.warning(f"Extraction error for {source.file_name}: {http_exc.detail}")
-            except Exception as e:
-                logger.warning(f"Extraction error for {source.file_name}: {e}")
-
+            source.processing_status = "extracting"
+    
+    # Create extraction job
+    job_id = str(uuid.uuid4())
+    job = ProcessingJob(
+        id=job_id,
+        project_id=project_id,
+        status="pending",
+        current_step="Queued for Extraction",
+        user_id=user.id
+    )
+    db.add(job)
     db.commit()
 
-    if ai_service_issue and all(s.processing_status == "failed" for s in pending_sources if not s.extracted_text):
-        raise HTTPException(
-            status_code=503,
-            detail="It might take some time, AI services are temporarily low."
-        )
+    source_ids = [s.id for s in pending_sources]
+    try:
+        enqueue_extraction_job(project_id, source_ids, job_id, user.id)
+    except Exception as e:
+        logger.error(f"Failed to enqueue extraction job: {e}")
+        job.status = "failed"
+        job.error = "Could not start extraction task"
+        db.commit()
+        raise HTTPException(status_code=500, detail="Failed to start background extraction")
 
-    if pending_sources:
-        log_activity(
-            db=db,
-            user_id=user.id,
-            event_type="extraction_completed",
-            title="Information extracted",
-            description=f"Extracted content from {len(pending_sources)} pending document(s)",
-            project_id=project_id,
-        )
-
-    all_sources = db.query(Source).filter(Source.project_id == project_id).order_by(Source.upload_timestamp.asc()).all()
-    return [SourceResponse.model_validate(s) for s in all_sources]
+    return {"message": "Extraction started", "job_id": job_id}
 
 
 @router.post("/{project_id}/sources/{source_id}/reparse", response_model=SourceResponse)

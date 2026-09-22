@@ -207,7 +207,7 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
 
         # ── Step 6: Generate Cards for the New Version ────────────────────────
         _update_job(db, job_id, "generating_cards", f"Generating Version {new_version} Brief Cards")
-        print(f"[REFLECT] 🤖 Qwen LLM: Extracting and Classifying Brief Cards for Version {new_version}...")
+        print(f"[REFLECT] 🤖 Cards are formulated across 9 architectural taxonomies and validated before appearing. (Version {new_version})")
         logger.info(f"[{project_id}] Generating Cards for pending batch for Brief V{new_version}")
 
         total_new_cards = 0
@@ -222,7 +222,7 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             if not src_text or len(src_text.strip()) < 25:
                 continue
 
-            print(f"[REFLECT] 🧠 Qwen LLM analyzing document: '{source.file_name}'...")
+            print(f"[REFLECT] 🧠 AI Vision Core analyzing document: '{source.file_name}'...")
 
             # Build contextual prompt: If historical context exists, provide it as background only
             hist_context_str = ""

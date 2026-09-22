@@ -224,7 +224,9 @@ export default function ProjectOverviewPage() {
     if (!file) return
     setUploading(true)
     try {
-      await uploadSource(projectId, file)
+      const ext = file.name.split('.').pop()?.toLowerCase()
+      const isImg = ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
+      await uploadSource(projectId, file, '', isImg)
       showToast(`Document "${file.name}" uploaded successfully`)
       await loadProjectData()
     } catch (err) {
@@ -233,6 +235,41 @@ export default function ProjectOverviewPage() {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  function startExtractionPolling() {
+    if (extractTimerRef.current) clearInterval(extractTimerRef.current)
+    extractTimerRef.current = setInterval(async () => {
+      setExtractElapsedSeconds(s => s + 1)
+      try {
+        const statusRes = await getBriefStatus(projectId)
+        if (statusRes.status === 'completed' || statusRes.current_step === 'Extraction Complete') {
+          clearInterval(extractTimerRef.current)
+          extractTimerRef.current = null
+          setExtracting(false)
+          setExtractModalOpen(false)
+          setShowExtractModal(false)
+          
+          await loadProjectData()
+          setShowExtractCompleteModal(true)
+          showToast('✓ Extraction completed for pending sources')
+        } else if (statusRes.status === 'failed') {
+          clearInterval(extractTimerRef.current)
+          extractTimerRef.current = null
+          setExtracting(false)
+          setExtractModalOpen(false)
+          setShowExtractModal(false)
+          
+          const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('low')
+            ? 'It might take some time, AI services are temporarily low.'
+            : `Extraction failed: ${statusRes.error}`
+          setAiFallbackErrorMsg(msg)
+          setAiFallbackModalOpen(true)
+        }
+      } catch (err) {
+        console.error('Polling extraction error:', err)
+      }
+    }, 3000)
   }
 
   function startPollingStatus() {
@@ -450,7 +487,7 @@ export default function ProjectOverviewPage() {
 
   async function handleExtractSingle(source) {
     const ext = source.file_name?.split('.').pop()?.toLowerCase() || ''
-    const isImg = source.file_type === 'image' || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
+    const isImg = source.file_type?.startsWith('image') || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
     let totalP = 1
     if (!isImg) {
       const pm = (source.file_name || '').match(/(\d+)\s*pages?/i)
@@ -507,7 +544,7 @@ export default function ProjectOverviewPage() {
     let totalP = 0
     docs.forEach(d => {
       const ext = d.file_name?.split('.').pop()?.toLowerCase() || ''
-      const isImg = d.file_type === 'image' || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
+      const isImg = d.file_type?.startsWith('image') || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
       if (isImg) totalP += 1
       else {
         const pm = (d.file_name || '').match(/(\d+)\s*pages?/i)
@@ -528,32 +565,27 @@ export default function ProjectOverviewPage() {
     setShowExtractModal(true)
     setExtracting(true)
 
-    if (extractTimerRef.current) clearInterval(extractTimerRef.current)
-    extractTimerRef.current = setInterval(() => {
-      setExtractElapsedSeconds(s => s + 1)
-    }, 1000)
-
     try {
-      await extractSources(projectId)
-      const updated = await listSources(projectId)
-      setSources(updated || [])
-      setShowExtractCompleteModal(true)
-      showToast('✓ Extraction completed for pending sources')
+      const resp = await extractSources(projectId)
+      if (resp && resp.job_id) {
+        startExtractionPolling()
+      } else {
+        // Fallback if no job id
+        await loadProjectData()
+        setExtracting(false)
+        setExtractModalOpen(false)
+        setShowExtractModal(false)
+      }
     } catch (err) {
       console.error('Batch extraction error:', err)
+      setExtracting(false)
+      setExtractModalOpen(false)
+      setShowExtractModal(false)
       const msg = err.message?.includes('AI services') || err.status === 503
         ? 'It might take some time, AI services are temporarily low.'
         : `Extraction failed: ${err.message}`
       setAiFallbackErrorMsg(msg)
       setAiFallbackModalOpen(true)
-    } finally {
-      if (extractTimerRef.current) {
-        clearInterval(extractTimerRef.current)
-        extractTimerRef.current = null
-      }
-      setExtractModalOpen(false)
-      setShowExtractModal(false)
-      setExtracting(false)
     }
   }
 
@@ -1643,6 +1675,40 @@ export default function ProjectOverviewPage() {
             onRunInBackground={() => setShowExtractModal(false)}
             onCancel={handleCancelExtract}
           />
+        )}
+
+        {/* BACKGROUND RUNNING OVERLAY */}
+        {((extracting && !showExtractModal) || (analyzing && !showAnalysisModal)) && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(255, 255, 255, 0.4)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 900,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <div style={{
+              background: '#fff', padding: '24px 32px', borderRadius: '12px',
+              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px'
+            }}>
+              <div className="bui-spinner bui-spinner-lg" style={{ borderColor: '#3b82f6', borderTopColor: 'transparent' }} />
+              <div style={{ textAlign: 'center' }}>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#0f172a' }}>
+                  {extracting ? 'Extraction Running in Background' : 'Analysis Running in Background'}
+                </h3>
+                <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                  You can safely navigate away. We'll notify you when it's done.
+                </p>
+              </div>
+              <button 
+                onClick={extracting ? handleCancelExtract : handleCancelAnalysis}
+                className="bui-btn" 
+                style={{ background: '#ef4444', color: '#fff', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, border: 'none' }}
+              >
+                Cancel Task
+              </button>
+            </div>
+          </div>
         )}
 
         {/* EXTRACTION COMPLETE SUCCESS MODAL */}

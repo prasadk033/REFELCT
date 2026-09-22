@@ -21,6 +21,13 @@ export default function SettingsPage() {
 
   function handleSave(e) {
     e.preventDefault()
+    
+    // Persist and apply theme
+    if (preferences.theme === 'light' || preferences.theme === 'dark') {
+      localStorage.setItem('reflect-theme', preferences.theme)
+      document.documentElement.setAttribute('data-theme', preferences.theme)
+    }
+
     setSavedToast(true)
     setTimeout(() => setSavedToast(false), 3000)
   }
@@ -198,7 +205,8 @@ export default function SettingsPage() {
                   value={preferences.theme}
                   onChange={e => setPreferences({ ...preferences, theme: e.target.value })}
                 >
-                  <option value="dark-contrast">Reflect Dark (Default)</option>
+                  <option value="light">Light Theme</option>
+                  <option value="dark">Dark Theme</option>
                 </select>
               </div>
             </div>

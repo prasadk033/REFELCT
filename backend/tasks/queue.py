@@ -46,4 +46,22 @@ def enqueue_brief_job(project_id: str, source_ids: List[str], job_id: str, user_
         result_ttl=3600,
     )
     logger.info(f"Enqueued brief job {job_id} to Redis queue 'briefs' (RQ Job ID: {job.id})")
+def enqueue_extraction_job(project_id: str, source_ids: List[str], job_id: str, user_id: Optional[str] = None):
+    """
+    Offload Document extraction pipeline to a dedicated distributed worker process.
+    - Timeout: 1800s (30 mins) to comfortably handle large PDF extractions.
+    """
+    from agents.extraction_orchestrator import run_extraction_pipeline
+
+    q = get_queue("default")
+    job = q.enqueue(
+        run_extraction_pipeline,
+        project_id,
+        source_ids,
+        job_id,
+        user_id,
+        job_timeout=1800,
+        result_ttl=3600,
+    )
+    logger.info(f"Enqueued extraction job {job_id} to Redis queue 'default' (RQ Job ID: {job.id})")
     return job.id
