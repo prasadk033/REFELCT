@@ -5,6 +5,7 @@ import uuid
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
+from pathlib import Path
 
 from db import SessionLocal, Source, Project, ProcessingJob, log_activity
 from documents.loader import DocumentLoader
