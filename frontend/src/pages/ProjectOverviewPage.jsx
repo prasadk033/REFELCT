@@ -637,8 +637,19 @@ export default function ProjectOverviewPage() {
   }
 
   async function handleExtractAllPending() {
-    const docs = pendingBatchSources.length > 0 ? pendingBatchSources : sources.filter(s => !s.extracted_text)
-    const docCount = docs.length || 1
+    // Only target sources in the pending batch that actually need extraction (unextracted, empty text, or failed)
+    const unextractedDocs = (pendingBatchSources.length > 0 ? pendingBatchSources : sources).filter(
+      s => (s.version === null || s.version === undefined) && (!s.extracted_text || !s.extracted_text.trim() || s.processing_status === 'failed' || s.processing_status === 'uploaded')
+    )
+
+    // If all pending sources are already extracted, navigate directly to review without triggering another extraction
+    if (unextractedDocs.length === 0) {
+      navigate(`/projects/${projectId}/extract`)
+      return
+    }
+
+    const docs = unextractedDocs
+    const docCount = docs.length
     let totalP = 0
     docs.forEach(d => {
       const ext = d.file_name?.split('.').pop()?.toLowerCase() || ''
@@ -648,16 +659,20 @@ export default function ProjectOverviewPage() {
         const pm = (d.file_name || '').match(/(\d+)\s*pages?/i)
         if (pm) totalP += parseInt(pm[1], 10)
         else if (d.file_size && d.file_size > 500000) totalP += Math.max(2, Math.round(d.file_size / (120 * 1024)))
-        else totalP += 20
+        else totalP = 20
       }
     })
     totalP = Math.max(1, totalP)
-    const estSec = Math.max(20, totalP * 2)
+    const allImages = docs.every(d => {
+      const ext = d.file_name?.split('.').pop()?.toLowerCase() || ''
+      return d.file_type?.startsWith('image') || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
+    })
+    const estSec = allImages ? Math.max(8, docs.length * 8) : Math.max(20, totalP * 2)
 
-    setExtractDocName(docs[0]?.file_name || 'Pending Documents')
+    setExtractDocName(docs.length === 1 ? (docs[0]?.file_name || 'Document') : `${docs.length} Documents (${docs[0]?.file_name}...)`)
     setExtractDocCount(docCount)
     setExtractDocsCompleted(0)
-    setExtractServerStep('Initiating background extraction...')
+    setExtractServerStep(`Initiating extraction for ${docs.length === 1 ? docs[0]?.file_name : `${docs.length} pending documents`}...`)
     setExtractTotalPages(totalP)
     setExtractEstSeconds(estSec)
     setExtractElapsedSeconds(0)
@@ -670,11 +685,12 @@ export default function ProjectOverviewPage() {
       if (resp && resp.job_id) {
         startExtractionPolling()
       } else {
-        // Fallback if no job id
+        // Fallback if no job id or already extracted
         await loadProjectData()
         setExtracting(false)
         setExtractModalOpen(false)
         setShowExtractModal(false)
+        navigate(`/projects/${projectId}/extract`)
       }
     } catch (err) {
       console.error('Batch extraction error:', err)
@@ -1228,7 +1244,7 @@ export default function ProjectOverviewPage() {
                               {/* Disable all row actions while batch extraction is running in background */}
                               {!(extracting && !showExtractModal) && rowExtractingId !== s.id && (
                                 <>
-                                  {hasValidExtraction ? (
+                                  {hasValidExtraction && (
                                     <button
                                       type="button"
                                       className="bui-btn bui-btn-outline"
@@ -1237,17 +1253,6 @@ export default function ProjectOverviewPage() {
                                       title="Inspect extracted text & observations"
                                     >
                                       📄 View
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="bui-btn bui-btn-outline"
-                                      style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#bfdbfe', fontWeight: 600, background: '#eff6ff', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                                      onClick={() => handleReparseSource(s)}
-                                      disabled={extracting || analyzing || rowExtractingId === s.id}
-                                      title="Extract data for this document"
-                                    >
-                                      ↻ Extract
                                     </button>
                                   )}
                                   <button

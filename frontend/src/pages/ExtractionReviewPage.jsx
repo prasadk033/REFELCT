@@ -106,18 +106,20 @@ export default function ExtractionReviewPage() {
     if (isExtracting || reparsing) {
       interval = setInterval(async () => {
         try {
-          const res = await getProject(projectId)
-          setSources(res.sources || [])
-          
-          const stillExtracting = (res.sources || []).some(s => s.processing_status === 'extracting')
-          if (!stillExtracting) {
-            setReparsing(false)
-            if (extractModalOpen) setExtractModalOpen(false)
-            // find selected to update text
-            const updatedSelected = (res.sources || []).find(s => s.id === selectedSourceId)
-            if (updatedSelected && updatedSelected.extracted_text) {
-              setEditingText(updatedSelected.extracted_text)
-              setIsSaved(true)
+          const updatedSources = await listSources(projectId)
+          if (Array.isArray(updatedSources) && updatedSources.length > 0) {
+            setSources(updatedSources)
+            
+            const stillExtracting = updatedSources.some(s => s.processing_status === 'extracting')
+            if (!stillExtracting) {
+              setReparsing(false)
+              if (extractModalOpen) setExtractModalOpen(false)
+              // find selected to update text
+              const updatedSelected = updatedSources.find(s => s.id === selectedSourceId)
+              if (updatedSelected && updatedSelected.extracted_text) {
+                setEditingText(updatedSelected.extracted_text)
+                setIsSaved(true)
+              }
             }
           }
         } catch (e) {
@@ -214,6 +216,9 @@ export default function ExtractionReviewPage() {
       setExtractModalOpen(false)
       setActionLoading(false)
       setReparsing(false)
+      listSources(projectId).then(res => {
+        if (Array.isArray(res) && res.length > 0) setSources(res)
+      }).catch(() => {})
     } finally {
       if (extractTimerRef.current) {
         clearInterval(extractTimerRef.current)
@@ -758,7 +763,10 @@ export default function ExtractionReviewPage() {
                 type="button"
                 className="bui-btn bui-btn-outline"
                 style={{ padding: '8px 18px', fontSize: '12.5px', color: '#64748b', borderColor: '#cbd5e1' }}
-                onClick={() => setAiFallbackModalOpen(false)}
+                onClick={() => {
+                  setAiFallbackModalOpen(false)
+                  loadData()
+                }}
               >
                 Dismiss
               </button>
