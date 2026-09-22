@@ -27,7 +27,7 @@ def get_unacknowledged_jobs(
     Return recently completed or failed/partial jobs for the authenticated user
     that have not yet been acknowledged by the owner.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
 
     jobs = (
         db.query(ProcessingJob)

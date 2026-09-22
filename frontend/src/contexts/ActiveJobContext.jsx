@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './AuthContext.jsx'
 import { getUnacknowledgedJobs, acknowledgeJobNotification } from '../api.js'
 
@@ -8,9 +8,15 @@ const ActiveJobContext = createContext(null)
 export function ActiveJobProvider({ children }) {
   const { isAuthenticated } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const locationRef = useRef(location.pathname)
   const [globalNotification, setGlobalNotification] = useState(null)
   const acknowledgedSetRef = useRef(new Set())
   const pollTimerRef = useRef(null)
+
+  useEffect(() => {
+    locationRef.current = location.pathname
+  }, [location.pathname])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -32,6 +38,12 @@ export function ActiveJobProvider({ children }) {
             acknowledgeJobNotification(job.id).catch(err => {
               console.warn('Failed to persist job notification acknowledgment:', err)
             })
+
+            // If user is currently on the ProjectOverviewPage for this project,
+            // the page already shows its own in-page modals, so do not display redundant floating toast
+            if (locationRef.current === `/projects/${job.project_id}`) {
+              continue
+            }
 
             // Derive target version if available in step or default to clean title
             const vMatch = (job.current_step || '').match(/Version\s+(\d+)/i) || (job.current_step || '').match(/V(\d+)/i)
@@ -95,6 +107,14 @@ export function ActiveJobProvider({ children }) {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current)
     }
   }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!globalNotification) return
+    const timer = setTimeout(() => {
+      setGlobalNotification(null)
+    }, 8000)
+    return () => clearTimeout(timer)
+  }, [globalNotification])
 
   function dismissNotification() {
     setGlobalNotification(null)

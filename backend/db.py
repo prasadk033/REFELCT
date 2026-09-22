@@ -315,6 +315,18 @@ def init_db():
                     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_project_idempotency_key ON processing_jobs (project_id, idempotency_key);"))
             except Exception as idx_err:
                 logger.warning(f"Index creation notice: {idx_err}")
+
+            # Backfill existing historical jobs older than 15 mins to notification_seen=True so they never pop up retrospectively
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("UPDATE processing_jobs SET notification_seen = TRUE WHERE (notification_seen IS FALSE OR notification_seen IS NULL) AND created_at < (NOW() - INTERVAL '15 minutes');"))
+            except Exception as bf_err:
+                # May fail on SQLite (uses different datetime syntax), handle gracefully
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("UPDATE processing_jobs SET notification_seen = 1 WHERE (notification_seen = 0 OR notification_seen IS NULL) AND created_at < datetime('now', '-15 minutes');"))
+                except Exception:
+                    pass
         
         logger.info("Database tables created/verified successfully.")
     except Exception as e:
