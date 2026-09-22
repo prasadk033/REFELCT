@@ -285,7 +285,9 @@ export default function ExtractionReviewPage() {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
             setAnalyzing(false)
-            setAnalysisError(statusRes.error_message || 'Brief analysis failed.')
+            const rawErr = statusRes.error || statusRes.error_message || ''
+            const isAiUnavailable = !rawErr || rawErr.includes('AI services') || rawErr.includes('unavailable') || rawErr.includes('timed out') || rawErr.includes('503') || rawErr.includes('low')
+            setAnalysisError(isAiUnavailable ? 'AI services are temporarily unavailable. Please try again later.' : rawErr)
             loadData().catch(() => {})
           }
         } catch (pollErr) {
@@ -295,7 +297,8 @@ export default function ExtractionReviewPage() {
 
     } catch (err) {
       setAnalyzing(false)
-      setAnalysisError(err.message)
+      const isAiUnavailable = err.message?.includes('AI services') || err.message?.includes('unavailable') || err.status === 503
+      setAnalysisError(isAiUnavailable ? 'AI services are temporarily unavailable. Please try again later.' : err.message)
     }
   }
 
@@ -337,7 +340,7 @@ export default function ExtractionReviewPage() {
       <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 24px', borderBottom: '1px solid #e2e8f0', background: '#ffffff' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span className="extract-approved-count" style={{ fontSize: '13px', fontWeight: 600, color: '#64748b' }}>
-            {sources.filter(s => s.approval_status === 'approved' || s.processing_status === 'approved').length} of {sources.length} Sources Approved
+            {displaySources.filter(s => s.approval_status === 'approved' || s.processing_status === 'approved').length} of {displaySources.length} Sources Approved
           </span>
           {pendingSources.length > 0 ? (
             <button

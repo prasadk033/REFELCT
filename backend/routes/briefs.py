@@ -38,6 +38,15 @@ def analyze_brief(
     """Trigger Brief analysis for the project's sources."""
     project = _get_user_project(db, project_id, user.id)
 
+    # Pre-flight check: Authoritatively verify Qwen AI service availability
+    from llm.qwen_health import check_qwen_health
+    health = check_qwen_health()
+    if not health.get("healthy"):
+        raise HTTPException(
+            status_code=503,
+            detail="AI services are temporarily unavailable. Please try again later."
+        )
+
     # Check for sources
     sources = db.query(Source).filter(Source.project_id == project_id).all()
     if not sources:

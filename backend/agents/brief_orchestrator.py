@@ -43,6 +43,14 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
     brief_agent = BriefAgent()
 
     try:
+        # Pre-flight check: Verify Qwen service availability before proceeding
+        from llm.qwen_health import check_qwen_health, AI_UNAVAILABLE_MESSAGE
+        health = check_qwen_health()
+        if not health.get("healthy"):
+            logger.warning(f"[{project_id}] Aborting Brief pipeline: Qwen is unavailable.")
+            _update_job(db, job_id, "failed", "Service Unavailable", AI_UNAVAILABLE_MESSAGE)
+            return
+
         # Get project info
         project = db.query(Project).filter(Project.id == project_id).first()
         if not project:
@@ -450,13 +458,20 @@ Return ONLY JSON list.
             logger.error(f"Rollback error: {rollback_err}")
             db.rollback()
 
-        err_str = str(e)
-        if "timeout" in err_str.lower():
-            friendly_err = "AI generation timed out. Please try again."
+        from llm.qwen_health import AI_UNAVAILABLE_MESSAGE
+        err_str = str(e).lower()
+        is_ai_service_issue = any(k in err_str for k in [
+            "timeout", "connect", "connection", "refused", "unavailable",
+            "503", "502", "504", "proxy", "unreachable", "qwen", "failed to connect"
+        ])
+        if is_ai_service_issue:
+            friendly_err = AI_UNAVAILABLE_MESSAGE
+            step_status = "Service Unavailable"
         else:
-            friendly_err = err_str
+            friendly_err = str(e)
+            step_status = "Error"
 
-        _update_job(db, job_id, "failed", "Error", friendly_err)
+        _update_job(db, job_id, "failed", step_status, friendly_err)
 
     finally:
         db.close()

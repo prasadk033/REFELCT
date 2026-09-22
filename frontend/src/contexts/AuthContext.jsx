@@ -13,10 +13,10 @@ export function AuthProvider({ children }) {
   const verifyAiHealth = useCallback(async () => {
     try {
       const res = await checkAiHealth()
-      if (res && res.slow) {
+      if (res && (res.slow || res.healthy === false)) {
         setAiStatus({
           slow: true,
-          message: res.message || 'AI services are temporarily slow due to high demand. Please try again after some time.'
+          message: res.message || 'AI services are temporarily unavailable. Please try again later.'
         })
       } else {
         setAiStatus({ slow: false, message: '' })

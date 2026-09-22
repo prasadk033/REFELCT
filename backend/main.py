@@ -109,58 +109,20 @@ def health_check():
     return {"status": "healthy"}
 
 
-_ai_health_cache = {"timestamp": 0.0, "result": {"status": "ok", "slow": False}}
-
 @app.get("/api/health/ai")
 def ai_health_check():
     """
-    Checks if the Qwen / LiteLLM inference service is responsive.
-    Probes configured LiteLLM endpoints and falls back to direct Qwen GPU server.
-    Results are cached for 25 seconds to minimize network calls.
+    Authoritative Qwen / LiteLLM health check endpoint.
+    Delegates to the centralized check_qwen_health() service.
     """
-    import time
-    import urllib.request
-
-    now = time.time()
-    if now - _ai_health_cache["timestamp"] < 25.0:
-        return _ai_health_cache["result"]
-
-    # Target endpoints to probe in order of priority:
-    candidates = []
-
-    primary = config.LITELLM_API_BASE.rstrip("/")
-    hdrs = {"Authorization": f"Bearer {config.LITELLM_MASTER_KEY}"} if config.LITELLM_MASTER_KEY else {}
-    candidates.append((primary, "/health", hdrs))
-    candidates.append((primary, "/v1/models", hdrs))
-
-    if "litellm:4000" not in primary:
-        candidates.append(("http://litellm:4000", "/health", {}))
-        candidates.append(("http://litellm:4000", "/v1/models", {}))
-
-    # Direct upstream Qwen GPU server (from config/env)
-    if config.QWEN_API_BASE:
-        qwen_base = config.QWEN_API_BASE.rstrip("/v1").rstrip("/")
-        qwen_hdrs = {"Authorization": f"Bearer {config.QWEN_API_KEY}"} if config.QWEN_API_KEY else {}
-        candidates.append((qwen_base, "/v1/models", qwen_hdrs))
-
-    for base, path, headers in candidates:
-        try:
-            req = urllib.request.Request(f"{base}{path}", headers=headers)
-            with urllib.request.urlopen(req, timeout=3.5) as resp:
-                if resp.status in (200, 204):
-                    res = {"status": "ok", "slow": False}
-                    _ai_health_cache["timestamp"] = now
-                    _ai_health_cache["result"] = res
-                    return res
-        except Exception:
-            continue
-
-    # If all targets timed out or unreachable
-    res = {
-        "status": "slow",
-        "slow": True,
-        "message": "AI services are temporarily slow due to high demand. Please try again after some time."
-    }
-    _ai_health_cache["timestamp"] = now
-    _ai_health_cache["result"] = res
-    return res
+    from llm.qwen_health import check_qwen_health
+    health = check_qwen_health()
+    if health.get("healthy"):
+        return {"status": "ok", "slow": False, "healthy": True, "message": "Service is operating normally."}
+    else:
+        return {
+            "status": "unavailable",
+            "slow": True,
+            "healthy": False,
+            "message": health.get("message", "AI services are temporarily unavailable. Please try again later.")
+        }

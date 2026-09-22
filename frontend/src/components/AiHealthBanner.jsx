@@ -26,7 +26,7 @@ export default function AiHealthBanner() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <span style={{ fontSize: '15px', lineHeight: 1 }}>⏳</span>
         <span>
-          <strong>Notice:</strong> {aiStatus.message || 'AI services are temporarily slow due to high demand. Please try again after some time.'}
+          <strong>Notice:</strong> {aiStatus.message || 'AI services are temporarily unavailable. Please try again later.'}
         </span>
       </div>
       <button

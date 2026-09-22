@@ -302,8 +302,8 @@ export default function ProjectOverviewPage() {
             setExtractModalOpen(false)
             setShowExtractModal(false)
             
-            const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('low')
-              ? 'It might take some time, AI services are temporarily low.'
+            const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('low') || statusRes.error?.includes('unavailable')
+              ? 'AI services are temporarily unavailable. Please try again later.'
               : `Extraction failed: ${statusRes.error}`
             setAiFallbackErrorMsg(msg)
             setAiFallbackModalOpen(true)
@@ -363,7 +363,9 @@ export default function ProjectOverviewPage() {
           pollIntervalRef.current = null
           setAnalyzing(false)
           setShowAnalysisModal(false)
-          setAnalysisError(statusRes.error || 'Analysis failed. Please try again.')
+          const rawErr = statusRes.error || statusRes.error_message || ''
+          const isAiDown = !rawErr || rawErr.includes('AI services') || rawErr.includes('unavailable') || rawErr.includes('timed out') || rawErr.includes('503') || rawErr.includes('low')
+          setAnalysisError(isAiDown ? 'AI services are temporarily unavailable. Please try again later.' : rawErr)
           loadProjectData().catch(() => {})
         } else if (statusRes.status === 'cancelled') {
           clearInterval(pollIntervalRef.current)
@@ -451,7 +453,9 @@ export default function ProjectOverviewPage() {
     } catch (err) {
       setAnalyzing(false)
       setShowAnalysisModal(false)
-      setAnalysisError(err.message)
+      const rawMsg = err.message || ''
+      const isAiDown = !rawMsg || rawMsg.includes('AI services') || rawMsg.includes('unavailable') || rawMsg.includes('timed out') || rawMsg.includes('503') || rawMsg.includes('low')
+      setAnalysisError(isAiDown ? 'AI services are temporarily unavailable. Please try again later.' : rawMsg)
     }
   }
 
@@ -1023,7 +1027,7 @@ export default function ProjectOverviewPage() {
                   
                   {/* Single Pending Group Header */}
                   <div style={{ background: (extracting && !showExtractModal) ? '#eff6ff' : '#f8fafc', borderBottom: '1px dashed #cbd5e1', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.3s' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       {(extracting && !showExtractModal) ? (
                         <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                           <span className="bui-spinner-inline" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderColor: 'rgba(255,255,255,0.4)', borderTopColor: '#ffffff', display: 'inline-block', verticalAlign: 'middle' }} />
@@ -1037,6 +1041,32 @@ export default function ProjectOverviewPage() {
                       <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
                         {pendingBatchSources.length} Document{pendingBatchSources.length !== 1 ? 's' : ''}
                       </span>
+                      {pendingNeedsExtraction && !(extracting && !showExtractModal) && (
+                        <button
+                          type="button"
+                          className="bui-btn"
+                          onClick={handleExtractAllPending}
+                          disabled={extracting || analyzing}
+                          style={{
+                            background: '#000000',
+                            color: '#ffffff',
+                            padding: '4px 12px',
+                            borderRadius: '6px',
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            border: 'none',
+                            cursor: (extracting || analyzing) ? 'not-allowed' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                          }}
+                          title="Extract all documents belonging to this version"
+                        >
+                          <span>📄</span>
+                          <span>EXTRACT & REVIEW</span>
+                        </button>
+                      )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       {(extracting && !showExtractModal) ? (
@@ -1044,11 +1074,25 @@ export default function ProjectOverviewPage() {
                           <span className="bui-spinner-inline" style={{ width: '12px', height: '12px', borderWidth: '2px', borderColor: '#bfdbfe', borderTopColor: '#2563eb', display: 'inline-block' }} />
                           All extracting...
                         </span>
-                      ) : (
-                        <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 600 }}>
-                          ○ Pending Extraction
-                        </span>
-                      )}
+                      ) : !pendingNeedsExtraction ? (
+                        <button
+                          type="button"
+                          className="bui-btn bui-btn-outline"
+                          onClick={() => navigate(`/projects/${projectId}/extract`)}
+                          style={{
+                            padding: '4px 10px',
+                            fontSize: '11.5px',
+                            fontWeight: 600,
+                            color: '#2563eb',
+                            borderColor: '#93c5fd',
+                            background: '#eff6ff',
+                            borderRadius: '6px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Review Extracted Data →
+                        </button>
+                      ) : null}
                     </div>
                   </div>
 
@@ -1147,22 +1191,13 @@ export default function ProjectOverviewPage() {
                                     <button
                                       type="button"
                                       className="bui-btn bui-btn-outline"
-                                      style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
+                                      style={{ padding: '3px 10px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1', fontWeight: 600 }}
                                       onClick={() => setViewingSource(s)}
                                       title="Inspect extracted text & observations"
                                     >
                                       📄 View
                                     </button>
                                   )}
-                                  <button
-                                    type="button"
-                                    className="bui-btn bui-btn-outline"
-                                    style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#cbd5e1' }}
-                                    onClick={() => navigate(`/projects/${projectId}/extract`)}
-                                    title="Review & Approve in editor"
-                                  >
-                                    ✏ Review
-                                  </button>
                                   <button
                                     type="button"
                                     className="bui-btn bui-btn-outline"

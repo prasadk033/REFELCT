@@ -61,14 +61,15 @@ def _extract_source_text(source: Source, db: Optional[Session] = None) -> str:
             return ""
         raise r_err
     except AIServiceError as ai_err:
+        from llm.qwen_health import AI_UNAVAILABLE_MESSAGE
         logger.error(f"AI service error during extraction for source {source.id} ({source.file_name}): {ai_err}")
         source.processing_status = "failed"
-        source.processing_error = f"Vision extraction failed: {str(ai_err)}"
+        source.processing_error = AI_UNAVAILABLE_MESSAGE
         if db:
             db.commit()
         raise HTTPException(
             status_code=503,
-            detail="It might take some time, AI services are temporarily low."
+            detail=AI_UNAVAILABLE_MESSAGE
         )
     except Exception as e:
         logger.error(f"Extraction failed for source {source.id} ({source.file_name}): {e}")
@@ -125,6 +126,9 @@ async def upload_source(
             detail=f"File exceeds maximum allowed upload size of 100MB (actual: {file_size / (1024*1024):.1f}MB)."
         )
 
+    import time
+    t_start = time.time()
+
     safe_filename = Path(file.filename).name.replace("..", "").replace("/", "").replace("\\", "").strip() or "document"
     source_id = str(uuid.uuid4())
 
@@ -135,6 +139,7 @@ async def upload_source(
         file_name=safe_filename,
         file_data=file.file,
     )
+    t_storage = time.time()
 
     has_images = str(contains_images).strip().lower() in ("true", "1", "yes") or file_type == 'image'
 
@@ -158,8 +163,9 @@ async def upload_source(
     project.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(source)
+    t_end = time.time()
 
-    logger.info(f"Uploaded source {source.id}: {source.file_name} to project {project_id}")
+    logger.info(f"Uploaded source {source.id}: {source.file_name} ({file_size} bytes) in {t_end - t_start:.2f}s (storage: {t_storage - t_start:.2f}s, db: {t_end - t_storage:.2f}s)")
 
     # Record activity
     log_activity(
@@ -333,6 +339,17 @@ def extract_all_sources(
     if not pending_sources:
         return {"message": "No pending sources to extract.", "job_id": None}
 
+    # If ALL pending sources strictly require Qwen Vision, verify health upfront
+    only_vision = all(s.file_type == 'image' or bool(s.contains_images) for s in pending_sources)
+    if only_vision:
+        from llm.qwen_health import check_qwen_health, AI_UNAVAILABLE_MESSAGE
+        q_health = check_qwen_health()
+        if not q_health.get("healthy"):
+            raise HTTPException(
+                status_code=503,
+                detail=AI_UNAVAILABLE_MESSAGE
+            )
+
     # Set status to extracting
     for source in pending_sources:
         if not source.extracted_text or source.processing_status in ("uploaded", "failed"):
@@ -389,6 +406,17 @@ def reparse_single_source(
     ).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
+
+    # If this source strictly requires Qwen Vision, verify health upfront
+    is_vision = source.file_type == 'image' or bool(source.contains_images)
+    if is_vision:
+        from llm.qwen_health import check_qwen_health, AI_UNAVAILABLE_MESSAGE
+        q_health = check_qwen_health()
+        if not q_health.get("healthy"):
+            raise HTTPException(
+                status_code=503,
+                detail=AI_UNAVAILABLE_MESSAGE
+            )
 
     source.processing_status = "extracting"
     source.extracted_text = None

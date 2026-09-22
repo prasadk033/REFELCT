@@ -75,8 +75,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
             else:
                 text_only_docs.append(s)
 
-        ordered_sources = text_only_docs + vision_docs
-        total_count = len(ordered_sources)
+        total_count = len(text_only_docs) + len(vision_docs)
         completed_count = 0
 
         # Initial state: 0 / N Documents Completed
@@ -85,20 +84,18 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
             step=f"Starting extraction... 0 / {total_count} Documents Completed",
             cards_generated=0,
             questions_count=total_count,
-            document_names=", ".join([s.file_name for s in ordered_sources])
+            document_names=", ".join([s.file_name for s in (text_only_docs + vision_docs)])
         )
 
         failed_docs = []
         ai_service_issue = False
+        from llm.qwen_health import check_qwen_health, AI_UNAVAILABLE_MESSAGE
 
-        for source in ordered_sources:
-            is_vision = source.file_type == 'image' or bool(source.contains_images)
-            vision_suffix = " — Vision Extraction..." if is_vision else "..."
-
-            # Step display: Document currently processing with COMPLETED counter reflecting only finished docs
+        # Phase 1: Process text-only documents first (independent of AI service)
+        for source in text_only_docs:
             _update_job(
                 db, job_id, "extracting",
-                step=f"Processing {source.file_name}{vision_suffix} ({completed_count} / {total_count} Documents Completed)",
+                step=f"Processing {source.file_name}... ({completed_count} / {total_count} Documents Completed)",
                 cards_generated=completed_count,
                 questions_count=total_count
             )
@@ -113,25 +110,70 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     cards_generated=completed_count,
                     questions_count=total_count
                 )
-            except AIServiceError as ai_err:
-                ai_service_issue = True
-                failed_docs.append(source.file_name)
-                logger.warning(f"AI Service error for {source.file_name}: {ai_err}")
-                _update_job(
-                    db, job_id, "extracting",
-                    step=f"{source.file_name} failed: AI service error ({completed_count} / {total_count} Documents Completed)",
-                    cards_generated=completed_count,
-                    questions_count=total_count
-                )
             except Exception as e:
                 failed_docs.append(source.file_name)
-                logger.warning(f"Extraction error for {source.file_name}: {e}")
+                logger.warning(f"Extraction error for text document {source.file_name}: {e}")
                 _update_job(
                     db, job_id, "extracting",
                     step=f"{source.file_name} failed: {str(e)} ({completed_count} / {total_count} Documents Completed)",
                     cards_generated=completed_count,
                     questions_count=total_count
                 )
+
+        # Phase 2: Process image / vision-containing documents (requires Qwen)
+        if vision_docs:
+            qwen_health = check_qwen_health()
+            if not qwen_health.get("healthy"):
+                ai_service_issue = True
+                logger.warning(f"Qwen AI service unavailable. Halting vision extraction for {len(vision_docs)} document(s).")
+                for source in vision_docs:
+                    source.processing_status = "failed"
+                    source.processing_error = AI_UNAVAILABLE_MESSAGE
+                    failed_docs.append(source.file_name)
+                    _update_job(
+                        db, job_id, "extracting",
+                        step=f"{source.file_name} halted: AI service unavailable ({completed_count} / {total_count} Documents Completed)",
+                        cards_generated=completed_count,
+                        questions_count=total_count
+                    )
+            else:
+                for source in vision_docs:
+                    _update_job(
+                        db, job_id, "extracting",
+                        step=f"Processing {source.file_name} — Vision Extraction... ({completed_count} / {total_count} Documents Completed)",
+                        cards_generated=completed_count,
+                        questions_count=total_count
+                    )
+
+                    try:
+                        _extract_source_text_background(source, db, loader, job_id)
+                        # Strictly increment completed counter ONLY after successful extraction
+                        completed_count += 1
+                        _update_job(
+                            db, job_id, "extracting",
+                            step=f"{source.file_name} completed ({completed_count} / {total_count} Documents Completed)",
+                            cards_generated=completed_count,
+                            questions_count=total_count
+                        )
+                    except AIServiceError as ai_err:
+                        ai_service_issue = True
+                        failed_docs.append(source.file_name)
+                        logger.warning(f"AI Service error for {source.file_name}: {ai_err}")
+                        _update_job(
+                            db, job_id, "extracting",
+                            step=f"{source.file_name} failed: AI service unavailable ({completed_count} / {total_count} Documents Completed)",
+                            cards_generated=completed_count,
+                            questions_count=total_count
+                        )
+                    except Exception as e:
+                        failed_docs.append(source.file_name)
+                        logger.warning(f"Extraction error for {source.file_name}: {e}")
+                        _update_job(
+                            db, job_id, "extracting",
+                            step=f"{source.file_name} failed: {str(e)} ({completed_count} / {total_count} Documents Completed)",
+                            cards_generated=completed_count,
+                            questions_count=total_count
+                        )
 
         db.commit()
 
@@ -148,7 +190,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
         elapsed = time.time() - pipeline_start
 
         if failed_docs and completed_count == 0:
-            error_msg = "It might take some time, AI services are temporarily low." if ai_service_issue else f"Extraction failed for: {', '.join(failed_docs)}"
+            error_msg = AI_UNAVAILABLE_MESSAGE if ai_service_issue else f"Extraction failed for: {', '.join(failed_docs)}"
             _update_job(
                 db, job_id, "failed",
                 step=f"Extraction Failed (0 / {total_count} Documents Completed)",
@@ -157,10 +199,11 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                 questions_count=total_count
             )
         elif failed_docs:
+            error_msg = AI_UNAVAILABLE_MESSAGE if ai_service_issue else f"Failed documents: {', '.join(failed_docs)}"
             _update_job(
                 db, job_id, "completed",
                 step=f"Extraction Completed with errors ({completed_count} / {total_count} Documents Completed)",
-                error=f"Failed documents: {', '.join(failed_docs)}",
+                error=error_msg,
                 cards_generated=completed_count,
                 questions_count=total_count
             )
@@ -214,9 +257,10 @@ def _extract_source_text_background(source: Source, db, loader: DocumentLoader, 
             return ""
         raise r_err
     except AIServiceError as ai_err:
+        from llm.qwen_health import AI_UNAVAILABLE_MESSAGE
         logger.error(f"AI service error during extraction for source {source.id} ({source.file_name}): {ai_err}")
         source.processing_status = "failed"
-        source.processing_error = f"Vision extraction failed: {str(ai_err)}"
+        source.processing_error = AI_UNAVAILABLE_MESSAGE
         db.commit()
         raise ai_err
     except Exception as e:
