@@ -5337,6 +5337,8 @@ a {
   font-size: 13.5px;
   color: var(--text-muted);
   font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .th-crumb {
@@ -5355,6 +5357,11 @@ a {
 .th-crumb.active {
   color: var(--text-main);
   font-weight: 600;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
 }
 
 .th-separator {
@@ -5366,6 +5373,8 @@ a {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-shrink: 0;
+  margin-left: 16px;
 }
 
 .th-icon-btn {

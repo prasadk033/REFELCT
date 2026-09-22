@@ -259,9 +259,19 @@ export default function ProjectOverviewPage() {
           setExtractModalOpen(false)
           setShowExtractModal(false)
           
+          const updatedData = await listSources(projectId)
+          const someFailed = updatedData.some(s => s.processing_status === 'failed' && !s.extracted_text)
+          
           await loadProjectData()
-          setShowExtractCompleteModal(true)
-          showToast('✓ Extraction completed for pending sources')
+          
+          if (someFailed) {
+            setAiFallbackErrorMsg('Some documents failed extraction. AI services might be temporarily low.')
+            setAiFallbackModalOpen(true)
+            showToast('⚠ Partial extraction completed (some failed)')
+          } else {
+            setShowExtractCompleteModal(true)
+            showToast('✓ Extraction completed for pending sources')
+          }
         } else if (statusRes.status === 'failed') {
           clearInterval(extractTimerRef.current)
           extractTimerRef.current = null
@@ -522,21 +532,39 @@ export default function ProjectOverviewPage() {
 
     try {
       await reparseSource(projectId, source.id)
-      const updated = await listSources(projectId)
-      setSources(updated || [])
-      const current = updated?.find(s => s.id === source.id)
-      if (current && current.extracted_text) {
-        showToast(`✓ Extracted data for "${source.file_name}"`)
-        setViewingSource(current)
-      }
+      // Extraction is async (background worker). Start polling sources until status resolves.
+      const pollSingleSource = setInterval(async () => {
+        try {
+          const updated = await listSources(projectId)
+          setSources(updated || [])
+          const current = updated?.find(s => s.id === source.id)
+          // Stop polling when no longer extracting
+          if (current && current.processing_status !== 'extracting') {
+            clearInterval(pollSingleSource)
+            if (extractTimerRef.current) {
+              clearInterval(extractTimerRef.current)
+              extractTimerRef.current = null
+            }
+            setExtractModalOpen(false)
+            setShowExtractModal(false)
+            setRowExtractingId(null)
+            if (current.processing_status === 'extracted' || current.extracted_text) {
+              showToast(`✓ Extracted data for "${source.file_name}"`)
+              setShowExtractCompleteModal(true)
+            } else if (current.processing_status === 'failed') {
+              const msg = current.processing_error?.includes('AI') || current.processing_error?.includes('timed out')
+                ? 'It might take some time, AI services are temporarily low.'
+                : `Extraction failed: ${current.processing_error || 'Unknown error'}`
+              setAiFallbackErrorMsg(msg)
+              setAiFallbackModalOpen(true)
+            }
+          }
+        } catch (pollErr) {
+          console.error('Source poll error:', pollErr)
+        }
+      }, 2500)
     } catch (err) {
       console.error('Source extraction error:', err)
-      const msg = err.message?.includes('AI services') || err.status === 503
-        ? 'It might take some time, AI services are temporarily low.'
-        : `Extraction failed: ${err.message}`
-      setAiFallbackErrorMsg(msg)
-      setAiFallbackModalOpen(true)
-    } finally {
       if (extractTimerRef.current) {
         clearInterval(extractTimerRef.current)
         extractTimerRef.current = null
@@ -544,6 +572,11 @@ export default function ProjectOverviewPage() {
       setExtractModalOpen(false)
       setShowExtractModal(false)
       setRowExtractingId(null)
+      const msg = err.message?.includes('AI services') || err.status === 503
+        ? 'It might take some time, AI services are temporarily low.'
+        : `Extraction failed: ${err.message}`
+      setAiFallbackErrorMsg(msg)
+      setAiFallbackModalOpen(true)
     }
   }
 
@@ -957,19 +990,33 @@ export default function ProjectOverviewPage() {
                 >
                   
                   {/* Single Pending Group Header */}
-                  <div style={{ background: '#f8fafc', borderBottom: '1px dashed #cbd5e1', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ background: (extracting && !showExtractModal) ? '#eff6ff' : '#f8fafc', borderBottom: '1px dashed #cbd5e1', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.3s' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
-                        Pending Extraction
-                      </span>
+                      {(extracting && !showExtractModal) ? (
+                        <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                          <span className="bui-spinner-inline" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderColor: 'rgba(255,255,255,0.4)', borderTopColor: '#ffffff', display: 'inline-block', verticalAlign: 'middle' }} />
+                          Extraction Running in Background
+                        </span>
+                      ) : (
+                        <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
+                          Pending Extraction
+                        </span>
+                      )}
                       <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
-                        {pendingBatchSources.length} New Document{pendingBatchSources.length !== 1 ? 's' : ''}
+                        {pendingBatchSources.length} Document{pendingBatchSources.length !== 1 ? 's' : ''}
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 600 }}>
-                        ○ Pending Extraction
-                      </span>
+                      {(extracting && !showExtractModal) ? (
+                        <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                          <span className="bui-spinner-inline" style={{ width: '12px', height: '12px', borderWidth: '2px', borderColor: '#bfdbfe', borderTopColor: '#2563eb', display: 'inline-block' }} />
+                          All extracting...
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 600 }}>
+                          ○ Pending Extraction
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1004,13 +1051,24 @@ export default function ProjectOverviewPage() {
                             </td>
                             <td className="td-ver" style={{ verticalAlign: 'middle' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                {isApproved ? (
+                                {/* When batch extraction is running in background, ALL rows show blue background state */}
+                                {(extracting && !showExtractModal) ? (
+                                  <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                    <span className="bui-spinner-inline" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderColor: '#bfdbfe', borderTopColor: '#2563eb', display: 'inline-block' }} />
+                                    Running in Background
+                                  </span>
+                                ) : rowExtractingId === s.id ? (
+                                  <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                    <span className="bui-spinner-inline" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderColor: '#bfdbfe', borderTopColor: '#2563eb', display: 'inline-block' }} />
+                                    Extracting...
+                                  </span>
+                                ) : isApproved ? (
                                   <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
                                     ✓ Approved
                                   </span>
                                 ) : isExtracted ? (
                                   <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
-                                    ○ Extracted
+                                    ✓ Extracted
                                   </span>
                                 ) : isFailed ? (
                                   <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
@@ -1022,86 +1080,93 @@ export default function ProjectOverviewPage() {
                                   </span>
                                 )}
 
-                                {/* Beside the status option: Extract Data & Review (Black) or Extracted Data badge */}
-                                {s.extracted_text ? (
-                                  <button
-                                    type="button"
-                                    className="bui-btn bui-btn-outline"
-                                    style={{
-                                      padding: '2px 8px',
-                                      fontSize: '11px',
-                                      fontWeight: 600,
-                                      color: '#2563eb',
-                                      borderColor: '#93c5fd',
-                                      background: '#eff6ff',
-                                      borderRadius: '4px',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      cursor: 'pointer'
-                                    }}
-                                    onClick={() => setViewingSource(s)}
-                                    title="View extracted observations & text"
-                                  >
-                                    <span>📄</span>
-                                    <span>Extracted Data</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="bui-btn"
-                                    style={{
-                                      padding: '4px 10px',
-                                      fontSize: '11px',
-                                      fontWeight: 600,
-                                      color: '#ffffff',
-                                      background: '#000000',
-                                      borderRadius: '4px',
-                                      border: 'none',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      cursor: 'pointer'
-                                    }}
-                                    onClick={() => handleExtractSingle(s)}
-                                    disabled={rowExtractingId === s.id}
-                                    title="Extract data and review observations"
-                                  >
-                                    {rowExtractingId === s.id ? 'Extracting Data...' : 'Extract Data & Review'}
-                                  </button>
+                                {/* Action button: only show when NOT in background/extracting state */}
+                                {!(extracting && !showExtractModal) && rowExtractingId !== s.id && (
+                                  s.extracted_text ? (
+                                    <button
+                                      type="button"
+                                      className="bui-btn bui-btn-outline"
+                                      style={{
+                                        padding: '2px 8px',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: '#2563eb',
+                                        borderColor: '#93c5fd',
+                                        background: '#eff6ff',
+                                        borderRadius: '4px',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        cursor: 'pointer'
+                                      }}
+                                      onClick={() => setViewingSource(s)}
+                                      title="View extracted observations & text"
+                                    >
+                                      <span>📄</span>
+                                      <span>Extracted Data</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="bui-btn"
+                                      style={{
+                                        padding: '4px 10px',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: '#ffffff',
+                                        background: '#000000',
+                                        borderRadius: '4px',
+                                        border: 'none',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        cursor: 'pointer'
+                                      }}
+                                      onClick={() => handleExtractSingle(s)}
+                                      disabled={rowExtractingId !== null}
+                                      title="Extract data and review observations"
+                                    >
+                                      Extract Data & Review
+                                    </button>
+                                  )
                                 )}
                               </div>
                             </td>
                             <td style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                              {s.extracted_text && (
-                                <button
-                                  type="button"
-                                  className="bui-btn bui-btn-outline"
-                                  style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
-                                  onClick={() => setViewingSource(s)}
-                                  title="Inspect extracted text & observations"
-                                >
-                                  📄 View
-                                </button>
+                              {/* Disable all row actions while batch extraction is running in background */}
+                              {!(extracting && !showExtractModal) && rowExtractingId !== s.id && (
+                                <>
+                                  {s.extracted_text && (
+                                    <button
+                                      type="button"
+                                      className="bui-btn bui-btn-outline"
+                                      style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
+                                      onClick={() => setViewingSource(s)}
+                                      title="Inspect extracted text & observations"
+                                    >
+                                      📄 View
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="bui-btn bui-btn-outline"
+                                    style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#cbd5e1' }}
+                                    onClick={() => navigate(`/projects/${projectId}/extract`)}
+                                    title="Review & Approve in editor"
+                                  >
+                                    ✏ Review
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="bui-btn bui-btn-outline"
+                                    style={{ padding: '3px 8px', fontSize: '11px', color: '#ef4444', borderColor: '#cbd5e1' }}
+                                    onClick={() => handleDeleteSource(s.id, s.file_name)}
+                                    title="Delete document"
+                                  >
+                                    🗑
+                                  </button>
+                                </>
                               )}
-                              <button
-                                type="button"
-                                className="bui-btn bui-btn-outline"
-                                style={{ padding: '3px 8px', fontSize: '11px', color: '#2563eb', borderColor: '#cbd5e1' }}
-                                onClick={() => navigate(`/projects/${projectId}/extract`)}
-                                title="Review & Approve in editor"
-                              >
-                                ✏ Review
-                              </button>
-                              <button
-                                type="button"
-                                className="bui-btn bui-btn-outline"
-                                style={{ padding: '3px 8px', fontSize: '11px', color: '#ef4444', borderColor: '#cbd5e1' }}
-                                onClick={() => handleDeleteSource(s.id, s.file_name)}
-                                title="Delete document"
-                              >
-                                🗑
-                              </button>
                             </td>
                           </tr>
                         )
@@ -1609,7 +1674,11 @@ export default function ProjectOverviewPage() {
                   onClick={handleConfirmUpload}
                   disabled={!selectedFile || uploading}
                 >
-                  {uploading ? 'Uploading...' : 'Upload & Save Source'}
+                  {uploading
+                    ? 'Uploading...'
+                    : uploadCategory === 'image'
+                    ? 'Upload Image for Visual Analysis'
+                    : 'Upload & Save Source'}
                 </button>
               </div>
 

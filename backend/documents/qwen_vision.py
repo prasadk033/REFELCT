@@ -57,7 +57,7 @@ class QwenVisionClient:
         self.api_endpoint = f"{base}/chat/completions"
         self.api_key = config.QWEN_API_KEY or config.LITELLM_MASTER_KEY or ""
         self.model = config.LLM_MODEL or "current-model"
-        self.timeout = 90.0
+        self.timeout = 180.0
 
     def encode_image(self, image_data: bytes, filename: str = "image.jpg") -> tuple[str, str]:
         """Convert image bytes to base64 string and determine MIME type."""

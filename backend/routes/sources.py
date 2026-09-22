@@ -272,7 +272,8 @@ def extract_all_sources(
         .filter(
             Source.project_id == project_id,
             Source.version.is_(None),
-            Source.approval_status != "approved"
+            Source.approval_status != "approved",
+            Source.processing_status != "extracting"
         )
         .order_by(Source.upload_timestamp.asc())
         .all()
@@ -284,7 +285,8 @@ def extract_all_sources(
             db.query(Source)
             .filter(
                 Source.project_id == project_id,
-                Source.version.is_(None)
+                Source.version.is_(None),
+                Source.processing_status != "extracting"
             )
             .order_by(Source.upload_timestamp.asc())
             .all()
@@ -350,21 +352,24 @@ def reparse_single_source(
 
     source.processing_status = "extracting"
     source.extracted_text = None
-    
+    source.processing_error = None
+    source.ocr_status = None
+
     # Create extraction job specifically for this single source
     job_id = str(uuid.uuid4())
     job = ProcessingJob(
         id=job_id,
         project_id=project_id,
+        user_id=user.id,
         status="pending",
         current_step="Queued for Reparsing",
-        document_names=source.file_name
+        document_names=source.file_name,
     )
     db.add(job)
     db.commit()
     db.refresh(source)
 
-    enqueue_extraction_job(project_id=project_id, source_ids=[source.id], job_id=job_id)
+    enqueue_extraction_job(project_id=project_id, source_ids=[source.id], job_id=job_id, user_id=user.id)
 
     return SourceResponse.model_validate(source)
 
