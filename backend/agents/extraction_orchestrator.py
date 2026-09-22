@@ -78,10 +78,6 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
 
         db.commit()
 
-        if ai_service_issue and all(s.processing_status == "failed" for s in pending_sources if not s.extracted_text):
-            _update_job(db, job_id, "failed", "AI Services Temporarily Low", "It might take some time, AI services are temporarily low.")
-            return
-
         if extracted_count > 0:
             log_activity(
                 db=db,
@@ -91,6 +87,10 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                 description=f"Extracted content from {extracted_count} pending document(s)",
                 project_id=project_id,
             )
+
+        if ai_service_issue and all(s.processing_status == "failed" for s in pending_sources if not s.extracted_text):
+            _update_job(db, job_id, "failed", "AI Services Temporarily Low", "It might take some time, AI services are temporarily low.")
+            return
 
         elapsed = time.time() - pipeline_start
         _update_job(
