@@ -530,12 +530,29 @@ def approve_all_sources(
         Source.project_id == project_id,
         (Source.version.is_(None)) | (Source.approval_status != "approved")
     ).all()
-    for s in pending_sources:
-        if not s.extracted_text:
-            try:
-                _extract_source_text(s)
-            except Exception:
-                pass
+
+    # Identify any unextracted sources that need background extraction
+    unextracted = [s for s in pending_sources if not s.extracted_text or s.processing_status in ("uploaded", "failed")]
+    if unextracted:
+        from tasks.queue import enqueue_extraction_job
+        from db import ProcessingJob
+        job_id = str(uuid.uuid4())
+        job = ProcessingJob(
+            id=job_id,
+            project_id=project_id,
+            status="pending",
+            current_step="Queued for Extraction via Approve All",
+            user_id=user.id
+        )
+        db.add(job)
+        for s in unextracted:
+            s.processing_status = "extracting"
+        db.commit()
+        enqueue_extraction_job(project_id, [s.id for s in unextracted], job_id, user.id)
+
+    # Approve all sources that have completed extraction
+    extracted_sources = [s for s in pending_sources if s.extracted_text and s.processing_status not in ("uploaded", "failed", "extracting")]
+    for s in extracted_sources:
         s.approval_status = "approved"
         s.processing_status = "approved"
 

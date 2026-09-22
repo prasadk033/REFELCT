@@ -15,11 +15,26 @@ export default function ExtractingProgressModal({
   const safeDocCount = Math.max(1, docCount)
   const safeDocsCompleted = Math.max(0, Math.min(safeDocCount, docsCompleted))
 
-  // Calculate progress strictly bounded by completed docs and elapsed time
-  const docBasePercent = (safeDocsCompleted / safeDocCount) * 100
-  const nextDocIncrement = (1 / safeDocCount) * 100 * Math.min(0.9, (elapsedSeconds % 15) / 15)
-  const progressPercent = Math.min(98, Math.max(safeDocsCompleted > 0 ? Math.round(docBasePercent) : 5, Math.round(docBasePercent + nextDocIncrement)))
-  const remainingSeconds = Math.max(1, Math.round(estSeconds - elapsedSeconds))
+  // Check if serverStep has real page-level progress from backend (e.g., "Page 7 of 25")
+  const pageMatch = serverStep?.match(/Page\s+(\d+)\s+of\s+(\d+)/i)
+  const curPage = pageMatch ? parseInt(pageMatch[1], 10) : 0
+  const totPages = pageMatch ? parseInt(pageMatch[2], 10) : 0
+  const hasPageProgress = curPage > 0 && totPages > 0
+
+  // Progress percentage is strictly backend-driven
+  let progressPercent = 0
+  if (hasPageProgress) {
+    if (safeDocCount > 1) {
+      const docPortion = (safeDocsCompleted / safeDocCount) * 100
+      const pagePortion = (1 / safeDocCount) * (curPage / totPages) * 100
+      progressPercent = Math.min(100, Math.round(docPortion + pagePortion))
+    } else {
+      progressPercent = Math.min(100, Math.round((curPage / totPages) * 100))
+    }
+  } else {
+    const docBasePercent = (safeDocsCompleted / safeDocCount) * 100
+    progressPercent = Math.min(100, Math.max(safeDocsCompleted > 0 ? Math.round(docBasePercent) : 5, Math.round(docBasePercent)))
+  }
 
   const stepText = serverStep || `Processing documents... (${safeDocsCompleted} / ${safeDocCount} Documents Completed)`
 
@@ -74,11 +89,11 @@ export default function ExtractingProgressModal({
           )}
         </p>
 
-        {/* Live Progress Pill: Strictly Completed Count */}
+        {/* Live Progress Pill: Page-level and Document-level */}
         <div style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: '12px',
+          gap: '10px',
           background: '#f1f5f9',
           border: '1px solid #e2e8f0',
           borderRadius: '20px',
@@ -88,40 +103,49 @@ export default function ExtractingProgressModal({
           fontWeight: 600,
           color: '#334155'
         }}>
-          <span>Documents: <strong style={{ color: '#2563eb' }}>[{safeDocsCompleted} / {safeDocCount} Completed]</strong></span>
-          <span style={{ color: '#cbd5e1' }}>•</span>
-          <span style={{ color: '#0f172a' }}>{progressPercent}%</span>
+          {hasPageProgress ? (
+            <>
+              <span>Page: <strong style={{ color: '#2563eb' }}>[{curPage} / {totPages} Processed]</strong></span>
+              <span style={{ color: '#cbd5e1' }}>•</span>
+              <span style={{ color: '#0f172a' }}>{progressPercent}%</span>
+              {safeDocCount > 1 && (
+                <>
+                  <span style={{ color: '#cbd5e1' }}>•</span>
+                  <span style={{ color: '#64748b' }}>Docs: {safeDocsCompleted} / {safeDocCount}</span>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <span>Documents: <strong style={{ color: '#2563eb' }}>[{safeDocsCompleted} / {safeDocCount} Completed]</strong></span>
+              <span style={{ color: '#cbd5e1' }}>•</span>
+              <span style={{ color: '#0f172a' }}>{progressPercent}%</span>
+            </>
+          )}
         </div>
 
-        {/* Time Metrics */}
+        {/* Timing Information */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: '10px',
           background: '#f8fafc',
           border: '1px solid #e2e8f0',
           borderRadius: '10px',
-          padding: '12px 14px',
+          padding: '12px 16px',
           marginBottom: '20px',
-          textAlign: 'center'
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          textAlign: 'left'
         }}>
           <div>
-            <span style={{ fontSize: '10.5px', color: '#64748b', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Estimated</span>
-            <strong style={{ fontSize: '15px', color: '#0f172a', display: 'block', marginTop: '2px' }}>
-              ~{estSeconds}s
-            </strong>
-          </div>
-          <div style={{ borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: '10.5px', color: '#64748b', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Elapsed</span>
+            <span style={{ fontSize: '11px', color: '#64748b', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Elapsed Time</span>
             <strong style={{ fontSize: '15px', color: '#2563eb', display: 'block', marginTop: '2px' }}>
               {Math.round(elapsedSeconds)}s
             </strong>
           </div>
-          <div>
-            <span style={{ fontSize: '10.5px', color: '#64748b', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Remaining</span>
-            <strong style={{ fontSize: '15px', color: '#059669', display: 'block', marginTop: '2px' }}>
-              ~{remainingSeconds}s
-            </strong>
+          <div style={{ textAlign: 'right', maxWidth: '65%' }}>
+            <span style={{ fontSize: '11.5px', color: '#64748b', lineHeight: 1.4, display: 'block' }}>
+              Processing may take several minutes depending on document length and AI service response time.
+            </span>
           </div>
         </div>
 

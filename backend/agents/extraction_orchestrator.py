@@ -101,7 +101,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
             )
 
             try:
-                _extract_source_text_background(source, db, loader, job_id)
+                _extract_source_text_background(source, db, loader, job_id, doc_index=completed_count + 1, total_docs=total_count)
                 # Strictly increment completed counter ONLY after successful extraction
                 completed_count += 1
                 _update_job(
@@ -146,7 +146,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     )
 
                     try:
-                        _extract_source_text_background(source, db, loader, job_id)
+                        _extract_source_text_background(source, db, loader, job_id, doc_index=completed_count + 1, total_docs=total_count)
                         # Strictly increment completed counter ONLY after successful extraction
                         completed_count += 1
                         _update_job(
@@ -235,7 +235,14 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
         db.close()
 
 
-def _extract_source_text_background(source: Source, db, loader: DocumentLoader, job_id: str) -> str:
+def _extract_source_text_background(
+    source: Source,
+    db,
+    loader: DocumentLoader,
+    job_id: str,
+    doc_index: int = 1,
+    total_docs: int = 1,
+) -> str:
     """Extract raw text or image vision analysis strictly based on user contains_images selection."""
     from documents.loader import is_extraction_cancelled
     from rq import get_current_job
@@ -246,6 +253,20 @@ def _extract_source_text_background(source: Source, db, loader: DocumentLoader, 
         logger.info(f"Source {source.id} ({source.file_name}) was cancelled or deleted before extraction started.")
         return ""
 
+    # Page checkpoint callback: persist each page extraction incrementally and update job progress
+    def on_page_completed(page_num: int, total_pages: int, current_text: str):
+        try:
+            source.extracted_text = current_text
+            db.commit()
+            if job_id:
+                if total_docs > 1:
+                    step_str = f"Document {doc_index}/{total_docs} ({source.file_name}) — Page {page_num} of {total_pages} ({page_num} / {total_pages} pages processed)"
+                else:
+                    step_str = f"Processing {source.file_name} — Page {page_num} of {total_pages} ({page_num} / {total_pages} pages processed)"
+                _update_job(db, job_id, "extracting", step=step_str)
+        except Exception as cb_err:
+            logger.warning(f"Error updating page checkpoint for {source.file_name} page {page_num}: {cb_err}")
+
     try:
         is_image_doc = source.file_type == 'image' or bool(source.contains_images)
         
@@ -254,7 +275,9 @@ def _extract_source_text_background(source: Source, db, loader: DocumentLoader, 
             contains_images=is_image_doc,
             filename=source.file_name,
             file_type=source.file_type,
-            source_id=source.id
+            source_id=source.id,
+            on_page_completed=on_page_completed,
+            existing_text=source.extracted_text,
         )
         source.extracted_text = text or f"[{source.file_name} — No readable text found]"
         source.processing_status = "extracted"

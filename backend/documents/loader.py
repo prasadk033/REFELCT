@@ -18,9 +18,11 @@ Supports two strictly separated extraction pipelines based on user selection:
      an AIServiceError is raised and the operation is marked as failed.
 """
 import io
+import time
+import re
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Callable
 
 from haystack import Document
 from haystack.components.converters import PyPDFToDocument, TextFileToDocument
@@ -135,7 +137,15 @@ class DocumentLoader:
 
     # ── 2. Qwen-VL Vision Extraction (Page-by-Page) ──────────────────────────
 
-    def extract_with_vision(self, file_path: str, filename: str = "", file_type: str = "", source_id: Optional[str] = None) -> str:
+    def extract_with_vision(
+        self,
+        file_path: str,
+        filename: str = "",
+        file_type: str = "",
+        source_id: Optional[str] = None,
+        on_page_completed: Optional[Callable[[int, int, str], None]] = None,
+        existing_text: Optional[str] = None,
+    ) -> str:
         """
         Complete vision extraction pipeline using Qwen-VL.
         Used strictly when user indicates the document contains images or drawings.
@@ -150,7 +160,13 @@ class DocumentLoader:
         doc_name = filename or path.name
 
         if ext == '.pdf':
-            return self._extract_pdf_pages_vision(str(path), doc_name, source_id=source_id)
+            return self._extract_pdf_pages_vision(
+                str(path),
+                doc_name,
+                source_id=source_id,
+                on_page_completed=on_page_completed,
+                existing_text=existing_text,
+            )
 
         elif ext in ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'):
             return self._extract_image_vision(str(path), doc_name)
@@ -179,10 +195,18 @@ class DocumentLoader:
         else:
             raise ValueError(f"Unsupported document type for vision processing: {ext}")
 
-    def _extract_pdf_pages_vision(self, file_path: str, filename: str, source_id: Optional[str] = None) -> str:
+    def _extract_pdf_pages_vision(
+        self,
+        file_path: str,
+        filename: str,
+        source_id: Optional[str] = None,
+        on_page_completed: Optional[Callable[[int, int, str], None]] = None,
+        existing_text: Optional[str] = None,
+    ) -> str:
         """
         Convert PDF page-by-page into optimized JPEG images, dispatch each page to Qwen-VL,
-        and combine the structured extraction while strictly preserving page provenance.
+        persist each page result incrementally (checkpointing), support single retry on transient
+        errors, and combine the structured extraction while strictly preserving page provenance.
         """
         import pypdfium2 as pdfium
         from PIL import Image
@@ -195,7 +219,18 @@ class DocumentLoader:
             raise RuntimeError(f"Could not render PDF pages: {e}")
 
         logger.info(f"Starting Qwen-VL page-by-page vision extraction for {filename} ({total_pages} pages)")
-        page_extractions = []
+        
+        # Checkpoint: parse any pages already extracted from previous runs
+        checkpointed_pages: Dict[int, str] = {}
+        if existing_text:
+            blocks = existing_text.split("\n\n---\n\n")
+            for b in blocks:
+                match = re.search(r"Page:\s*(\d+)", b)
+                if match:
+                    p_num = int(match.group(1))
+                    checkpointed_pages[p_num] = b.strip()
+
+        page_extractions: List[str] = []
 
         try:
             for page_idx in range(total_pages):
@@ -205,6 +240,15 @@ class DocumentLoader:
                 if is_extraction_cancelled(source_id=source_id, file_path=file_path) or not Path(file_path).exists():
                     logger.warning(f"Extraction halted for {filename} (page {page_num}/{total_pages}): source cancelled or deleted.")
                     raise RuntimeError(f"Extraction cancelled for {filename}")
+
+                # Checkpoint Check: reuse already extracted page from prior attempt
+                if page_num in checkpointed_pages:
+                    logger.info(f"Page {page_num}/{total_pages} of {filename} already completed (checkpoint found). Reusing.")
+                    page_extractions.append(checkpointed_pages[page_num])
+                    if on_page_completed:
+                        current_joined = "\n\n---\n\n".join(page_extractions)
+                        on_page_completed(page_num, total_pages, current_joined)
+                    continue
 
                 logger.info(f"Rendering page {page_num}/{total_pages} of {filename} for Qwen-VL")
                 
@@ -240,17 +284,39 @@ class DocumentLoader:
                 del pil_image
                 img_byte_arr.close()
 
-                # Dispatch page image to Qwen-VL
-                res = qwen_vision.extract_from_image(
-                    image_data=page_bytes,
-                    filename=f"{filename}_page_{page_num}.jpg"
-                )
+                # Dispatch page image to Qwen-VL with 1 single retry on transient failures
+                max_retries = 1
+                res = None
+                for attempt in range(max_retries + 1):
+                    try:
+                        res = qwen_vision.extract_from_image(
+                            image_data=page_bytes,
+                            filename=f"{filename}_page_{page_num}.jpg"
+                        )
+                        if res.get("success") and res.get("text"):
+                            break
+                        
+                        err_msg = res.get("error") or ""
+                        # Do NOT retry permanent errors (e.g. 401, 403, 400, bad prompt)
+                        is_permanent = any(k in err_msg for k in ("401", "403", "400", "invalid_api_key", "unauthorized"))
+                        if is_permanent:
+                            break
+
+                        if attempt < max_retries:
+                            logger.warning(f"Transient Qwen-VL failure on {filename} page {page_num} (attempt {attempt + 1}): {err_msg}. Retrying once...")
+                            time.sleep(2)
+                    except Exception as req_err:
+                        if attempt < max_retries:
+                            logger.warning(f"Transient network exception on {filename} page {page_num} (attempt {attempt + 1}): {req_err}. Retrying once...")
+                            time.sleep(2)
+                        else:
+                            raise req_err
 
                 # STRICT NO-FALLBACK CHECK:
-                if not res.get("success") or not res.get("text"):
-                    error_detail = res.get("error") or f"Vision model failed to analyze page {page_num}"
-                    logger.error(f"Qwen-VL failed on {filename} page {page_num}: {error_detail}")
-                    if res.get("is_ai_service_error"):
+                if not res or not res.get("success") or not res.get("text"):
+                    error_detail = res.get("error") if res else f"Vision model failed to analyze page {page_num}"
+                    logger.error(f"Qwen-VL failed on {filename} page {page_num} after retry: {error_detail}")
+                    if res and res.get("is_ai_service_error"):
                         raise AIServiceError(f"Page {page_num} extraction failed: {error_detail}")
                     raise RuntimeError(f"Page {page_num} extraction failed: {error_detail}")
 
@@ -263,6 +329,11 @@ class DocumentLoader:
                     f"{extracted_content}"
                 )
                 page_extractions.append(page_block)
+                
+                # Checkpoint: persist incremental progress to database immediately
+                current_joined = "\n\n---\n\n".join(page_extractions)
+                if on_page_completed:
+                    on_page_completed(page_num, total_pages, current_joined)
 
         finally:
             try:
@@ -332,7 +403,9 @@ class DocumentLoader:
         contains_images: bool = False,
         filename: str = "",
         file_type: str = "",
-        source_id: Optional[str] = None
+        source_id: Optional[str] = None,
+        on_page_completed: Optional[Callable[[int, int, str], None]] = None,
+        existing_text: Optional[str] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Main extraction entry point adhering strictly to user selection:
@@ -345,7 +418,14 @@ class DocumentLoader:
             raise RuntimeError(f"Extraction halted: source {filename} was deleted or cancelled.")
 
         if contains_images:
-            text = self.extract_with_vision(file_path, filename=filename, file_type=file_type, source_id=source_id)
+            text = self.extract_with_vision(
+                file_path,
+                filename=filename,
+                file_type=file_type,
+                source_id=source_id,
+                on_page_completed=on_page_completed,
+                existing_text=existing_text,
+            )
         else:
             text = self.extract_standard_text(file_path, filename=filename, file_type=file_type)
 
