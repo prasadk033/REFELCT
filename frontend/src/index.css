@@ -5339,6 +5339,7 @@ a {
   font-weight: 500;
   min-width: 0;
   overflow: hidden;
+  flex: 1;
 }
 
 .th-crumb {
