@@ -45,7 +45,9 @@ export default function ProjectOverviewPage() {
 
   // AI Service Fallback Modal
   const [aiFallbackModalOpen, setAiFallbackModalOpen] = useState(false)
-  const [aiFallbackErrorMsg, setAiFallbackErrorMsg] = useState('It might take some time, AI services are temporarily low.')
+  const [aiFallbackTitle, setAiFallbackTitle] = useState('AI Service Notice')
+  const [aiFallbackBadge, setAiFallbackBadge] = useState(null)
+  const [aiFallbackErrorMsg, setAiFallbackErrorMsg] = useState('AI services are temporarily unavailable. Please try again later.')
 
   function showToast(msg) {
     setToast(msg)
@@ -281,20 +283,28 @@ export default function ProjectOverviewPage() {
             setExtracting(false)
             setExtractModalOpen(false)
             setShowExtractModal(false)
-            
-            const updatedData = await listSources(projectId)
-            const someFailed = updatedData.some(s => s.processing_status === 'failed' && !s.extracted_text)
-            
             await loadProjectData()
+            setShowExtractCompleteModal(true)
+            showToast('✓ Extraction completed for all pending sources')
+          } else if (statusRes.status === 'partial') {
+            clearInterval(extractTimerRef.current)
+            extractTimerRef.current = null
+            setExtracting(false)
+            setExtractModalOpen(false)
+            setShowExtractModal(false)
             
-            if (someFailed) {
-              setAiFallbackErrorMsg('Some documents failed extraction. AI services might be temporarily low.')
-              setAiFallbackModalOpen(true)
-              showToast('⚠ Partial extraction completed (some failed)')
-            } else {
-              setShowExtractCompleteModal(true)
-              showToast('✓ Extraction completed for pending sources')
-            }
+            const completedCount = statusRes.cards_generated || 0
+            const totalCount = statusRes.questions_count || 1
+            const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('unavailable') || statusRes.error?.includes('timed out') || statusRes.error?.includes('low')
+              ? 'AI services are temporarily unavailable. Please try again later.'
+              : (statusRes.error || 'AI services are temporarily unavailable. Please try again later.')
+            
+            setAiFallbackTitle('PARTIAL / FAILED')
+            setAiFallbackBadge(`${completedCount} / ${totalCount} Documents Completed`)
+            setAiFallbackErrorMsg(msg)
+            setAiFallbackModalOpen(true)
+            showToast(`⚠ Partial extraction (${completedCount}/${totalCount} completed)`)
+            await loadProjectData()
           } else if (statusRes.status === 'failed') {
             clearInterval(extractTimerRef.current)
             extractTimerRef.current = null
@@ -302,11 +312,16 @@ export default function ProjectOverviewPage() {
             setExtractModalOpen(false)
             setShowExtractModal(false)
             
-            const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('low') || statusRes.error?.includes('unavailable')
+            const totalCount = statusRes.questions_count || 1
+            const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('low') || statusRes.error?.includes('unavailable') || statusRes.error?.includes('timed out')
               ? 'AI services are temporarily unavailable. Please try again later.'
-              : `Extraction failed: ${statusRes.error}`
+              : (statusRes.error ? `Extraction failed: ${statusRes.error}` : 'AI services are temporarily unavailable. Please try again later.')
+            
+            setAiFallbackTitle('FAILED')
+            setAiFallbackBadge(`0 / ${totalCount} Documents Completed`)
             setAiFallbackErrorMsg(msg)
             setAiFallbackModalOpen(true)
+            showToast('✕ Extraction failed')
             await loadProjectData()
           }
         }
@@ -1426,17 +1441,32 @@ export default function ProjectOverviewPage() {
         {/* AI SERVICES TEMPORARILY LOW FALLBACK MODAL */}
         {aiFallbackModalOpen && (
           <div className="bui-modal-overlay" onClick={() => setAiFallbackModalOpen(false)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1100 }}>
-            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px', width: '90%', background: '#ffffff', borderRadius: '12px', padding: '24px 28px', color: '#0f172a', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
-              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#fef3c7', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '24px' }}>
+            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '460px', width: '90%', background: '#ffffff', borderRadius: '12px', padding: '26px 28px', color: '#0f172a', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#fef3c7', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px auto', fontSize: '24px' }}>
                 ⚠️
               </div>
-              <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
-                AI Service Notice
+              <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', marginBottom: '8px', letterSpacing: '-0.01em' }}>
+                {aiFallbackTitle || 'AI Service Notice'}
               </h3>
+              {aiFallbackBadge && (
+                <div style={{
+                  display: 'inline-block',
+                  background: '#f1f5f9',
+                  color: '#1e293b',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '12px',
+                  padding: '3px 12px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  marginBottom: '14px'
+                }}>
+                  {aiFallbackBadge}
+                </div>
+              )}
               <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.55, marginBottom: '22px' }}>
-                {aiFallbackErrorMsg || "It might take some time, AI services are temporarily low."}
+                {aiFallbackErrorMsg || "AI services are temporarily unavailable. Please try again later."}
               </p>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   className="bui-btn bui-btn-outline"
@@ -1445,6 +1475,19 @@ export default function ProjectOverviewPage() {
                 >
                   Dismiss
                 </button>
+                {aiFallbackBadge && !aiFallbackBadge.startsWith('0 /') && (
+                  <button
+                    type="button"
+                    className="bui-btn"
+                    style={{ background: '#0f172a', color: '#ffffff', padding: '8px 18px', borderRadius: '6px', fontWeight: 600, border: 'none', cursor: 'pointer', fontSize: '12.5px' }}
+                    onClick={() => {
+                      setAiFallbackModalOpen(false)
+                      navigate(`/projects/${projectId}/extract`)
+                    }}
+                  >
+                    View Completed Sources →
+                  </button>
+                )}
                 <button
                   type="button"
                   className="bui-btn"

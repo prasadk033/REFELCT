@@ -132,12 +132,12 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     failed_docs.append(source.file_name)
                     _update_job(
                         db, job_id, "extracting",
-                        step=f"{source.file_name} halted: AI service unavailable ({completed_count} / {total_count} Documents Completed)",
+                        step=f"{source.file_name} halted: AI services unavailable ({completed_count} / {total_count} Documents Completed)",
                         cards_generated=completed_count,
                         questions_count=total_count
                     )
             else:
-                for source in vision_docs:
+                for idx, source in enumerate(vision_docs):
                     _update_job(
                         db, job_id, "extracting",
                         step=f"Processing {source.file_name} — Vision Extraction... ({completed_count} / {total_count} Documents Completed)",
@@ -158,16 +158,27 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     except AIServiceError as ai_err:
                         ai_service_issue = True
                         failed_docs.append(source.file_name)
-                        logger.warning(f"AI Service error for {source.file_name}: {ai_err}")
-                        _update_job(
-                            db, job_id, "extracting",
-                            step=f"{source.file_name} failed: AI service unavailable ({completed_count} / {total_count} Documents Completed)",
-                            cards_generated=completed_count,
-                            questions_count=total_count
-                        )
+                        logger.warning(f"AI Service error for {source.file_name}: {ai_err}. Halting remaining Qwen work.")
+                        # STOP QWEN-DEPENDENT WORK: Halt any remaining vision documents immediately
+                        remaining = vision_docs[idx + 1:]
+                        for rem_source in remaining:
+                            rem_source.processing_status = "failed"
+                            rem_source.processing_error = AI_UNAVAILABLE_MESSAGE
+                            failed_docs.append(rem_source.file_name)
+                        break
                     except Exception as e:
                         failed_docs.append(source.file_name)
                         logger.warning(f"Extraction error for {source.file_name}: {e}")
+                        err_str = str(e).lower()
+                        if any(k in err_str for k in ("timeout", "timed out", "connect", "connection", "litellm", "503", "unreachable", "refused")):
+                            ai_service_issue = True
+                            # STOP QWEN-DEPENDENT WORK: Halt remaining vision documents
+                            remaining = vision_docs[idx + 1:]
+                            for rem_source in remaining:
+                                rem_source.processing_status = "failed"
+                                rem_source.processing_error = AI_UNAVAILABLE_MESSAGE
+                                failed_docs.append(rem_source.file_name)
+                            break
                         _update_job(
                             db, job_id, "extracting",
                             step=f"{source.file_name} failed: {str(e)} ({completed_count} / {total_count} Documents Completed)",
@@ -201,8 +212,8 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
         elif failed_docs:
             error_msg = AI_UNAVAILABLE_MESSAGE if ai_service_issue else f"Failed documents: {', '.join(failed_docs)}"
             _update_job(
-                db, job_id, "completed",
-                step=f"Extraction Completed with errors ({completed_count} / {total_count} Documents Completed)",
+                db, job_id, "partial",
+                step=f"Extraction Incomplete ({completed_count} / {total_count} Documents Completed)",
                 error=error_msg,
                 cards_generated=completed_count,
                 questions_count=total_count
@@ -214,7 +225,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                 cards_generated=completed_count,
                 questions_count=total_count
             )
-        logger.info(f"[{project_id}] ✅ Extraction pipeline finished in {elapsed:.1f}s ({completed_count}/{total_count} succeeded)")
+        logger.info(f"[{project_id}] ✅ Extraction pipeline finished in {elapsed:.1f}s ({completed_count}/{total_count} succeeded, status={'completed' if not failed_docs else ('partial' if completed_count > 0 else 'failed')})")
 
     except Exception as e:
         logger.error(f"[{project_id}] Extraction pipeline failed: {e}", exc_info=True)
