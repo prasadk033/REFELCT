@@ -13,6 +13,7 @@ import {
 } from '../api.js'
 import AiHealthBanner from '../components/AiHealthBanner.jsx'
 import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
+import ExtractingProgressModal from '../components/ExtractingProgressModal.jsx'
 import { calculateBriefEstimate } from '../utils/estimate.js'
 
 export default function ExtractionReviewPage() {
@@ -40,6 +41,14 @@ export default function ExtractionReviewPage() {
   const [toastMsg, setToastMsg] = useState(null)
   const [aiFallbackModalOpen, setAiFallbackModalOpen] = useState(false)
   const [aiFallbackErrorMsg, setAiFallbackErrorMsg] = useState('It might take some time, AI services are temporarily low.')
+
+  const [extractModalOpen, setExtractModalOpen] = useState(false)
+  const [extractDocName, setExtractDocName] = useState('')
+  const [extractDocCount, setExtractDocCount] = useState(1)
+  const [extractTotalPages, setExtractTotalPages] = useState(1)
+  const [extractEstSeconds, setExtractEstSeconds] = useState(10)
+  const [extractElapsedSeconds, setExtractElapsedSeconds] = useState(0)
+  const extractTimerRef = useRef(null)
 
   function showToast(msg) {
     setToastMsg(msg)
@@ -126,7 +135,30 @@ export default function ExtractionReviewPage() {
     try {
       setActionLoading(true)
       setReparsing(true)
-      showToast(`Extracting ${selectedSource.file_name}...`)
+      
+      const ext = selectedSource.file_name?.split('.').pop()?.toLowerCase() || ''
+      const isImg = selectedSource.file_type?.startsWith('image') || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
+      let totalP = 1
+      if (!isImg) {
+        const pm = (selectedSource.file_name || '').match(/(\d+)\s*pages?/i)
+        if (pm) totalP = parseInt(pm[1], 10)
+        else if (selectedSource.file_size && selectedSource.file_size > 500000) totalP = Math.max(2, Math.round(selectedSource.file_size / (120 * 1024)))
+        else totalP = 20
+      }
+      const estSec = isImg ? 8 : Math.max(25, totalP * 2)
+
+      setExtractDocName(selectedSource.file_name || 'Document')
+      setExtractDocCount(1)
+      setExtractTotalPages(totalP)
+      setExtractEstSeconds(estSec)
+      setExtractElapsedSeconds(0)
+      setExtractModalOpen(true)
+
+      if (extractTimerRef.current) clearInterval(extractTimerRef.current)
+      extractTimerRef.current = setInterval(() => {
+        setExtractElapsedSeconds(s => s + 1)
+      }, 1000)
+
       const reparsed = await reparseSource(projectId, selectedSource.id)
       setSources(prev => prev.map(s => s.id === reparsed.id ? reparsed : s))
       setEditingText(reparsed.extracted_text || '')
@@ -140,6 +172,11 @@ export default function ExtractionReviewPage() {
         showToast('Extraction failed: ' + err.message)
       }
     } finally {
+      if (extractTimerRef.current) {
+        clearInterval(extractTimerRef.current)
+        extractTimerRef.current = null
+      }
+      setExtractModalOpen(false)
       setActionLoading(false)
       setReparsing(false)
     }
@@ -712,6 +749,17 @@ export default function ExtractionReviewPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {extractModalOpen && (
+        <ExtractingProgressModal
+          documentName={extractDocName}
+          docCount={extractDocCount}
+          totalPages={extractTotalPages}
+          estimatedSeconds={extractEstSeconds}
+          elapsedSeconds={extractElapsedSeconds}
+          onRunInBackground={() => setExtractModalOpen(false)}
+        />
       )}
 
     </div>
