@@ -356,7 +356,6 @@ def reparse_single_source(
     job = ProcessingJob(
         id=job_id,
         project_id=project_id,
-        job_type="extraction",
         status="pending",
         current_step="Queued for Reparsing",
         document_names=source.file_name
