@@ -32,8 +32,8 @@ export default function TopHeader({ breadcrumbs = [] }) {
   }
 
   return (
-    <header className="top-header">
-      <div className="th-breadcrumbs">
+    <header className="top-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box' }}>
+      <div className="th-breadcrumbs" style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
         {breadcrumbs.map((crumb, idx) => (
           <React.Fragment key={idx}>
             <span 
@@ -47,11 +47,12 @@ export default function TopHeader({ breadcrumbs = [] }) {
         ))}
       </div>
 
-      <div className="th-actions">
+      <div className="th-actions" style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0, width: 'auto', marginLeft: 'auto' }}>
         <button 
           className="th-icon-btn" 
           title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
           onClick={toggleTheme}
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: '32px', height: '32px', cursor: 'pointer' }}
         >
           {theme === 'dark' ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
@@ -71,7 +72,11 @@ export default function TopHeader({ breadcrumbs = [] }) {
             </svg>
           )}
         </button>
-        <button className="th-icon-btn" title="Notifications" style={{ position: 'relative' }}>
+        <button 
+          className="th-icon-btn" 
+          title="Notifications" 
+          style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: '32px', height: '32px', cursor: 'pointer' }}
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
             <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
@@ -79,9 +84,28 @@ export default function TopHeader({ breadcrumbs = [] }) {
           <span className="th-badge"></span>
         </button>
 
-        <div className="th-profile-wrap" ref={dropdownRef}>
-          <button className="th-profile-btn" onClick={() => setDropdownOpen(!dropdownOpen)}>
-            {user?.picture ? <img src={user.picture} alt="Avatar" /> : <span>{user?.name?.[0] || 'A'}</span>}
+        <div className="th-profile-wrap" ref={dropdownRef} style={{ position: 'relative', flexShrink: 0, marginLeft: '4px' }}>
+          <button 
+            className="th-profile-btn" 
+            onClick={() => setDropdownOpen(!dropdownOpen)}
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              background: '#0f172a',
+              color: '#ffffff',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: '13px',
+              border: 'none',
+              cursor: 'pointer',
+              flexShrink: 0
+            }}
+            title={user?.name || "Account Profile"}
+          >
+            {user?.picture ? <img src={user.picture} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : <span>{user?.name?.[0]?.toUpperCase() || 'A'}</span>}
           </button>
 
           {dropdownOpen && (

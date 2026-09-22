@@ -52,52 +52,126 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
             )
 
         if not pending_sources:
-            _update_job(db, job_id, "completed", "No pending sources to extract")
+            _update_job(db, job_id, "completed", "No pending sources to extract", cards_generated=0, questions_count=0)
             return
 
-        _update_job(db, job_id, "extracting", f"Extracting {len(pending_sources)} documents")
+        # Target only sources that need extraction
+        docs_to_extract = [
+            s for s in pending_sources
+            if not s.extracted_text or s.processing_status in ("uploaded", "failed")
+        ]
 
+        if not docs_to_extract:
+            _update_job(db, job_id, "completed", "No pending sources to extract", cards_generated=0, questions_count=0)
+            return
+
+        # Prioritize normal text-only documents first (faster), then image-containing documents via Qwen Vision
+        text_only_docs = []
+        vision_docs = []
+        for s in docs_to_extract:
+            is_vision = s.file_type == 'image' or bool(s.contains_images)
+            if is_vision:
+                vision_docs.append(s)
+            else:
+                text_only_docs.append(s)
+
+        ordered_sources = text_only_docs + vision_docs
+        total_count = len(ordered_sources)
+        completed_count = 0
+
+        # Initial state: 0 / N Documents Completed
+        _update_job(
+            db, job_id, "extracting",
+            step=f"Starting extraction... 0 / {total_count} Documents Completed",
+            cards_generated=0,
+            questions_count=total_count,
+            document_names=", ".join([s.file_name for s in ordered_sources])
+        )
+
+        failed_docs = []
         ai_service_issue = False
-        extracted_count = 0
-        total_pages_across_docs = sum([s.file_size // 100000 for s in pending_sources]) # very rough estimate
-        current_page = 0
 
-        # We pass a hook to the loader to update job metadata? 
-        # Alternatively, the loader can just be called directly.
-        for source in pending_sources:
-            if not source.extracted_text or source.processing_status in ("uploaded", "failed"):
-                _update_job(db, job_id, "extracting", f"Extracting {source.file_name}")
-                try:
-                    _extract_source_text_background(source, db, loader, job_id)
-                    extracted_count += 1
-                except AIServiceError as ai_err:
-                    ai_service_issue = True
-                    logger.warning(f"AI Service error for {source.file_name}: {ai_err}")
-                except Exception as e:
-                    logger.warning(f"Extraction error for {source.file_name}: {e}")
+        for source in ordered_sources:
+            is_vision = source.file_type == 'image' or bool(source.contains_images)
+            vision_suffix = " — Vision Extraction..." if is_vision else "..."
+
+            # Step display: Document currently processing with COMPLETED counter reflecting only finished docs
+            _update_job(
+                db, job_id, "extracting",
+                step=f"Processing {source.file_name}{vision_suffix} ({completed_count} / {total_count} Documents Completed)",
+                cards_generated=completed_count,
+                questions_count=total_count
+            )
+
+            try:
+                _extract_source_text_background(source, db, loader, job_id)
+                # Strictly increment completed counter ONLY after successful extraction
+                completed_count += 1
+                _update_job(
+                    db, job_id, "extracting",
+                    step=f"{source.file_name} completed ({completed_count} / {total_count} Documents Completed)",
+                    cards_generated=completed_count,
+                    questions_count=total_count
+                )
+            except AIServiceError as ai_err:
+                ai_service_issue = True
+                failed_docs.append(source.file_name)
+                logger.warning(f"AI Service error for {source.file_name}: {ai_err}")
+                _update_job(
+                    db, job_id, "extracting",
+                    step=f"{source.file_name} failed: AI service error ({completed_count} / {total_count} Documents Completed)",
+                    cards_generated=completed_count,
+                    questions_count=total_count
+                )
+            except Exception as e:
+                failed_docs.append(source.file_name)
+                logger.warning(f"Extraction error for {source.file_name}: {e}")
+                _update_job(
+                    db, job_id, "extracting",
+                    step=f"{source.file_name} failed: {str(e)} ({completed_count} / {total_count} Documents Completed)",
+                    cards_generated=completed_count,
+                    questions_count=total_count
+                )
 
         db.commit()
 
-        if extracted_count > 0:
+        if completed_count > 0:
             log_activity(
                 db=db,
                 user_id=effective_user_id,
                 event_type="extraction_completed",
                 title="Information extracted",
-                description=f"Extracted content from {extracted_count} pending document(s)",
+                description=f"Extracted content from {completed_count} document(s)",
                 project_id=project_id,
             )
 
-        if ai_service_issue and all(s.processing_status == "failed" for s in pending_sources if not s.extracted_text):
-            _update_job(db, job_id, "failed", "AI Services Temporarily Low", "It might take some time, AI services are temporarily low.")
-            return
-
         elapsed = time.time() - pipeline_start
-        _update_job(
-            db, job_id, "completed", "Extraction Complete",
-            document_names=", ".join([s.file_name for s in pending_sources])
-        )
-        logger.info(f"[{project_id}] ✅ Extraction pipeline COMPLETE in {elapsed:.1f}s")
+
+        if failed_docs and completed_count == 0:
+            error_msg = "It might take some time, AI services are temporarily low." if ai_service_issue else f"Extraction failed for: {', '.join(failed_docs)}"
+            _update_job(
+                db, job_id, "failed",
+                step=f"Extraction Failed (0 / {total_count} Documents Completed)",
+                error=error_msg,
+                cards_generated=0,
+                questions_count=total_count
+            )
+        elif failed_docs:
+            _update_job(
+                db, job_id, "completed",
+                step=f"Extraction Completed with errors ({completed_count} / {total_count} Documents Completed)",
+                error=f"Failed documents: {', '.join(failed_docs)}",
+                cards_generated=completed_count,
+                questions_count=total_count
+            )
+        else:
+            _update_job(
+                db, job_id, "completed",
+                step=f"Extraction Complete ({completed_count} / {total_count} Documents Completed)",
+                cards_generated=completed_count,
+                questions_count=total_count
+            )
+        logger.info(f"[{project_id}] ✅ Extraction pipeline finished in {elapsed:.1f}s ({completed_count}/{total_count} succeeded)")
 
     except Exception as e:
         logger.error(f"[{project_id}] Extraction pipeline failed: {e}", exc_info=True)
@@ -121,7 +195,6 @@ def _extract_source_text_background(source: Source, db, loader: DocumentLoader, 
     try:
         is_image_doc = source.file_type == 'image' or bool(source.contains_images)
         
-        # Optionally hook into loader for page tracking if we want to modify loader.py
         text, _ = loader.extract_text_combined(
             abs_path,
             contains_images=is_image_doc,
@@ -155,9 +228,10 @@ def _extract_source_text_background(source: Source, db, loader: DocumentLoader, 
 
 
 def _update_job(
-    db, job_id: str, status: str, step: str, error: str = None, document_names: str = None
+    db, job_id: str, status: str, step: str, error: str = None, document_names: str = None,
+    cards_generated: int = None, questions_count: int = None
 ):
-    """Update a processing job's status."""
+    """Update a processing job's status and document completion counts."""
     job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
     if job:
         job.status = status
@@ -165,5 +239,9 @@ def _update_job(
         job.error = error
         if document_names is not None:
             job.document_names = document_names
+        if cards_generated is not None:
+            job.cards_generated = cards_generated
+        if questions_count is not None:
+            job.questions_count = questions_count
         job.updated_at = datetime.now(timezone.utc)
         db.commit()

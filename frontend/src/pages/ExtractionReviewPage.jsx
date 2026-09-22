@@ -730,7 +730,9 @@ export default function ExtractionReviewPage() {
       {extractModalOpen && (
         <ExtractingProgressModal
           documentName={extractDocName}
-          docCount={extractDocCount}
+          docsCompleted={0}
+          docCount={extractDocCount || 1}
+          serverStep={`Reparsing ${extractDocName}...`}
           totalPages={extractTotalPages}
           estimatedSeconds={extractEstSeconds}
           elapsedSeconds={extractElapsedSeconds}

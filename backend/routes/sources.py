@@ -246,6 +246,41 @@ def list_sources(
     return [SourceResponse.model_validate(s) for s in sources]
 
 
+def _check_active_extraction(db: Session, user_id: str):
+    """
+    Ensure no other extraction task is running across any project for this user.
+    Handles stale running states (> 30 mins) safely.
+    """
+    from datetime import datetime, timezone, timedelta
+    from db import ProcessingJob
+    
+    stale_threshold = datetime.now(timezone.utc) - timedelta(minutes=30)
+    
+    active_jobs = (
+        db.query(ProcessingJob)
+        .filter(
+            ProcessingJob.user_id == user_id,
+            ProcessingJob.status.in_(["pending", "extracting"])
+        )
+        .all()
+    )
+    for aj in active_jobs:
+        job_updated = aj.updated_at
+        if job_updated and job_updated.tzinfo is None:
+            job_updated = job_updated.replace(tzinfo=timezone.utc)
+            
+        if job_updated and job_updated < stale_threshold:
+            logger.warning(f"Marking stale extraction job {aj.id} as failed (last updated {aj.updated_at})")
+            aj.status = "failed"
+            aj.error = "Extraction task timed out"
+            db.commit()
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail="Another extraction task is currently running in the background. Please wait until it is completed before starting another extraction."
+            )
+
+
 @router.post("/{project_id}/sources/extract")
 def extract_all_sources(
     project_id: str,
@@ -258,6 +293,9 @@ def extract_all_sources(
     """
     from db import ProcessingJob
     from tasks.queue import enqueue_extraction_job
+
+    # Strictly check for active extractions across projects
+    _check_active_extraction(db, user.id)
 
     project = db.query(Project).filter(
         Project.id == project_id,
@@ -335,6 +373,8 @@ def reparse_single_source(
     """Re-run extraction for a single source using background worker."""
     from db import ProcessingJob
     from tasks.queue import enqueue_extraction_job
+
+    _check_active_extraction(db, user.id)
 
     project = db.query(Project).filter(
         Project.id == project_id,

@@ -2,7 +2,9 @@ import React from 'react'
 
 export default function ExtractingProgressModal({
   documentName = 'Document',
+  docsCompleted = 0,
   docCount = 1,
+  serverStep = '',
   totalPages = 20,
   estimatedSeconds = 35,
   elapsedSeconds = 0,
@@ -10,22 +12,16 @@ export default function ExtractingProgressModal({
   onCancel = null
 }) {
   const estSeconds = Math.max(10, estimatedSeconds)
-  const progressPercent = Math.min(95, Math.max(8, Math.round((elapsedSeconds / estSeconds) * 92)))
+  const safeDocCount = Math.max(1, docCount)
+  const safeDocsCompleted = Math.max(0, Math.min(safeDocCount, docsCompleted))
+
+  // Calculate progress strictly bounded by completed docs and elapsed time
+  const docBasePercent = (safeDocsCompleted / safeDocCount) * 100
+  const nextDocIncrement = (1 / safeDocCount) * 100 * Math.min(0.9, (elapsedSeconds % 15) / 15)
+  const progressPercent = Math.min(98, Math.max(safeDocsCompleted > 0 ? Math.round(docBasePercent) : 5, Math.round(docBasePercent + nextDocIncrement)))
   const remainingSeconds = Math.max(1, Math.round(estSeconds - elapsedSeconds))
 
-  // Dynamically estimate current page being processed based on progress
-  const safeTotalPages = Math.max(1, totalPages)
-  const currentPage = Math.min(safeTotalPages, Math.max(1, Math.floor((progressPercent / 100) * safeTotalPages) + 1))
-  const currentDocIndex = Math.min(docCount, Math.max(1, Math.floor((progressPercent / 100) * docCount) + 1))
-
-  let stepText = `Extracting architectural details from page ${currentPage} of ${safeTotalPages}...`
-  if (progressPercent >= 40 && progressPercent < 75) {
-    stepText = `Structuring spatial parameters, drawings, and tables (page ${currentPage}/${safeTotalPages})...`
-  } else if (progressPercent >= 75 && progressPercent < 90) {
-    stepText = `Compiling multi-page observations & context...`
-  } else if (progressPercent >= 90) {
-    stepText = `Finalizing extraction and preparing review...`
-  }
+  const stepText = serverStep || `Processing documents... (${safeDocsCompleted} / ${safeDocCount} Documents Completed)`
 
   return (
     <div className="bui-modal-overlay" style={{ background: 'rgba(5, 7, 12, 0.85)', backdropFilter: 'blur(6px)', zIndex: 1000 }}>
@@ -68,11 +64,17 @@ export default function ExtractingProgressModal({
         </h2>
 
         <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px', lineHeight: 1.45 }}>
-          Analyzing <strong style={{ color: '#0f172a' }}>{documentName}</strong>
-          {docCount > 1 && ` and ${docCount - 1} other source(s)`}
+          {serverStep ? (
+            <span style={{ color: '#0f172a', fontWeight: 600 }}>{serverStep}</span>
+          ) : (
+            <>
+              Analyzing <strong style={{ color: '#0f172a' }}>{documentName}</strong>
+              {safeDocCount > 1 && ` and ${safeDocCount - 1} other source(s)`}
+            </>
+          )}
         </p>
 
-        {/* Live Progress Pill (Requested: Documents [1/20] Pages [3/20] %) */}
+        {/* Live Progress Pill: Strictly Completed Count */}
         <div style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -86,9 +88,7 @@ export default function ExtractingProgressModal({
           fontWeight: 600,
           color: '#334155'
         }}>
-          <span>Documents: <strong style={{ color: '#2563eb' }}>[{currentDocIndex}/{docCount}]</strong></span>
-          <span style={{ color: '#cbd5e1' }}>•</span>
-          <span>Pages: <strong style={{ color: '#059669' }}>[Page {currentPage}/{safeTotalPages}]</strong></span>
+          <span>Documents: <strong style={{ color: '#2563eb' }}>[{safeDocsCompleted} / {safeDocCount} Completed]</strong></span>
           <span style={{ color: '#cbd5e1' }}>•</span>
           <span style={{ color: '#0f172a' }}>{progressPercent}%</span>
         </div>
