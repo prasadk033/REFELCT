@@ -38,8 +38,8 @@ def _ensure_osm_source(db: Session, project_id: str, site_url: str, user_id: str
             project_id=project_id,
             file_name="🌍 Site Analysis — OpenStreetMap",
             file_type="virtual/osm",
-            processing_status="uploaded",
-            uploaded_by=user_id
+            storage_path="",
+            processing_status="uploaded"
         )
         db.add(new_source)
         db.commit()

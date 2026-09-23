@@ -49,8 +49,8 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                         project_id=project_id,
                         file_name="🌍 Site Analysis — OpenStreetMap",
                         file_type="virtual/osm",
-                        processing_status="processing",
-                        uploaded_by=effective_user_id
+                        storage_path="",
+                        processing_status="processing"
                     )
                     db.add(osm_source)
                     db.commit()
