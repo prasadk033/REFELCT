@@ -94,7 +94,7 @@ class OSMSiteAnalysisService:
         
         # Build Overpass QL query
         query = f"""
-        [out:json][timeout:25];
+        [out:json][timeout:50];
         (
           way["highway"](around:{radius},{lat},{lon});
           node["public_transport"](around:{radius},{lat},{lon});
@@ -115,7 +115,7 @@ class OSMSiteAnalysisService:
         req.add_header("User-Agent", self.user_agent)
         
         try:
-            response = urllib.request.urlopen(req, context=self.ctx, timeout=30)
+            response = urllib.request.urlopen(req, context=self.ctx, timeout=60)
             result = json.loads(response.read().decode("utf-8"))
             return result
         except Exception as e:
