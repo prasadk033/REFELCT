@@ -2,9 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies (needed for python-docx, etc. if required)
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
+    libreoffice \
+    libreoffice-writer \
+    fonts-liberation \
+    fonts-dejavu \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file from project root
