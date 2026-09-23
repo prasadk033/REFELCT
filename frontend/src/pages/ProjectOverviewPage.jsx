@@ -1167,7 +1167,7 @@ export default function ProjectOverviewPage() {
                         const hasValidExtraction = Boolean(s.extracted_text && s.extracted_text.trim())
                         const isApproved = (s.approval_status === 'approved' || s.processing_status === 'approved') && hasValidExtraction
                         const isExtracted = s.processing_status === 'extracted' && hasValidExtraction
-                        const isFailed = s.processing_status === 'failed' || (!hasValidExtraction && s.approval_status !== 'approved')
+                        const isFailed = s.processing_status === 'failed'
 
                         return (
                           <tr key={s.id}>
