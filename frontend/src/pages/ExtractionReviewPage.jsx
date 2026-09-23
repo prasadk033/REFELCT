@@ -548,7 +548,7 @@ export default function ExtractionReviewPage() {
                   </div>
                   
                   <div className="extract-detail-actions">
-                    {selectedSource.file_type !== 'virtual/osm' && (
+                    {selectedSource.file_type !== 'virtual/osm' && selectedSource.version == null && (
                       <button
                         className="extract-btn-action-reparse"
                         onClick={handleReparseSingle}
@@ -559,7 +559,7 @@ export default function ExtractionReviewPage() {
                       </button>
                     )}
                     
-                    {!isSaved && selectedSource.file_type !== 'virtual/osm' && (
+                    {!isSaved && selectedSource.file_type !== 'virtual/osm' && selectedSource.version == null && (
                       <button
                         className="extract-btn-action-save"
                         onClick={handleSaveContent}
@@ -571,16 +571,17 @@ export default function ExtractionReviewPage() {
 
                     {(() => {
                       const hasExtractedText = Boolean(selectedSource.extracted_text && selectedSource.extracted_text.trim())
+                      const isVersioned = selectedSource.version != null
                       return (
                         <button
                           className={`extract-btn-action-approve ${selectedSource.approval_status === 'approved' ? 'approved' : ''}`}
                           onClick={handleApproveSingle}
-                          disabled={actionLoading || !hasExtractedText}
+                          disabled={actionLoading || !hasExtractedText || isVersioned}
                           style={{
-                            cursor: !hasExtractedText ? 'not-allowed' : 'pointer',
-                            opacity: !hasExtractedText ? 0.6 : 1
+                            cursor: (!hasExtractedText || isVersioned) ? 'not-allowed' : 'pointer',
+                            opacity: (!hasExtractedText || isVersioned) ? 0.6 : 1
                           }}
-                          title={!hasExtractedText ? "Cannot approve source before data has been extracted" : ""}
+                          title={isVersioned ? "Cannot modify an approved document that is already part of a synthesized version" : !hasExtractedText ? "Cannot approve source before data has been extracted" : ""}
                         >
                           {selectedSource.approval_status === 'approved' ? '✓ Approved' : hasExtractedText ? 'Approve Source' : 'Needs Extraction'}
                         </button>
@@ -652,8 +653,8 @@ export default function ExtractionReviewPage() {
                       setEditingText(e.target.value)
                       setIsSaved(false)
                     }}
-                    disabled={reparsing}
-                    placeholder="Extracted text will appear here. You can clean or edit the text directly before approving."
+                    disabled={reparsing || selectedSource.version != null}
+                    placeholder={selectedSource.version != null ? "Extracted text is locked because it is part of a completed version." : "Extracted text will appear here. You can clean or edit the text directly before approving."}
                     rows={20}
                   />
                 )}
