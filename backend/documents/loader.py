@@ -353,106 +353,85 @@ class DocumentLoader:
         """
         DOCX page-by-page Qwen-VL extraction.
 
-        Strategy:
-          1. Convert DOCX → PDF using LibreOffice headless (if available).
-             Then delegate to _extract_pdf_pages_vision with DOCUMENT_IMAGE_PROMPT.
-          2. Fallback: If LibreOffice not available, extract plain text with python-docx
-             + extract ALL embedded images and analyze each with Qwen (DOCUMENT_IMAGE_PROMPT).
+        Pipeline (strict — no fallback):
+          DOCX → LibreOffice headless converts to PDF
+               → pypdfium2 renders each PDF page as image
+               → each page dispatched to Qwen-VL with DOCUMENT_IMAGE_PROMPT
+               → same output format as PDF extraction
+
+        LibreOffice is installed in the Docker container (backend/Dockerfile).
+        If conversion fails, raises RuntimeError immediately — no silent fallback.
         """
         import subprocess
         import tempfile
+        import glob
+        import shutil
+        import os
 
-        # ── Attempt 1: Convert DOCX → PDF via LibreOffice ───────────────────
+        logger.info(f"Converting DOCX to PDF via LibreOffice for page-by-page extraction: {filename}")
+
         pdf_tmp_path = None
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 result = subprocess.run(
-                    ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpdir, file_path],
+                    [
+                        "libreoffice",
+                        "--headless",
+                        "--convert-to", "pdf",
+                        "--outdir", tmpdir,
+                        file_path
+                    ],
                     capture_output=True,
                     timeout=120
                 )
-                if result.returncode == 0:
-                    import glob
-                    pdf_files = glob.glob(f"{tmpdir}/*.pdf")
-                    if pdf_files:
-                        # Copy to a stable temp file outside the tempdir
-                        import shutil
-                        tmp_pdf = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-                        shutil.copy(pdf_files[0], tmp_pdf.name)
-                        pdf_tmp_path = tmp_pdf.name
-                        tmp_pdf.close()
 
-            if pdf_tmp_path:
-                logger.info(f"DOCX→PDF conversion successful for {filename}. Running page-by-page Qwen extraction.")
-                try:
-                    return self._extract_pdf_pages_vision(
-                        pdf_tmp_path,
-                        filename,
-                        source_id=source_id,
-                        on_page_completed=on_page_completed,
-                        existing_text=existing_text,
+                if result.returncode != 0:
+                    stderr = result.stderr.decode("utf-8", errors="replace").strip()
+                    raise RuntimeError(
+                        f"LibreOffice failed to convert {filename} to PDF (exit code {result.returncode}): {stderr}"
                     )
-                finally:
-                    try:
-                        import os
-                        os.unlink(pdf_tmp_path)
-                    except Exception:
-                        pass
 
-        except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as conv_err:
-            logger.warning(f"LibreOffice DOCX→PDF conversion not available for {filename}: {conv_err}. Falling back to text + embedded image extraction.")
+                pdf_files = glob.glob(f"{tmpdir}/*.pdf")
+                if not pdf_files:
+                    raise RuntimeError(
+                        f"LibreOffice conversion produced no PDF output for {filename}."
+                    )
 
-        # ── Fallback: Text extraction + ALL embedded images via Qwen ────────
-        logger.info(f"DOCX fallback: extracting text and all embedded images from {filename} with DOCUMENT_IMAGE_PROMPT.")
-        text = self._extract_docx_text(file_path)
-        images = self._extract_docx_embedded_images(file_path)
+                # Copy converted PDF to a stable temp file before tmpdir is deleted
+                tmp_pdf = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+                shutil.copy(pdf_files[0], tmp_pdf.name)
+                pdf_tmp_path = tmp_pdf.name
+                tmp_pdf.close()
 
-        if not images:
-            logger.info(f"No embedded images found in {filename}. Returning text only.")
-            return f"Source: {filename}\nType: Word Document\nExtraction:\n{text}"
-
-        image_analyses = []
-        for idx, img_data in enumerate(images, start=1):
-            if is_extraction_cancelled(source_id=source_id, file_path=file_path):
-                raise RuntimeError(f"Extraction cancelled for {filename}")
-
-            img_filename = f"{filename}_image_{idx}.png"
-            logger.info(f"Dispatching embedded image {idx}/{len(images)} from {filename} to Qwen-VL")
-            res = qwen_vision.extract_from_image(
-                img_data,
-                filename=img_filename,
-                prompt_type="document"
+        except FileNotFoundError:
+            raise RuntimeError(
+                f"LibreOffice is not installed or not found in PATH. "
+                f"Cannot convert {filename} to PDF for page-by-page vision extraction. "
+                f"Ensure LibreOffice is installed in the Docker container (see backend/Dockerfile)."
             )
-            if res.get("success") and res.get("text"):
-                image_analyses.append(
-                    f"Source: {filename}\nEmbedded Image: {idx}\nExtraction:\n{res['text']}"
-                )
-            elif res.get("is_ai_service_error"):
-                raise AIServiceError(res.get("error") or f"Vision extraction failed on embedded image {idx} of {filename}")
-            else:
-                logger.warning(f"Qwen-VL could not analyze image {idx} from {filename}: {res.get('error')}")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"LibreOffice timed out (>120s) converting {filename} to PDF. "
+                f"The document may be too large or complex."
+            )
 
-        doc_text_block = f"Source: {filename}\nType: Word Document\nExtraction:\n{text}"
-        if image_analyses:
-            return doc_text_block + "\n\n---\n\n" + "\n\n---\n\n".join(image_analyses)
-        return doc_text_block
-
-    def _extract_docx_embedded_images(self, file_path: str) -> List[bytes]:
-        """Extract all embedded images from a DOCX file as raw bytes."""
-        images = []
+        # LibreOffice conversion succeeded — run exact same page-by-page pipeline as PDF
+        logger.info(f"DOCX→PDF conversion successful for {filename}. Running page-by-page Qwen-VL extraction.")
         try:
-            import zipfile
-            # DOCX files are ZIP archives — images live in word/media/
-            with zipfile.ZipFile(file_path, 'r') as z:
-                for name in z.namelist():
-                    if name.startswith("word/media/") and any(
-                        name.lower().endswith(ext) for ext in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp')
-                    ):
-                        images.append(z.read(name))
-            logger.info(f"Extracted {len(images)} embedded images from DOCX {file_path}")
-        except Exception as e:
-            logger.warning(f"Could not extract embedded images from DOCX {file_path}: {e}")
-        return images
+            return self._extract_pdf_pages_vision(
+                pdf_tmp_path,
+                filename,
+                source_id=source_id,
+                on_page_completed=on_page_completed,
+                existing_text=existing_text,
+            )
+        finally:
+            # Always clean up the temp PDF file
+            try:
+                os.unlink(pdf_tmp_path)
+            except Exception:
+                pass
+
 
     def _extract_image_vision(self, file_path: str, filename: str) -> str:
 
