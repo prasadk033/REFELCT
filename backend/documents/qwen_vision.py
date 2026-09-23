@@ -46,6 +46,79 @@ Provide an objective, clear, and professional architectural report.
 """
 
 
+DOCUMENT_IMAGE_PROMPT = """You are an expert architectural document analyst and vision AI for the REFLECT architecture system.
+
+Carefully analyze this document page/image. The document may contain text together with site photographs, aerial views, architectural drawings, diagrams, reference images, plans, sections, elevations, or other visual content.
+
+Extract BOTH the complete readable information and the meaningful visual information.
+
+### 1. Extracted Text & Annotations
+
+Extract all visible and readable information, including:
+- Page titles and headings
+- Paragraphs and descriptions
+- Project names, locations, names of architects/studios/organizations/authors
+- Dates, years, dimensions, measurements, coordinates
+- Requirements and design guidelines
+- Submission instructions and evaluation criteria
+- Labels, annotations, drawing titles, room names, numbers and symbols
+- Image captions and credits
+- Any other visible text
+
+Preserve the meaning and wording of the source as accurately as possible. If text is partially unreadable, clearly indicate it is unclear. Do NOT invent missing text.
+
+### 2. Visual Content Analysis
+
+Identify and analyze each meaningful visual element on the page. For each visual element determine what it represents:
+- Site photograph, aerial/site view, architectural drawing, plan, section, elevation
+- Diagram, rendering, interior/exterior photograph
+- Reference/precedent project, map, table or chart, or other architectural visual
+
+Describe only information that can actually be observed.
+
+For architectural/site visuals, analyze where applicable:
+- Existing vegetation, landscape character, ground condition
+- Surrounding buildings, building height, building typology
+- Materials, structural elements, roof form, openings
+- Circulation, spatial organization, water and drainage
+- Relationship between buildings and landscape
+
+### 3. Visual Context
+
+Determine when supported by the page:
+- Whether the visual represents the actual project/site
+- Whether it is a reference or precedent project
+- Whether it is an architectural drawing or diagram
+
+Do NOT assume that a reference or precedent image represents the actual project site.
+Do NOT transfer characteristics from a reference image to the project itself.
+
+### 4. Evidence Classification
+
+Clearly distinguish between:
+- DIRECT TEXT — information explicitly readable in the document
+- VISUAL OBSERVATION — information directly visible in an image/drawing
+- VISUAL INTERPRETATION — reasonable interpretation of visible information
+- REQUIREMENT — an explicit project/competition requirement
+- REFERENCE/PRECEDENT — information belonging to a reference project
+
+Do not present interpretation as fact. Do not invent missing information.
+
+### 5. Output
+
+Provide a structured, objective, and professional architectural document-analysis report containing:
+1. Extracted Text & Annotations
+2. Visual Content
+3. Architectural/Site Observations
+4. Requirements or Guidelines, if present
+5. Reference/Precedent Information, if present
+
+If a section is not applicable, state: [Not applicable / Not detected]
+
+The goal is to preserve both the textual information and the visual meaning of the document page for downstream processing by the REFLECT system.
+"""
+
+
 class QwenVisionClient:
     """Client for Qwen-VL multimodal extraction."""
 
@@ -57,7 +130,7 @@ class QwenVisionClient:
         self.api_endpoint = f"{base}/chat/completions"
         self.api_key = config.QWEN_API_KEY or config.LITELLM_MASTER_KEY or ""
         self.model = config.LLM_MODEL or "current-model"
-        self.timeout = 180.0
+        self.timeout = 180.00
 
     def encode_image(self, image_data: bytes, filename: str = "image.jpg") -> tuple[str, str]:
         """Convert image bytes to base64 string and determine MIME type."""
@@ -78,10 +151,15 @@ class QwenVisionClient:
         self,
         image_data: bytes,
         filename: str = "site_image.jpg",
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        prompt_type: str = "site"
     ) -> Dict[str, Any]:
         """
         Analyze an image with Qwen-VL and return structured observations and text.
+
+        Args:
+            prompt_type: 'site' for standalone site images/photos (uses SITE_ANALYSIS_PROMPT),
+                         'document' for rendered PDF/DOCX pages (uses DOCUMENT_IMAGE_PROMPT).
 
         Returns:
             Dict:
@@ -92,7 +170,12 @@ class QwenVisionClient:
         """
         try:
             base64_img, mime_type = self.encode_image(image_data, filename)
-            prompt_text = custom_prompt or SITE_ANALYSIS_PROMPT
+            if custom_prompt:
+                prompt_text = custom_prompt
+            elif prompt_type == "document":
+                prompt_text = DOCUMENT_IMAGE_PROMPT
+            else:
+                prompt_text = SITE_ANALYSIS_PROMPT
 
             headers = {
                 "Content-Type": "application/json",

@@ -169,25 +169,18 @@ class DocumentLoader:
             )
 
         elif ext in ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'):
+            # Standalone site image → site analysis prompt
             return self._extract_image_vision(str(path), doc_name)
 
         elif ext in ('.docx', '.doc'):
-            # For DOCX marked with images: extract text and embedded images
-            text = self._extract_docx_text(str(path))
-            images = self.extract_images_from_pdf(str(path))  # or docx image extraction
-            if images:
-                image_analyses = []
-                for idx, img in enumerate(images[:5], start=1):
-                    if is_extraction_cancelled(source_id=source_id, file_path=file_path):
-                        raise RuntimeError(f"Extraction cancelled for {doc_name}")
-                    res = qwen_vision.extract_from_image(img["data"], filename=f"{doc_name}_image_{idx}.png")
-                    if res.get("success") and res.get("text"):
-                        image_analyses.append(f"Source: {doc_name}\nEmbedded Image: {idx}\nExtraction:\n{res['text']}")
-                    elif res.get("is_ai_service_error"):
-                        raise AIServiceError(res.get("error") or f"Vision extraction failed on embedded image {idx}")
-                if image_analyses:
-                    return f"{text}\n\n---\n\n" + "\n\n---\n\n".join(image_analyses)
-            return text
+            # DOCX with images: convert to PDF then use same page-by-page Qwen pipeline
+            return self._extract_docx_pages_vision(
+                str(path),
+                doc_name,
+                source_id=source_id,
+                on_page_completed=on_page_completed,
+                existing_text=existing_text,
+            )
 
         elif ext == '.txt':
             return self.extract_standard_text(file_path, filename=filename, file_type=file_type)
@@ -291,7 +284,8 @@ class DocumentLoader:
                     try:
                         res = qwen_vision.extract_from_image(
                             image_data=page_bytes,
-                            filename=f"{filename}_page_{page_num}.jpg"
+                            filename=f"{filename}_page_{page_num}.jpg",
+                            prompt_type="document"
                         )
                         if res.get("success") and res.get("text"):
                             break
@@ -348,7 +342,120 @@ class DocumentLoader:
         logger.info(f"Successfully extracted {len(page_extractions)} pages from {filename} with Qwen-VL ({len(combined_result)} chars)")
         return combined_result
 
+    def _extract_docx_pages_vision(
+        self,
+        file_path: str,
+        filename: str,
+        source_id: Optional[str] = None,
+        on_page_completed: Optional[Callable[[int, int, str], None]] = None,
+        existing_text: Optional[str] = None,
+    ) -> str:
+        """
+        DOCX page-by-page Qwen-VL extraction.
+
+        Strategy:
+          1. Convert DOCX → PDF using LibreOffice headless (if available).
+             Then delegate to _extract_pdf_pages_vision with DOCUMENT_IMAGE_PROMPT.
+          2. Fallback: If LibreOffice not available, extract plain text with python-docx
+             + extract ALL embedded images and analyze each with Qwen (DOCUMENT_IMAGE_PROMPT).
+        """
+        import subprocess
+        import tempfile
+
+        # ── Attempt 1: Convert DOCX → PDF via LibreOffice ───────────────────
+        pdf_tmp_path = None
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = subprocess.run(
+                    ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpdir, file_path],
+                    capture_output=True,
+                    timeout=120
+                )
+                if result.returncode == 0:
+                    import glob
+                    pdf_files = glob.glob(f"{tmpdir}/*.pdf")
+                    if pdf_files:
+                        # Copy to a stable temp file outside the tempdir
+                        import shutil
+                        tmp_pdf = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+                        shutil.copy(pdf_files[0], tmp_pdf.name)
+                        pdf_tmp_path = tmp_pdf.name
+                        tmp_pdf.close()
+
+            if pdf_tmp_path:
+                logger.info(f"DOCX→PDF conversion successful for {filename}. Running page-by-page Qwen extraction.")
+                try:
+                    return self._extract_pdf_pages_vision(
+                        pdf_tmp_path,
+                        filename,
+                        source_id=source_id,
+                        on_page_completed=on_page_completed,
+                        existing_text=existing_text,
+                    )
+                finally:
+                    try:
+                        import os
+                        os.unlink(pdf_tmp_path)
+                    except Exception:
+                        pass
+
+        except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as conv_err:
+            logger.warning(f"LibreOffice DOCX→PDF conversion not available for {filename}: {conv_err}. Falling back to text + embedded image extraction.")
+
+        # ── Fallback: Text extraction + ALL embedded images via Qwen ────────
+        logger.info(f"DOCX fallback: extracting text and all embedded images from {filename} with DOCUMENT_IMAGE_PROMPT.")
+        text = self._extract_docx_text(file_path)
+        images = self._extract_docx_embedded_images(file_path)
+
+        if not images:
+            logger.info(f"No embedded images found in {filename}. Returning text only.")
+            return f"Source: {filename}\nType: Word Document\nExtraction:\n{text}"
+
+        image_analyses = []
+        for idx, img_data in enumerate(images, start=1):
+            if is_extraction_cancelled(source_id=source_id, file_path=file_path):
+                raise RuntimeError(f"Extraction cancelled for {filename}")
+
+            img_filename = f"{filename}_image_{idx}.png"
+            logger.info(f"Dispatching embedded image {idx}/{len(images)} from {filename} to Qwen-VL")
+            res = qwen_vision.extract_from_image(
+                img_data,
+                filename=img_filename,
+                prompt_type="document"
+            )
+            if res.get("success") and res.get("text"):
+                image_analyses.append(
+                    f"Source: {filename}\nEmbedded Image: {idx}\nExtraction:\n{res['text']}"
+                )
+            elif res.get("is_ai_service_error"):
+                raise AIServiceError(res.get("error") or f"Vision extraction failed on embedded image {idx} of {filename}")
+            else:
+                logger.warning(f"Qwen-VL could not analyze image {idx} from {filename}: {res.get('error')}")
+
+        doc_text_block = f"Source: {filename}\nType: Word Document\nExtraction:\n{text}"
+        if image_analyses:
+            return doc_text_block + "\n\n---\n\n" + "\n\n---\n\n".join(image_analyses)
+        return doc_text_block
+
+    def _extract_docx_embedded_images(self, file_path: str) -> List[bytes]:
+        """Extract all embedded images from a DOCX file as raw bytes."""
+        images = []
+        try:
+            import zipfile
+            # DOCX files are ZIP archives — images live in word/media/
+            with zipfile.ZipFile(file_path, 'r') as z:
+                for name in z.namelist():
+                    if name.startswith("word/media/") and any(
+                        name.lower().endswith(ext) for ext in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp')
+                    ):
+                        images.append(z.read(name))
+            logger.info(f"Extracted {len(images)} embedded images from DOCX {file_path}")
+        except Exception as e:
+            logger.warning(f"Could not extract embedded images from DOCX {file_path}: {e}")
+        return images
+
     def _extract_image_vision(self, file_path: str, filename: str) -> str:
+
         """Analyze a standalone site photograph or drawing image with Qwen-VL (with optimization)."""
         from PIL import Image
 
