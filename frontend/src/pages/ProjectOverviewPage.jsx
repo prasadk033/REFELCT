@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, cancelSourceExtraction, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion, acknowledgeJobNotification } from '../api.js'
+import { getProject, updateProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, cancelSourceExtraction, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion, acknowledgeJobNotification } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
 import ExtractingProgressModal from '../components/ExtractingProgressModal.jsx'
@@ -60,6 +60,11 @@ export default function ProjectOverviewPage() {
   // Share Dialog
   const [showShareModal, setShowShareModal] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
+
+  // Site Location Modal
+  const [showSiteLocationModal, setShowSiteLocationModal] = useState(false)
+  const [siteLocationInput, setSiteLocationInput] = useState('')
+  const [siteLocationLoading, setSiteLocationLoading] = useState(false)
 
   // Upload Source Modal
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -197,6 +202,25 @@ export default function ProjectOverviewPage() {
       }
     }
     setSelectedFile(file)
+  }
+
+  async function handleSaveSiteLocation(e) {
+    e.preventDefault()
+    if (!siteLocationInput.trim()) return
+
+    setSiteLocationLoading(true)
+    setError(null)
+    try {
+      await updateProject(projectId, { location: siteLocationInput.trim() })
+      setShowSiteLocationModal(false)
+      setSiteLocationInput('')
+      showToast('Site Location saved! Run Extraction to generate Site Analysis.')
+      await loadProjectData()
+    } catch (err) {
+      showError(err.message || 'Failed to save site location')
+    } finally {
+      setSiteLocationLoading(false)
+    }
   }
 
   async function handleConfirmUpload() {
@@ -1027,6 +1051,20 @@ export default function ProjectOverviewPage() {
             </div>
 
             <div className="pov-sources-actions">
+              <button
+                className="pov-btn-add-doc"
+                style={{ background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1', marginRight: '8px' }}
+                onClick={() => {
+                  setSiteLocationInput(project?.location || '')
+                  setShowSiteLocationModal(true)
+                }}
+                disabled={uploading || analyzing}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                </svg>
+                <span>Connect Site Location</span>
+              </button>
               <button
                 className="pov-btn-add-doc"
                 onClick={() => openUploadModal('document')}
@@ -2062,6 +2100,78 @@ export default function ProjectOverviewPage() {
                   Generate Brief Again
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* SITE LOCATION MODAL */}
+        {showSiteLocationModal && (
+          <div className="bui-modal-overlay" onClick={() => !siteLocationLoading && setShowSiteLocationModal(false)} style={{ background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(5px)', zIndex: 1100 }}>
+            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px', width: '90%', padding: '32px', background: '#ffffff', borderRadius: '16px', color: '#0f172a', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
+              
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '20px', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="20" height="20">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                  </svg>
+                  Connect Site Location
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowSiteLocationModal(false)}
+                  disabled={siteLocationLoading}
+                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '20px', padding: '4px' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {error && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '20px' }}>
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={handleSaveSiteLocation}>
+                <div className="bui-form-group" style={{ marginBottom: '24px' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155', marginBottom: '8px', display: 'block' }}>
+                    Google Maps URL or Coordinates
+                  </label>
+                  <input
+                    type="text"
+                    className="bui-input"
+                    placeholder="e.g. https://maps.app.goo.gl/..."
+                    value={siteLocationInput}
+                    onChange={(e) => setSiteLocationInput(e.target.value)}
+                    disabled={siteLocationLoading}
+                    autoFocus
+                    style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', width: '100%' }}
+                  />
+                  <p style={{ fontSize: '12.5px', color: '#64748b', marginTop: '8px', lineHeight: 1.5 }}>
+                    Providing a location allows REFLECT to query OpenStreetMap and generate a Site Analysis brief card.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '32px' }}>
+                  <button
+                    type="button"
+                    className="bui-btn bui-btn-outline"
+                    onClick={() => setShowSiteLocationModal(false)}
+                    disabled={siteLocationLoading}
+                    style={{ padding: '10px 20px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#475569', borderColor: '#cbd5e1' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="bui-btn bui-btn-primary"
+                    disabled={!siteLocationInput.trim() || siteLocationLoading}
+                    style={{ padding: '10px 24px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, background: '#0f172a', color: '#ffffff', border: 'none', cursor: !siteLocationInput.trim() ? 'not-allowed' : 'pointer', opacity: !siteLocationInput.trim() ? 0.6 : 1 }}
+                  >
+                    {siteLocationLoading ? 'Saving...' : 'Connect Location'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
