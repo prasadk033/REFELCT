@@ -127,10 +127,11 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
             _update_job(db, job_id, "completed", "No pending sources to extract", cards_generated=0, questions_count=0)
             return
 
-        # Target only sources that need extraction
+        # Target only sources that need extraction (excluding virtual sources handled in Phase 0)
         docs_to_extract = [
             s for s in pending_sources
-            if not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed")
+            if (not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed"))
+            and s.file_type != "virtual/osm"
         ]
 
         if not docs_to_extract:
