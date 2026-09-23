@@ -33,7 +33,7 @@ class BriefAgent:
         """
         prompt = CARD_GENERATION_PROMPT.format(
             project_context=project_context,
-            brief_content=brief_content[:25000],
+            brief_content=brief_content[:150000],
         )
 
         try:
