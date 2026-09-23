@@ -243,7 +243,7 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             single_source_input = (
                 f"[SOURCE DOCUMENT: {source.file_name} (Version {new_version})]\n"
                 f"[INSTRUCTION: Extract new facts, requirements, questions, conflicts, or other points from this document. Do NOT duplicate existing cards from prior versions.]{hist_context_str}\n\n"
-                f"DOCUMENT CONTENT TO ANALYSE:\n{src_text[:22000]}"
+                f"DOCUMENT CONTENT TO ANALYSE:\n{src_text}"
             )
 
             cards_data = brief_agent.generate_cards(
