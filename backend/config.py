@@ -101,5 +101,9 @@ class Config:
     MINIO_BUCKET = os.getenv("MINIO_BUCKET", "reflect-uploads")
     MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
+    # OpenStreetMap
+    OSM_OVERPASS_URL = os.getenv("OSM_OVERPASS_URL", "https://overpass-api.de/api/interpreter")
+    OSM_GEOCODE_URL = os.getenv("OSM_GEOCODE_URL", "https://nominatim.openstreetmap.org/search")
+
 
 config = Config()

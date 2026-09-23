@@ -178,6 +178,25 @@ class Card(Base):
     brief = relationship("Brief", back_populates="cards")
 
 
+class SiteAnalysisCache(Base):
+    __tablename__ = "site_analysis_cache"
+    __table_args__ = (
+        UniqueConstraint("project_id", "radius", "provider", name="uq_project_radius_provider"),
+    )
+
+    id = Column(String, primary_key=True)  # UUID
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    latitude = Column(String, nullable=False)
+    longitude = Column(String, nullable=False)
+    radius = Column(Integer, nullable=False)
+    provider = Column(String, nullable=False, default="openstreetmap")
+    structured_analysis = Column(JSON, nullable=False)
+    fetched_at = Column(DateTime, default=utc_now)
+    created_at = Column(DateTime, default=utc_now)
+
+    project = relationship("Project")
+
+
 class ProcessingJob(Base):
     __tablename__ = "processing_jobs"
     __table_args__ = (
