@@ -80,6 +80,7 @@ class Project(Base):
     name = Column(String, nullable=False)
     project_type = Column(String, nullable=False)
     location = Column(String, nullable=True)
+    site_url = Column(String, nullable=True)
     client = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utc_now)

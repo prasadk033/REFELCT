@@ -212,7 +212,7 @@ export default function ProjectOverviewPage() {
     setSiteLocationLoading(true)
     setError(null)
     try {
-      await updateProject(projectId, { location: siteLocationInput.trim() })
+      await updateProject(projectId, { site_url: siteLocationInput.trim() })
       setShowSiteLocationModal(false)
       setSiteLocationInput('')
       showToast('Site Location saved! Run Extraction to generate Site Analysis.')
@@ -1055,18 +1055,18 @@ export default function ProjectOverviewPage() {
               <button
                 className="pov-btn-add-doc"
                 style={
-                  project?.location
+                  project?.site_url
                     ? { background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', marginRight: '8px', fontWeight: 600 }
                     : { background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1', marginRight: '8px' }
                 }
                 onClick={() => {
-                  setSiteLocationInput(project?.location || '')
-                  setIsEditingLocation(!project?.location) // Open in edit mode if no location is set
+                  setSiteLocationInput(project?.site_url || '')
+                  setIsEditingLocation(!project?.site_url) // Open in edit mode if no location is set
                   setShowSiteLocationModal(true)
                 }}
                 disabled={uploading || analyzing}
               >
-                {project?.location ? (
+                {project?.site_url ? (
                   <>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
                       <polyline points="20 6 9 17 4 12" />
@@ -2190,9 +2190,9 @@ export default function ProjectOverviewPage() {
                     type="button"
                     className="bui-btn bui-btn-outline"
                     onClick={() => {
-                      if (isEditingLocation && project?.location) {
+                      if (isEditingLocation && project?.site_url) {
                         setIsEditingLocation(false)
-                        setSiteLocationInput(project.location)
+                        setSiteLocationInput(project.site_url)
                       } else {
                         setShowSiteLocationModal(false)
                       }

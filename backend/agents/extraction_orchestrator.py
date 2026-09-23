@@ -35,7 +35,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
         effective_user_id = user_id or project.user_id
 
         # --- Phase 0: OSM Virtual Source Generation ---
-        if project.location:
+        if project.site_url:
             try:
                 osm_source = db.query(Source).filter(
                     Source.project_id == project_id,
@@ -58,7 +58,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     osm_source.processing_status = "processing"
                     db.commit()
 
-                geo_res = osm_service.geocode_location(project.location)
+                geo_res = osm_service.geocode_location(project.site_url)
                 if geo_res:
                     lat, lon, addr = geo_res
                     
@@ -93,7 +93,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                         osm_source.extracted_text = "Unable to retrieve site analysis elements from OpenStreetMap."
                         osm_source.processing_status = "failed"
                 else:
-                    osm_source.extracted_text = f"Unable to geocode location: {project.location}"
+                    osm_source.extracted_text = f"Unable to geocode location: {project.site_url}"
                     osm_source.processing_status = "failed"
                     
                 db.commit()

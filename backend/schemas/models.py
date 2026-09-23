@@ -35,6 +35,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     project_type: str = Field(..., min_length=1, max_length=100)
     location: Optional[str] = Field(None, max_length=255)
+    site_url: Optional[str] = Field(None, max_length=1000)
     client: Optional[str] = Field(None, max_length=255)
     description: Optional[str] = None
 
@@ -42,6 +43,7 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     project_type: Optional[str] = Field(None, min_length=1, max_length=100)
     location: Optional[str] = Field(None, max_length=255)
+    site_url: Optional[str] = Field(None, max_length=1000)
     client: Optional[str] = Field(None, max_length=255)
     description: Optional[str] = None
 
@@ -50,6 +52,7 @@ class ProjectResponse(BaseModel):
     name: str
     project_type: str
     location: Optional[str] = None
+    site_url: Optional[str] = None
     client: Optional[str] = None
     description: Optional[str] = None
     created_at: datetime
