@@ -89,7 +89,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     if structured_analysis:
                         osm_source.extracted_text = osm_service.format_as_markdown(structured_analysis)
                         osm_source.processing_status = "extracted"
-                        osm_source.approval_status = "approved"
+                        osm_source.approval_status = "pending_review"
                     else:
                         osm_source.extracted_text = "Unable to retrieve site analysis elements from OpenStreetMap."
                         osm_source.processing_status = "failed"
