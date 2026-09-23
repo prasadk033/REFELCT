@@ -548,16 +548,18 @@ export default function ExtractionReviewPage() {
                   </div>
                   
                   <div className="extract-detail-actions">
-                    <button
-                      className="extract-btn-action-reparse"
-                      onClick={handleReparseSingle}
-                      disabled={actionLoading || reparsing || selectedSource?.processing_status === 'extracting'}
-                      title="Re-extract raw text from file"
-                    >
-                      {reparsing || selectedSource?.processing_status === 'extracting' ? '↻ Extracting...' : '↻ Reparse'}
-                    </button>
+                    {selectedSource.file_type !== 'virtual/osm' && (
+                      <button
+                        className="extract-btn-action-reparse"
+                        onClick={handleReparseSingle}
+                        disabled={actionLoading || reparsing || selectedSource?.processing_status === 'extracting'}
+                        title="Re-extract raw text from file"
+                      >
+                        {reparsing || selectedSource?.processing_status === 'extracting' ? '↻ Extracting...' : '↻ Reparse'}
+                      </button>
+                    )}
                     
-                    {!isSaved && (
+                    {!isSaved && selectedSource.file_type !== 'virtual/osm' && (
                       <button
                         className="extract-btn-action-save"
                         onClick={handleSaveContent}
@@ -609,23 +611,52 @@ export default function ExtractionReviewPage() {
               <div className="extract-editor-wrapper">
                 <div className="extract-editor-label-row">
                   <label htmlFor="extract-textarea">
-                    Extracted Information <span className="extract-editor-hint">(Directly editable by architect before final analysis)</span>
+                    {selectedSource.file_type === 'virtual/osm' 
+                      ? "Site Analysis Facts"
+                      : "Extracted Information"}
+                    <span className="extract-editor-hint">
+                      {selectedSource.file_type === 'virtual/osm'
+                        ? " (Generated from OpenStreetMap, read-only)"
+                        : " (Directly editable by architect before final analysis)"}
+                    </span>
                   </label>
                   {!isSaved && <span className="extract-unsaved-badge">● Unsaved Changes</span>}
                 </div>
 
-                <textarea
-                  id="extract-textarea"
-                  className="extract-content-textarea"
-                  value={editingText}
-                  onChange={(e) => {
-                    setEditingText(e.target.value)
-                    setIsSaved(false)
-                  }}
-                  disabled={reparsing}
-                  placeholder="Extracted text will appear here. You can clean or edit the text directly before approving."
-                  rows={20}
-                />
+                {selectedSource.file_type === 'virtual/osm' ? (
+                  <div
+                    className="extract-content-textarea"
+                    style={{
+                      height: 'auto',
+                      minHeight: '400px',
+                      overflowY: 'auto',
+                      backgroundColor: '#f8fafc',
+                      whiteSpace: 'pre-wrap',
+                      padding: '16px',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '6px',
+                      color: '#1e293b'
+                    }}
+                  >
+                    {editingText || 'No site analysis data available.'}
+                  </div>
+                ) : (
+                  <textarea
+                    id="extract-textarea"
+                    className="extract-content-textarea"
+                    value={editingText}
+                    onChange={(e) => {
+                      setEditingText(e.target.value)
+                      setIsSaved(false)
+                    }}
+                    disabled={reparsing}
+                    placeholder="Extracted text will appear here. You can clean or edit the text directly before approving."
+                    rows={20}
+                  />
+                )}
               </div>
 
             </div>

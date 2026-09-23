@@ -6,6 +6,7 @@ import ssl
 from typing import Dict, Any, Tuple, Optional
 import math
 import uuid
+import re
 
 from config import config
 
@@ -33,7 +34,32 @@ class OSMSiteAnalysisService:
         self.ctx.verify_mode = ssl.CERT_NONE
 
     def geocode_location(self, location_str: str) -> Optional[Tuple[float, float, str]]:
-        """Resolves an address string to lat, lon, and formatted address."""
+        """Resolves an address string or Google Maps URL to lat, lon, and formatted address."""
+        
+        # Check if it's a URL (Google Maps or similar)
+        if "http://" in location_str or "https://" in location_str:
+            try:
+                logger.info(f"Resolving URL: {location_str}")
+                req = urllib.request.Request(location_str)
+                req.add_header("User-Agent", self.user_agent)
+                response = urllib.request.urlopen(req, context=self.ctx, timeout=10)
+                resolved_url = response.geturl()
+                
+                # Look for @lat,lon
+                match = re.search(r"@(-?\d+\.\d+),(-?\d+\.\d+)", resolved_url)
+                if match:
+                    lat, lon = float(match.group(1)), float(match.group(2))
+                    return lat, lon, location_str
+                
+                # Look for 3d...4d in query string (Google maps fallback)
+                match_3d4d = re.search(r"3d(-?\d+\.\d+)!4d(-?\d+\.\d+)", resolved_url)
+                if match_3d4d:
+                    lat, lon = float(match_3d4d.group(1)), float(match_3d4d.group(2))
+                    return lat, lon, location_str
+            except Exception as e:
+                logger.warning(f"Failed to resolve URL '{location_str}': {e}")
+                # Fall through to attempt standard geocoding anyway (e.g. if the URL is just text)
+                
         # Check if it's already coordinates (e.g. "45.307, 10.067")
         try:
             parts = [p.strip() for p in location_str.split(",")]
@@ -189,45 +215,64 @@ class OSMSiteAnalysisService:
         
         return analysis
 
-    def generate_master_card(self, analysis: Dict[str, Any], project_id: str, brief_id: str) -> Dict[str, Any]:
-        """Formats the structured analysis into a single Master Brief Card schema."""
-        content_lines = [
-            f"**Site Character:** {analysis.get('site_character', 'Unknown')} (Building Density: {analysis['building_density']})",
-            f"**Road Hierarchy:** {analysis['road_hierarchy']['motorway']} motorways, {analysis['road_hierarchy']['primary']} primary, {analysis['road_hierarchy']['residential']} residential roads within radius.",
+    def format_as_markdown(self, analysis: Dict[str, Any]) -> str:
+        """Formats the structured analysis into a human-readable Markdown string for the UI and LLM."""
+        lines = [
+            f"# SITE ANALYSIS",
+            f"**Provider:** OpenStreetMap",
+            f"**Location:** {analysis['site_location']['latitude']}, {analysis['site_location']['longitude']} ({analysis['site_location'].get('address', 'Unknown')})",
+            f"**Analysis Radius:** {analysis['analysis_radius_m']} m",
+            f"\n---\n",
+            f"### SITE CHARACTER",
+            f"{analysis.get('site_character', 'Unknown')}",
+            f"\n### ROAD HIERARCHY",
+            f"- Motorways: {analysis['road_hierarchy']['motorway']}",
+            f"- Primary: {analysis['road_hierarchy']['primary']}",
+            f"- Secondary: {analysis['road_hierarchy']['secondary']}",
+            f"- Tertiary: {analysis['road_hierarchy']['tertiary']}",
+            f"- Residential: {analysis['road_hierarchy']['residential']}",
+            f"\n### PUBLIC TRANSPORT"
         ]
         
         if analysis["public_transport"]:
-            pt_strs = [f"{pt['name']} ({pt['type']}, ~{pt['distance_m']}m straight-line)" for pt in analysis["public_transport"]]
-            content_lines.append(f"**Public Transport:** {', '.join(pt_strs)}")
+            for pt in analysis["public_transport"]:
+                lines.append(f"- {pt['name']} ({pt['type']}) — ~{pt['distance_m']} m straight-line")
+        else:
+            lines.append("None identified within radius.")
             
-        if analysis["significant_surroundings"]:
-            ss_strs = [f"{ss['name']} ({ss['type']}, ~{ss['distance_m']}m straight-line)" for ss in analysis["significant_surroundings"]]
-            content_lines.append(f"**Significant Surroundings:** {', '.join(ss_strs)}")
+        lines.append(f"\n### BUILDING DENSITY\n{analysis['building_density']}")
+        
+        lines.append(f"\n### BUILDING USES")
+        if analysis["building_uses"]:
+            for bu in analysis["building_uses"]:
+                lines.append(f"- {bu.capitalize()}")
+        else:
+            lines.append("None explicitly tagged.")
             
+        lines.append(f"\n### OPEN SPACE")
         if analysis["open_spaces"]:
-            os_strs = [f"{o['name']} ({o['type']}, ~{o['distance_m']}m straight-line)" for o in analysis["open_spaces"]]
-            content_lines.append(f"**Open Spaces:** {', '.join(os_strs)}")
+            for os in analysis["open_spaces"]:
+                lines.append(f"- {os['name']} ({os['type']}) — ~{os['distance_m']} m straight-line")
+        else:
+            lines.append("None identified within radius.")
             
+        lines.append(f"\n### BLUE INFRASTRUCTURE")
         if analysis["blue_infrastructure"]:
-            bi_strs = [f"{b['name']} ({b['type']}, ~{b['distance_m']}m straight-line)" for b in analysis["blue_infrastructure"]]
-            content_lines.append(f"**Blue Infrastructure:** {', '.join(bi_strs)}")
+            for bi in analysis["blue_infrastructure"]:
+                lines.append(f"- {bi['name']} ({bi['type']}) — ~{bi['distance_m']} m straight-line")
+        else:
+            lines.append("None identified within radius.")
             
-        content_lines.append("\n*Note: All distances are approximate straight-line measurements from the site center.*")
+        lines.append(f"\n### SIGNIFICANT SURROUNDINGS")
+        if analysis["significant_surroundings"]:
+            for ss in analysis["significant_surroundings"]:
+                lines.append(f"- {ss['name']} ({ss['type']}) — ~{ss['distance_m']} m straight-line")
+        else:
+            lines.append("None identified within radius.")
+            
+        lines.append("\n---\n")
+        lines.append("*© OpenStreetMap contributors*")
         
-        card = {
-            "id": str(uuid.uuid4()),
-            "project_id": project_id,
-            "brief_id": brief_id,
-            "card_type": "FACT",
-            "title": "OpenStreetMap Site Context Analysis",
-            "content": "\n".join(content_lines),
-            "evidence": "© OpenStreetMap contributors. Data queried dynamically from OSM (Overpass API) based on project location.",
-            "section": "Site Analysis",
-            "created_by": "OSM Service",
-            "status": "accepted",
-            "is_unified": False
-        }
-        
-        return card
+        return "\n".join(lines)
 
 osm_service = OSMSiteAnalysisService()

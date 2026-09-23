@@ -56,10 +56,13 @@ class TestOSMSiteAnalysisService(unittest.TestCase):
         self.assertEqual(len(analysis["public_transport"]), 1)
         self.assertEqual(analysis["public_transport"][0]["name"], "Train Station")
 
-    def test_generate_master_card(self):
+    def test_format_as_markdown(self):
         analysis = {
+            "site_location": {"latitude": 45.307, "longitude": 10.067, "address": "Cascina"},
+            "analysis_radius_m": 3000,
             "site_character": "Dense Urban",
             "building_density": "High",
+            "building_uses": ["commercial", "hospital"],
             "road_hierarchy": {"motorway": 1, "primary": 2, "secondary": 0, "tertiary": 0, "residential": 50},
             "public_transport": [{"name": "Metro", "type": "station", "distance_m": 500}],
             "open_spaces": [{"name": "Hyde Park", "type": "park", "distance_m": 1200}],
@@ -67,12 +70,11 @@ class TestOSMSiteAnalysisService(unittest.TestCase):
             "significant_surroundings": []
         }
         
-        card = self.service.generate_master_card(analysis, "project123", "brief456")
-        self.assertEqual(card["project_id"], "project123")
-        self.assertEqual(card["card_type"], "FACT")
-        self.assertTrue("Dense Urban" in card["content"])
-        self.assertTrue("Metro" in card["content"])
-        self.assertTrue("OpenStreetMap" in card["evidence"])
+        markdown = self.service.format_as_markdown(analysis)
+        self.assertTrue("Dense Urban" in markdown)
+        self.assertTrue("Metro (station)" in markdown)
+        self.assertTrue("Hyde Park (park)" in markdown)
+        self.assertTrue("OpenStreetMap" in markdown)
 
 if __name__ == '__main__':
     unittest.main()

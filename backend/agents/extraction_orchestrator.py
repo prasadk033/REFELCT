@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from pathlib import Path
 
-from db import SessionLocal, Source, Project, ProcessingJob, log_activity
+from db import SessionLocal, Source, Project, ProcessingJob, log_activity, SiteAnalysisCache
 from documents.loader import DocumentLoader
 from documents.qwen_vision import AIServiceError
 from storage import file_store
+from services.osm_site_analysis import osm_service
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,77 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
             return
 
         effective_user_id = user_id or project.user_id
+
+        # --- Phase 0: OSM Virtual Source Generation ---
+        if project.location:
+            try:
+                osm_source = db.query(Source).filter(
+                    Source.project_id == project_id,
+                    Source.file_type == "virtual/osm",
+                    Source.version.is_(None)
+                ).first()
+                
+                if not osm_source:
+                    osm_source = Source(
+                        id=str(uuid.uuid4()),
+                        project_id=project_id,
+                        file_name="🌍 Site Analysis — OpenStreetMap",
+                        file_type="virtual/osm",
+                        processing_status="processing",
+                        uploaded_by=effective_user_id
+                    )
+                    db.add(osm_source)
+                    db.commit()
+                else:
+                    osm_source.processing_status = "processing"
+                    db.commit()
+
+                geo_res = osm_service.geocode_location(project.location)
+                if geo_res:
+                    lat, lon, addr = geo_res
+                    
+                    # Check cache first
+                    cached_osm = db.query(SiteAnalysisCache).filter(
+                        SiteAnalysisCache.project_id == project_id,
+                        SiteAnalysisCache.radius == 3000,
+                        SiteAnalysisCache.provider == "openstreetmap"
+                    ).first()
+                    
+                    structured_analysis = None
+                    if cached_osm:
+                        structured_analysis = cached_osm.structured_analysis
+                    else:
+                        raw_osm = osm_service.query_overpass(lat, lon, radius=3000)
+                        if raw_osm.get("elements"):
+                            structured_analysis = osm_service.analyze_site_context(raw_osm, lat, lon, radius=3000, address=addr)
+                            new_cache = SiteAnalysisCache(
+                                id=str(uuid.uuid4()),
+                                project_id=project_id,
+                                latitude=str(lat),
+                                longitude=str(lon),
+                                radius=3000,
+                                structured_analysis=structured_analysis
+                            )
+                            db.add(new_cache)
+                    
+                    if structured_analysis:
+                        osm_source.extracted_text = osm_service.format_as_markdown(structured_analysis)
+                        osm_source.processing_status = "completed"
+                    else:
+                        osm_source.extracted_text = "Unable to retrieve site analysis elements from OpenStreetMap."
+                        osm_source.processing_status = "failed"
+                else:
+                    osm_source.extracted_text = f"Unable to geocode location: {project.location}"
+                    osm_source.processing_status = "failed"
+                    
+                db.commit()
+            except Exception as e:
+                logger.error(f"[{project_id}] OSM Virtual Source failed: {e}")
+                if 'osm_source' in locals() and osm_source:
+                    osm_source.processing_status = "failed"
+                    osm_source.extracted_text = f"Failed to generate OSM site analysis: {e}"
+                    db.commit()
+        # ---------------------------------------------
 
         # Target specific sources if provided, otherwise all pending
         if source_ids:
