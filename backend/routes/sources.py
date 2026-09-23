@@ -300,6 +300,7 @@ def _check_active_extraction(db: Session, project_id: str):
 @router.post("/{project_id}/sources/extract")
 def extract_all_sources(
     project_id: str,
+    skip_site: bool = False,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -337,6 +338,9 @@ def extract_all_sources(
         s for s in pending_sources
         if not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed")
     ]
+    
+    if skip_site:
+        sources_to_extract = [s for s in sources_to_extract if s.file_type != "virtual/osm"]
 
     if not sources_to_extract:
         return {"message": "All pending sources are already extracted.", "job_id": None}

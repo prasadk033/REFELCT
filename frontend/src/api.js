@@ -109,8 +109,9 @@ export async function listSources(projectId) {
   return apiFetch(`/api/projects/${projectId}/sources`);
 }
 
-export async function extractSources(projectId) {
-  return apiFetch(`/api/projects/${projectId}/sources/extract`, {
+export async function extractSources(projectId, skipSiteAnalysis = false) {
+  const query = skipSiteAnalysis ? "?skip_site=true" : "";
+  return apiFetch(`/api/projects/${projectId}/sources/extract${query}`, {
     method: "POST",
   });
 }

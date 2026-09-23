@@ -673,7 +673,23 @@ export default function ProjectOverviewPage() {
       return
     }
 
-    const docs = unextractedDocs
+    let docs = unextractedDocs
+    let skipSiteAnalysis = false
+
+    const hasPendingSite = docs.some(s => s.file_type === 'virtual/osm')
+    if (hasPendingSite) {
+      const wantsSite = window.confirm("Site location has been updated. Do you want to analyze the new site location alongside the documents?")
+      if (!wantsSite) {
+        skipSiteAnalysis = true
+        docs = docs.filter(s => s.file_type !== 'virtual/osm')
+      }
+    }
+
+    if (docs.length === 0) {
+      navigate(`/projects/${projectId}/extract`)
+      return
+    }
+
     const docCount = docs.length
     let totalP = 0
     docs.forEach(d => {
@@ -706,7 +722,7 @@ export default function ProjectOverviewPage() {
     setExtracting(true)
 
     try {
-      const resp = await extractSources(projectId)
+      const resp = await extractSources(projectId, skipSiteAnalysis)
       if (resp && resp.job_id) {
         startExtractionPolling()
       } else {
