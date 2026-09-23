@@ -255,6 +255,7 @@ def _project_to_response(db: Session, project: Project) -> ProjectResponse:
         name=project.name,
         project_type=project.project_type,
         location=project.location,
+        site_url=project.site_url,
         client=project.client,
         description=project.description,
         created_at=project.created_at,
