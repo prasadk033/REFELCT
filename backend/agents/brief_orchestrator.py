@@ -120,12 +120,12 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         # Identify newly added / pending sources for this version cycle
         if source_ids:
             pending_batch = [s for s in all_approved_sources if s.id in source_ids and (s.version is None or s.version not in completed_brief_versions)]
-            if not pending_batch:
-                pending_batch = [s for s in all_approved_sources if s.id in source_ids]
         else:
             pending_batch = [s for s in all_approved_sources if s.version is None or s.version not in completed_brief_versions]
-            if not pending_batch:
-                pending_batch = all_approved_sources
+
+        if not pending_batch:
+            _update_job(db, job_id, "failed", "Error", "No new approved documents to synthesize. Please extract and approve new documents first.")
+            return
 
         # Historical sources (from prior completed versions)
         historical_sources = [s for s in all_approved_sources if s.version is not None and s.version in completed_brief_versions and s not in pending_batch]
