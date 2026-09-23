@@ -65,6 +65,7 @@ export default function ProjectOverviewPage() {
   const [showSiteLocationModal, setShowSiteLocationModal] = useState(false)
   const [siteLocationInput, setSiteLocationInput] = useState('')
   const [siteLocationLoading, setSiteLocationLoading] = useState(false)
+  const [isEditingLocation, setIsEditingLocation] = useState(false)
 
   // Upload Source Modal
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -1053,17 +1054,33 @@ export default function ProjectOverviewPage() {
             <div className="pov-sources-actions">
               <button
                 className="pov-btn-add-doc"
-                style={{ background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1', marginRight: '8px' }}
+                style={
+                  project?.location
+                    ? { background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', marginRight: '8px', fontWeight: 600 }
+                    : { background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1', marginRight: '8px' }
+                }
                 onClick={() => {
                   setSiteLocationInput(project?.location || '')
+                  setIsEditingLocation(!project?.location) // Open in edit mode if no location is set
                   setShowSiteLocationModal(true)
                 }}
                 disabled={uploading || analyzing}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
-                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
-                </svg>
-                <span>Connect Site Location</span>
+                {project?.location ? (
+                  <>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span>Site Location Connected</span>
+                  </>
+                ) : (
+                  <>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span>Connect Site Location</span>
+                  </>
+                )}
               </button>
               <button
                 className="pov-btn-add-doc"
@@ -2132,7 +2149,14 @@ export default function ProjectOverviewPage() {
                 </div>
               )}
 
-              <form onSubmit={handleSaveSiteLocation}>
+              <form onSubmit={(e) => {
+                e.preventDefault()
+                if (!isEditingLocation) {
+                  setIsEditingLocation(true)
+                } else {
+                  handleSaveSiteLocation(e)
+                }
+              }}>
                 <div className="bui-form-group" style={{ marginBottom: '24px' }}>
                   <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155', marginBottom: '8px', display: 'block' }}>
                     Google Maps URL or Coordinates
@@ -2143,9 +2167,18 @@ export default function ProjectOverviewPage() {
                     placeholder="e.g. https://maps.app.goo.gl/..."
                     value={siteLocationInput}
                     onChange={(e) => setSiteLocationInput(e.target.value)}
-                    disabled={siteLocationLoading}
-                    autoFocus
-                    style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', width: '100%' }}
+                    disabled={siteLocationLoading || !isEditingLocation}
+                    autoFocus={isEditingLocation}
+                    style={{
+                      background: !isEditingLocation ? '#f1f5f9' : '#f8fafc',
+                      border: '1.5px solid #cbd5e1',
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      width: '100%',
+                      cursor: !isEditingLocation ? 'not-allowed' : 'text',
+                      color: !isEditingLocation ? '#475569' : '#0f172a'
+                    }}
                   />
                   <p style={{ fontSize: '12.5px', color: '#64748b', marginTop: '8px', lineHeight: 1.5 }}>
                     Providing a location allows REFLECT to query OpenStreetMap and generate a Site Analysis brief card.
@@ -2156,7 +2189,14 @@ export default function ProjectOverviewPage() {
                   <button
                     type="button"
                     className="bui-btn bui-btn-outline"
-                    onClick={() => setShowSiteLocationModal(false)}
+                    onClick={() => {
+                      if (isEditingLocation && project?.location) {
+                        setIsEditingLocation(false)
+                        setSiteLocationInput(project.location)
+                      } else {
+                        setShowSiteLocationModal(false)
+                      }
+                    }}
                     disabled={siteLocationLoading}
                     style={{ padding: '10px 20px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#475569', borderColor: '#cbd5e1' }}
                   >
@@ -2165,10 +2205,20 @@ export default function ProjectOverviewPage() {
                   <button
                     type="submit"
                     className="bui-btn bui-btn-primary"
-                    disabled={!siteLocationInput.trim() || siteLocationLoading}
-                    style={{ padding: '10px 24px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, background: '#0f172a', color: '#ffffff', border: 'none', cursor: !siteLocationInput.trim() ? 'not-allowed' : 'pointer', opacity: !siteLocationInput.trim() ? 0.6 : 1 }}
+                    disabled={(isEditingLocation && !siteLocationInput.trim()) || siteLocationLoading}
+                    style={{
+                      padding: '10px 24px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      background: '#0f172a',
+                      color: '#ffffff',
+                      border: 'none',
+                      cursor: (isEditingLocation && !siteLocationInput.trim()) ? 'not-allowed' : 'pointer',
+                      opacity: (isEditingLocation && !siteLocationInput.trim()) ? 0.6 : 1
+                    }}
                   >
-                    {siteLocationLoading ? 'Saving...' : 'Connect Location'}
+                    {!isEditingLocation ? 'Edit URL' : siteLocationLoading ? 'Saving...' : 'Connect Location'}
                   </button>
                 </div>
               </form>
