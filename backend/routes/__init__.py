@@ -22,14 +22,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
-def _ensure_osm_source(db: Session, project_id: str, site_url: str, user_id: str):
+def _ensure_osm_source(db: Session, project_id: str, site_url: str, user_id: str, is_new_or_changed: bool = False):
     if not site_url:
         return
-    # Check if there's already an active (unversioned) OSM source
+    # Check if there's already an active OSM source for this project
     existing = db.query(Source).filter(
         Source.project_id == project_id,
-        Source.file_type == "virtual/osm",
-        Source.version.is_(None)
+        Source.file_type == "virtual/osm"
     ).first()
     
     if not existing:
@@ -43,11 +42,13 @@ def _ensure_osm_source(db: Session, project_id: str, site_url: str, user_id: str
         )
         db.add(new_source)
         db.commit()
-    else:
+    elif is_new_or_changed:
         # If location was updated, clear extraction text so it is re-extracted
         existing.extracted_text = None
+        existing.version = None
         existing.processing_status = "uploaded"
         db.commit()
+
 @router.post("", response_model=ProjectResponse)
 def create_project(
     body: ProjectCreate,
@@ -80,7 +81,7 @@ def create_project(
         project_id=project.id,
     )
 
-    _ensure_osm_source(db, project.id, project.site_url, user.id)
+    _ensure_osm_source(db, project.id, project.site_url, user.id, is_new_or_changed=True)
 
     return _project_to_response(db, project)
 
@@ -167,6 +168,8 @@ def update_project(
     db: Session = Depends(get_db),
 ):
     project = _get_user_project(db, project_id, user.id)
+    
+    old_site_url = project.site_url
 
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -177,7 +180,8 @@ def update_project(
     db.refresh(project)
     
     if "site_url" in update_data:
-        _ensure_osm_source(db, project.id, project.site_url, user.id)
+        is_changed = old_site_url != update_data["site_url"]
+        _ensure_osm_source(db, project.id, project.site_url, user.id, is_new_or_changed=is_changed)
         
     logger.info(f"Updated project: {project.id}")
 
