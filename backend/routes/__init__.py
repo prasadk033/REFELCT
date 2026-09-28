@@ -26,27 +26,34 @@ def _ensure_osm_source(db: Session, project_id: str, site_url: str, user_id: str
     if not site_url:
         return
     # Check if there's already an active OSM source for this project
-    existing = db.query(Source).filter(
+    existing_unversioned = db.query(Source).filter(
         Source.project_id == project_id,
-        Source.file_type == "virtual/osm"
+        Source.file_type == "virtual/osm",
+        Source.version.is_(None)
     ).first()
     
-    if not existing:
-        new_source = Source(
-            id=str(uuid.uuid4()),
-            project_id=project_id,
-            file_name="🌍 Site Analysis — OpenStreetMap",
-            file_type="virtual/osm",
-            storage_path="",
-            processing_status="uploaded"
-        )
-        db.add(new_source)
-        db.commit()
+    if not existing_unversioned:
+        existing_versioned = db.query(Source).filter(
+            Source.project_id == project_id,
+            Source.file_type == "virtual/osm"
+        ).order_by(Source.created_at.desc()).first()
+        
+        # Only create a new one if there isn't any, or if it changed
+        if not existing_versioned or is_new_or_changed:
+            new_source = Source(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                file_name="🌍 Site Analysis — OpenStreetMap",
+                file_type="virtual/osm",
+                storage_path="",
+                processing_status="uploaded"
+            )
+            db.add(new_source)
+            db.commit()
     elif is_new_or_changed:
-        # If location was updated, clear extraction text so it is re-extracted
-        existing.extracted_text = None
-        existing.version = None
-        existing.processing_status = "uploaded"
+        # If location was updated and there's an unversioned source, clear extraction text so it is re-extracted
+        existing_unversioned.extracted_text = None
+        existing_unversioned.processing_status = "uploaded"
         db.commit()
 
 @router.post("", response_model=ProjectResponse)

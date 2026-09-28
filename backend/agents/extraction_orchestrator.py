@@ -37,13 +37,25 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
         # --- Phase 0: OSM Virtual Source Generation ---
         if project.site_url:
             try:
-                osm_source = db.query(Source).filter(
+                osm_source_pending = db.query(Source).filter(
                     Source.project_id == project_id,
                     Source.file_type == "virtual/osm",
                     Source.version.is_(None)
                 ).first()
                 
-                if not osm_source:
+                osm_source_any = db.query(Source).filter(
+                    Source.project_id == project_id,
+                    Source.file_type == "virtual/osm"
+                ).first()
+                
+                needs_osm_extraction = False
+                osm_source = None
+                
+                if osm_source_pending:
+                    needs_osm_extraction = True
+                    osm_source = osm_source_pending
+                elif not osm_source_any:
+                    needs_osm_extraction = True
                     osm_source = Source(
                         id=str(uuid.uuid4()),
                         project_id=project_id,
@@ -54,50 +66,54 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     )
                     db.add(osm_source)
                     db.commit()
-                else:
-                    osm_source.processing_status = "processing"
-                    db.commit()
 
-                geo_res = osm_service.geocode_location(project.site_url)
-                if geo_res:
-                    lat, lon, addr = geo_res
-                    
-                    # Check cache first
-                    cached_osm = db.query(SiteAnalysisCache).filter(
-                        SiteAnalysisCache.project_id == project_id,
-                        SiteAnalysisCache.radius == 3000,
-                        SiteAnalysisCache.provider == "openstreetmap"
-                    ).first()
-                    
-                    structured_analysis = None
-                    if cached_osm:
-                        structured_analysis = cached_osm.structured_analysis
+                if needs_osm_extraction:
+                    if osm_source.processing_status != "processing":
+                        osm_source.processing_status = "processing"
+                        db.commit()
+
+                    geo_res = osm_service.geocode_location(project.site_url)
+                    if geo_res:
+                        lat, lon, addr = geo_res
+                        
+                        # Check cache first using exact coordinates
+                        cached_osm = db.query(SiteAnalysisCache).filter(
+                            SiteAnalysisCache.project_id == project_id,
+                            SiteAnalysisCache.radius == 3000,
+                            SiteAnalysisCache.provider == "openstreetmap",
+                            SiteAnalysisCache.latitude == str(lat),
+                            SiteAnalysisCache.longitude == str(lon)
+                        ).first()
+                        
+                        structured_analysis = None
+                        if cached_osm:
+                            structured_analysis = cached_osm.structured_analysis
+                        else:
+                            raw_osm = osm_service.query_overpass(lat, lon, radius=3000)
+                            if raw_osm.get("elements"):
+                                structured_analysis = osm_service.analyze_site_context(raw_osm, lat, lon, radius=3000, address=addr)
+                                new_cache = SiteAnalysisCache(
+                                    id=str(uuid.uuid4()),
+                                    project_id=project_id,
+                                    latitude=str(lat),
+                                    longitude=str(lon),
+                                    radius=3000,
+                                    structured_analysis=structured_analysis
+                                )
+                                db.add(new_cache)
+                        
+                        if structured_analysis:
+                            osm_source.extracted_text = osm_service.format_as_markdown(structured_analysis)
+                            osm_source.processing_status = "extracted"
+                            osm_source.approval_status = "pending_review"
+                        else:
+                            osm_source.extracted_text = "Unable to retrieve site analysis elements from OpenStreetMap."
+                            osm_source.processing_status = "failed"
                     else:
-                        raw_osm = osm_service.query_overpass(lat, lon, radius=3000)
-                        if raw_osm.get("elements"):
-                            structured_analysis = osm_service.analyze_site_context(raw_osm, lat, lon, radius=3000, address=addr)
-                            new_cache = SiteAnalysisCache(
-                                id=str(uuid.uuid4()),
-                                project_id=project_id,
-                                latitude=str(lat),
-                                longitude=str(lon),
-                                radius=3000,
-                                structured_analysis=structured_analysis
-                            )
-                            db.add(new_cache)
-                    
-                    if structured_analysis:
-                        osm_source.extracted_text = osm_service.format_as_markdown(structured_analysis)
-                        osm_source.processing_status = "extracted"
-                        osm_source.approval_status = "pending_review"
-                    else:
-                        osm_source.extracted_text = "Unable to retrieve site analysis elements from OpenStreetMap."
+                        osm_source.extracted_text = f"Unable to geocode location: {project.site_url}"
                         osm_source.processing_status = "failed"
-                else:
-                    osm_source.extracted_text = f"Unable to geocode location: {project.site_url}"
-                    osm_source.processing_status = "failed"
-                    
-                db.commit()
+                        
+                    db.commit()
             except Exception as e:
                 logger.error(f"[{project_id}] OSM Virtual Source failed: {e}")
                 if 'osm_source' in locals() and osm_source:

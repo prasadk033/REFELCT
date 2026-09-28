@@ -1059,6 +1059,72 @@ export default function ProjectOverviewPage() {
           </div>
         </section>
 
+        {/* SECTION 1.5: Site Location */}
+        <section className="pov-sources-section" style={{ marginBottom: '24px' }}>
+          <div className="pov-sources-header" style={{ borderBottom: '1px solid #cbd5e1', paddingBottom: '16px', marginBottom: '16px' }}>
+            <h2 className="pov-section-title">🌍 Site Location</h2>
+          </div>
+          {!project?.site_url ? (
+            <div className="pov-empty-sources" style={{ textAlign: 'left', padding: '16px' }}>
+              <p style={{ margin: '0 0 16px 0' }}>No site location configured.</p>
+              <button className="pov-btn-add-doc" onClick={() => {
+                setSiteLocationInput('')
+                setIsEditingLocation(true)
+                setShowSiteLocationModal(true)
+              }}>
+                Connect Site Location
+              </button>
+            </div>
+          ) : (
+            <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <span style={{ fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: '4px' }}>Google Maps URL / Resolved Location</span>
+                <a href={project.site_url.startsWith('http') ? project.site_url : `https://${project.site_url}`} target="_blank" rel="noreferrer" style={{ fontSize: '14px', color: '#2563eb', textDecoration: 'none', wordBreak: 'break-all' }}>
+                  {project.site_url}
+                </a>
+              </div>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <span style={{ fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: '4px' }}>Status</span>
+                <span style={{ fontSize: '14px', color: '#475569', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  {sources.some(s => s.file_type === 'virtual/osm' && s.version === null && s.processing_status === 'uploaded') 
+                   ? (sources.some(s => s.file_type === 'virtual/osm' && s.version !== null) 
+                      ? <><span style={{width:8,height:8,borderRadius:'50%',background:'#eab308'}}></span> Location updated — extraction pending</>
+                      : <><span style={{width:8,height:8,borderRadius:'50%',background:'#94a3b8'}}></span> Not yet analyzed</>)
+                   : <><span style={{width:8,height:8,borderRadius:'50%',background:'#22c55e'}}></span> Analysis completed</>}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  className="bui-btn bui-btn-outline"
+                  style={{ background: '#ffffff', borderColor: '#cbd5e1' }}
+                  onClick={() => {
+                    setSiteLocationInput(project.site_url)
+                    setIsEditingLocation(true)
+                    setShowSiteLocationModal(true)
+                  }}
+                  disabled={uploading || analyzing}
+                >
+                  Edit Site Location
+                </button>
+                {sources.some(s => s.file_type === 'virtual/osm' && s.extracted_text) && (
+                  <button
+                    className="bui-btn bui-btn-secondary"
+                    style={{ background: '#f1f5f9', color: '#0f172a', borderColor: '#cbd5e1' }}
+                    onClick={() => {
+                      const analyzedSource = sources.filter(s => s.file_type === 'virtual/osm' && s.extracted_text).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                      if (analyzedSource) setViewingSource(analyzedSource);
+                    }}
+                  >
+                    View Analysis
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
         {/* SECTION 2: Project Sources (Grouped by Version Header) */}
         <section className="pov-sources-section">
           <div className="pov-sources-header">
@@ -1068,23 +1134,7 @@ export default function ProjectOverviewPage() {
             </div>
 
             <div className="pov-sources-actions">
-              {!project?.site_url && (
-                <button
-                  className="pov-btn-add-doc"
-                  style={{ background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1', marginRight: '8px' }}
-                  onClick={() => {
-                    setSiteLocationInput('')
-                    setIsEditingLocation(true)
-                    setShowSiteLocationModal(true)
-                  }}
-                  disabled={uploading || analyzing}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
-                    <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                  <span>Add Site Location</span>
-                </button>
-              )}
+              {/* We will add a Site Location block above instead of a button here */}
               <button
                 className="pov-btn-add-doc"
                 onClick={() => openUploadModal('document')}
