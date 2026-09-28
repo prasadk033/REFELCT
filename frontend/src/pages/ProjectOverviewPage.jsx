@@ -1076,29 +1076,31 @@ export default function ProjectOverviewPage() {
               </button>
             </div>
           ) : (
-            <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-              <div style={{ marginBottom: '16px' }}>
-                <span style={{ fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: '4px' }}>Google Maps URL / Resolved Location</span>
-                <a href={project.site_url.startsWith('http') ? project.site_url : `https://${project.site_url}`} target="_blank" rel="noreferrer" style={{ fontSize: '14px', color: '#2563eb', textDecoration: 'none', wordBreak: 'break-all' }}>
-                  {project.site_url}
-                </a>
-              </div>
-              
-              <div style={{ marginBottom: '20px' }}>
-                <span style={{ fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: '4px' }}>Status</span>
-                <span style={{ fontSize: '14px', color: '#475569', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  {sources.some(s => s.file_type === 'virtual/osm' && s.version === null && s.processing_status === 'uploaded') 
-                   ? (sources.some(s => s.file_type === 'virtual/osm' && s.version !== null) 
-                      ? <><span style={{width:8,height:8,borderRadius:'50%',background:'#eab308'}}></span> Location updated — extraction pending</>
-                      : <><span style={{width:8,height:8,borderRadius:'50%',background:'#94a3b8'}}></span> Not yet analyzed</>)
-                   : <><span style={{width:8,height:8,borderRadius:'50%',background:'#22c55e'}}></span> Analysis completed</>}
-                </span>
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+              <div style={{ flex: 1, minWidth: '250px' }}>
+                <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '14px' }}>Location:</span>
+                  <a href={project.site_url.startsWith('http') ? project.site_url : `https://${project.site_url}`} target="_blank" rel="noreferrer" style={{ fontSize: '13px', color: '#2563eb', textDecoration: 'none', wordBreak: 'break-all' }}>
+                    {project.site_url}
+                  </a>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '14px' }}>Status:</span>
+                  <span style={{ fontSize: '13px', color: '#475569', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    {sources.some(s => s.file_type === 'virtual/osm' && s.version === null && s.processing_status === 'uploaded') 
+                     ? (sources.some(s => s.file_type === 'virtual/osm' && s.version !== null) 
+                        ? <><span style={{width:8,height:8,borderRadius:'50%',background:'#eab308'}}></span> Updated — extraction pending</>
+                        : <><span style={{width:8,height:8,borderRadius:'50%',background:'#94a3b8'}}></span> Not yet analyzed</>)
+                     : <><span style={{width:8,height:8,borderRadius:'50%',background:'#22c55e'}}></span> Analysis completed</>}
+                  </span>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   className="bui-btn bui-btn-outline"
-                  style={{ background: '#ffffff', borderColor: '#cbd5e1' }}
+                  style={{ background: '#ffffff', borderColor: '#cbd5e1', padding: '6px 12px', fontSize: '13px' }}
                   onClick={() => {
                     setSiteLocationInput(project.site_url)
                     setIsEditingLocation(true)
@@ -1106,12 +1108,12 @@ export default function ProjectOverviewPage() {
                   }}
                   disabled={uploading || analyzing}
                 >
-                  Edit Site Location
+                  Edit
                 </button>
                 {sources.some(s => s.file_type === 'virtual/osm' && s.extracted_text) && (
                   <button
                     className="bui-btn bui-btn-secondary"
-                    style={{ background: '#f1f5f9', color: '#0f172a', borderColor: '#cbd5e1' }}
+                    style={{ background: '#f1f5f9', color: '#0f172a', borderColor: '#cbd5e1', padding: '6px 12px', fontSize: '13px' }}
                     onClick={() => {
                       const analyzedSource = sources.filter(s => s.file_type === 'virtual/osm' && s.extracted_text).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
                       if (analyzedSource) setViewingSource(analyzedSource);
