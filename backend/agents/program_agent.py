@@ -78,7 +78,11 @@ STATUS RULES:
 
 AI QUESTIONS: Generate questions when quantity is required but unknown, capacity is required but unknown, intended use is ambiguous, duration of occupation is unclear, accessibility needs are unclear, functional relationships are unclear, or important information is missing. Questions must be concise and actionable. Do not answer the question yourself.
 
-SOURCE TRACEABILITY: Every Program Item must contain the IDs of the Brief Cards supporting it.
+CONCISENESS AND COMPLETENESS RULES:
+- Generate between 12 to 25 essential, high-quality Program Items covering the primary spaces, functions, and key project requirements. Consolidate related minor details rather than creating dozens of fragmented micro-items.
+- Keep "requirement" and "function" descriptions clear and concise (1 to 2 sentences max).
+- Limit "key_considerations" to at most 3 concise bullet strings per item.
+- Generate between 2 to 6 high-value, actionable AI clarification questions.
 
 OUTPUT FORMAT:
 Return ONLY valid JSON. No markdown. No explanations outside JSON.
@@ -190,8 +194,49 @@ class ProgramAgent:
             previous_items_text="\n".join(lines) if lines else "No previous items."
         )
 
+    @staticmethod
+    def _extract_complete_json_objects(text: str) -> List[Dict[str, Any]]:
+        """Scan text for complete balanced { ... } JSON objects even if surrounding text is truncated."""
+        results = []
+        i = 0
+        n = len(text)
+        while i < n:
+            if text[i] == '{':
+                start = i
+                depth = 0
+                in_string = False
+                escape = False
+                for j in range(start, n):
+                    char = text[j]
+                    if in_string:
+                        if escape:
+                            escape = False
+                        elif char == '\\':
+                            escape = True
+                        elif char == '"':
+                            in_string = False
+                    else:
+                        if char == '"':
+                            in_string = True
+                        elif char == '{':
+                            depth += 1
+                        elif char == '}':
+                            depth -= 1
+                            if depth == 0:
+                                obj_str = text[start:j + 1]
+                                try:
+                                    parsed = json.loads(obj_str)
+                                    if isinstance(parsed, dict):
+                                        results.append(parsed)
+                                except Exception:
+                                    pass
+                                i = j
+                                break
+            i += 1
+        return results
+
     def _parse_llm_response(self, raw_response: str) -> Dict[str, Any]:
-        """Parse and validate the LLM JSON response."""
+        """Parse and validate the LLM JSON response with multi-stage truncated JSON recovery."""
         clean_text = raw_response.strip()
 
         # Strip markdown code fences
@@ -200,7 +245,7 @@ class ProgramAgent:
         elif "```" in clean_text:
             clean_text = clean_text.split("```")[1].split("```")[0].strip()
 
-        # Attempt direct parse
+        # Stage 1: Direct JSON parse
         try:
             start = clean_text.find("{")
             end = clean_text.rfind("}") + 1
@@ -208,21 +253,52 @@ class ProgramAgent:
                 data = json.loads(clean_text[start:end])
             else:
                 data = json.loads(clean_text)
-            return data
+            if isinstance(data, dict):
+                return data
         except Exception:
             pass
 
-        # Attempt to heal truncated JSON
+        # Stage 2: Quick closing heal for mildly truncated JSON
         try:
             start = clean_text.find("{")
             if start != -1:
                 sub = clean_text[start:]
-                # Try to close the JSON
                 healed = sub + ("}" if sub.count("{") > sub.count("}") else "")
                 data = json.loads(healed)
-                return data
+                if isinstance(data, dict):
+                    return data
         except Exception:
             pass
+
+        # Stage 3: Robust object-recovery for cut-off / truncated streams
+        # Extracts all valid completed items and questions before the truncation point
+        try:
+            items = []
+            questions = []
+
+            p_items_idx = clean_text.find('"program_items"')
+            q_items_idx = clean_text.find('"ai_questions"')
+
+            if p_items_idx != -1:
+                end_idx = q_items_idx if (q_items_idx != -1 and q_items_idx > p_items_idx) else len(clean_text)
+                items_section = clean_text[p_items_idx:end_idx]
+                items = self._extract_complete_json_objects(items_section)
+
+            if q_items_idx != -1:
+                questions_section = clean_text[q_items_idx:]
+                questions = self._extract_complete_json_objects(questions_section)
+
+            if items or questions:
+                logger.info(
+                    f"ProgramAgent: Recovered {len(items)} items and {len(questions)} questions "
+                    f"from truncated response via structural scanner."
+                )
+                return {
+                    "program_items": items,
+                    "ai_questions": questions
+                }
+        except Exception as scan_err:
+            logger.warning(f"ProgramAgent structural recovery error: {scan_err}")
 
         logger.error(f"Could not parse LLM program response. Raw (first 500 chars): {raw_response[:500]}")
         return {}
@@ -386,7 +462,7 @@ class ProgramAgent:
         full_prompt = PROGRAM_SYSTEM_PROMPT + "\n\n" + user_prompt
 
         try:
-            result = self.llm.run(prompt=full_prompt, max_tokens=3500)
+            result = self.llm.run(prompt=full_prompt, max_tokens=4096)
             raw_response = result["replies"][0]
         except Exception as e:
             logger.error(f"ProgramAgent LLM call failed: {e}")

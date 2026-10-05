@@ -22,8 +22,9 @@ GET    /api/projects/{project_id}/program/published/{version_id} — Get specifi
 """
 import uuid
 import logging
+import time
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text, or_
@@ -38,6 +39,9 @@ from db import (
 from auth.dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
+
+# In-memory generation status tracking: project_id -> status dict
+_generation_status: Dict[str, Dict[str, Any]] = {}
 
 router = APIRouter(tags=["program"])
 
@@ -298,6 +302,7 @@ def get_program_summary(
             "version_number": latest_prog_version.version_number,
             "item_count": latest_prog_version.item_count,
         } if latest_prog_version else None,
+        "generation_status": _generation_status.get(project_id, {"status": "idle"}),
     }
 
 
@@ -644,11 +649,19 @@ def _run_program_generation(
     from agents.program_agent import ProgramAgent
     from agents.brief_agent import format_project_context
 
+    _generation_status[project_id] = {
+        "status": "generating",
+        "error": None,
+        "step": "Synthesizing spatial and functional criteria...",
+        "started_at": time.time(),
+    }
+
     db = SessionLocal()
     try:
         project = db.query(Project).filter(Project.id == project_id).first()
         if not project:
             logger.error(f"Program generation: project {project_id} not found")
+            _generation_status[project_id] = {"status": "failed", "error": "Project not found"}
             return
 
         brief_version = db.query(BriefPublishedVersion).filter(
@@ -656,6 +669,7 @@ def _run_program_generation(
         ).first()
         if not brief_version:
             logger.error(f"Program generation: brief version {brief_version_id} not found")
+            _generation_status[project_id] = {"status": "failed", "error": "Brief version not found"}
             return
 
         # Get snapshot cards from the published brief version
@@ -761,6 +775,14 @@ def _run_program_generation(
             project_id=project_id,
         )
 
+        _generation_status[project_id] = {
+            "status": "completed",
+            "error": None,
+            "item_count": len(result["program_items"]),
+            "question_count": len(result["ai_questions"]),
+            "completed_at": time.time(),
+        }
+
         logger.info(
             f"Program generation complete for project {project_id}: "
             f"{len(result['program_items'])} items, {len(result['ai_questions'])} questions."
@@ -768,6 +790,11 @@ def _run_program_generation(
 
     except Exception as e:
         logger.error(f"Program generation failed for project {project_id}: {e}", exc_info=True)
+        _generation_status[project_id] = {
+            "status": "failed",
+            "error": str(e),
+            "failed_at": time.time(),
+        }
         db.rollback()
     finally:
         db.close()
@@ -826,6 +853,13 @@ def generate_program(
         f"from Brief V{brief_version.version_number} "
         f"(prev program: {'V' + str(prev_prog_version.version_number) if prev_prog_version else 'None'})"
     )
+
+    _generation_status[project_id] = {
+        "status": "generating",
+        "error": None,
+        "step": "Analyzing published Brief...",
+        "started_at": time.time(),
+    }
 
     background_tasks.add_task(
         _run_program_generation,

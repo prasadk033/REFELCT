@@ -48,6 +48,8 @@ export default function ProgramPage() {
   // Generation & Publishing State
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationStep, setGenerationStep] = useState('')
+  const [showGenModal, setShowGenModal] = useState(true)
+  const [genElapsedSeconds, setGenElapsedSeconds] = useState(0)
   const [isPublishing, setIsPublishing] = useState(false)
   const [showPublishSuccessModal, setShowPublishSuccessModal] = useState(null) // { version_number, item_count }
 
@@ -152,53 +154,80 @@ export default function ProgramPage() {
       return
     }
     setIsGenerating(true)
-    setGenerationStep('Analyzing published Brief...')
-    try {
-      const res = await generateProgram(projectId, briefVersionId)
-      showToastMsg('Program generation started...')
+    setShowGenModal(true)
+    setGenElapsedSeconds(0)
+    setGenerationStep('Reviewing approved Brief cards...')
 
-      // Simulate visible progress steps while polling for completion
+    let timerInterval = null
+    let stepInterval = null
+    let pollInterval = null
+
+    function cleanup() {
+      if (timerInterval) clearInterval(timerInterval)
+      if (stepInterval) clearInterval(stepInterval)
+      if (pollInterval) clearInterval(pollInterval)
+    }
+
+    try {
+      await generateProgram(projectId, briefVersionId)
+      showToastMsg('Program synthesis started...')
+
+      // Increment elapsed seconds timer
+      timerInterval = setInterval(() => {
+        setGenElapsedSeconds(s => s + 1)
+      }, 1000)
+
+      // Friendly casual steps (no technical model names)
       const steps = [
-        'Analyzing published Brief...',
-        'Identifying required spaces and functional requirements...',
-        'Identifying missing or unclear requirements...',
-        'Preparing Program Items and AI Questions...'
+        'Reviewing approved Brief cards...',
+        'Synthesizing spatial requirements and dimensions...',
+        'Formulating functional criteria and considerations...',
+        'Identifying clarification questions...',
+        'Structuring Program items and requirements...'
       ]
       let stepIdx = 0
-      const stepInterval = setInterval(() => {
+      stepInterval = setInterval(() => {
         stepIdx = (stepIdx + 1) % steps.length
         setGenerationStep(steps[stepIdx])
-      }, 2400)
+      }, 2500)
 
-      // Poll summary & items until items are populated or 30s timeout
+      // Poll summary & items (up to 180s)
       const pollStart = Date.now()
-      const pollInterval = setInterval(async () => {
+      pollInterval = setInterval(async () => {
         try {
           const [updatedSum, updatedItems, updatedQ] = await Promise.all([
             getProgramSummary(projectId),
             listProgramItems(projectId),
             listProgramQuestions(projectId),
           ])
-          if (updatedItems && updatedItems.length > 0) {
-            clearInterval(pollInterval)
-            clearInterval(stepInterval)
+
+          const genStatus = updatedSum?.generation_status?.status
+
+          if (genStatus === 'completed' || (updatedItems && updatedItems.length > 0)) {
+            cleanup()
             setSummary(updatedSum)
-            setItems(updatedItems)
+            setItems(updatedItems || [])
             setQuestions(updatedQ || [])
             setIsGenerating(false)
             setSelectedView('working')
-            showToastMsg(`Program generated successfully! ${updatedItems.length} items created.`)
-          } else if (Date.now() - pollStart > 35000) {
-            clearInterval(pollInterval)
-            clearInterval(stepInterval)
+            showToastMsg(`✓ Program synthesized successfully! ${updatedItems?.length || 0} items created.`)
+          } else if (genStatus === 'failed') {
+            cleanup()
             setIsGenerating(false)
-            showToastMsg('Program generation is taking longer than expected. Please refresh shortly.')
+            const rawErr = updatedSum?.generation_status?.error || 'Generation encountered an error'
+            setError(`Program synthesis failed: ${rawErr}`)
+            showToastMsg('✕ Program synthesis failed')
+          } else if (Date.now() - pollStart > 180000) {
+            cleanup()
+            setIsGenerating(false)
+            showToastMsg('Program synthesis is running in the background. Your items will appear shortly.')
           }
         } catch (e) {
           // ignore transient errors during poll
         }
       }, 2000)
     } catch (err) {
+      cleanup()
       setIsGenerating(false)
       setError(err.message || 'Failed to start program generation')
     }
@@ -597,20 +626,194 @@ export default function ProgramPage() {
           </div>
         )}
 
-        {/* ── Generation In-Progress Hero ────────────────────────────────────────── */}
-        {isGenerating && (
-          <div className="prog-generation-hero">
-            <div className="prog-gen-spinner" />
-            <div className="prog-gen-content">
-              <h3>Generating Architectural Program with Qwen AI</h3>
-              <p className="prog-gen-step">{generationStep}</p>
-              <div className="prog-gen-steps-list">
-                <span className={generationStep.includes('Analyzing') ? 'active' : ''}>1. Analyzing Brief Cards</span>
-                <span className={generationStep.includes('spaces') ? 'active' : ''}>2. Spatial Requirements</span>
-                <span className={generationStep.includes('missing') ? 'active' : ''}>3. AI Clarification Questions</span>
-                <span className={generationStep.includes('Preparing') ? 'active' : ''}>4. Program Proposal</span>
+        {/* ── Centered Program Generation In-Progress Modal ──────────────────────── */}
+        {isGenerating && showGenModal && (
+          <div
+            className="prog-modal-overlay"
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(5, 7, 12, 0.75)',
+              backdropFilter: 'blur(6px)',
+              zIndex: 2000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <div
+              className="prog-modal"
+              onClick={e => e.stopPropagation()}
+              style={{
+                maxWidth: '480px',
+                width: '90%',
+                background: '#ffffff',
+                borderRadius: '16px',
+                padding: '36px 30px',
+                textAlign: 'center',
+                boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
+                border: '1px solid #e2e8f0',
+              }}
+            >
+              {/* Circular Animated Badge */}
+              <div style={{ marginBottom: '18px' }}>
+                <div
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '50%',
+                    background: '#eff6ff',
+                    border: '2px solid #bfdbfe',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto',
+                    color: '#2563eb',
+                    fontSize: '24px',
+                  }}
+                >
+                  <span className="prog-gen-spinner-inline" />
+                </div>
+              </div>
+
+              <h2
+                style={{
+                  fontSize: '20px',
+                  fontWeight: 800,
+                  color: '#0f172a',
+                  marginBottom: '8px',
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                Synthesizing Architectural Program
+              </h2>
+
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: '#64748b',
+                  marginBottom: '24px',
+                  lineHeight: 1.5,
+                }}
+              >
+                Translating approved Brief requirements into spaces, functions, and criteria for{' '}
+                <strong style={{ color: '#0f172a' }}>{project?.name || 'this project'}</strong>
+              </p>
+
+              {/* Progress Step Banner */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  padding: '14px 16px',
+                  marginBottom: '20px',
+                  textAlign: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '13.5px',
+                    fontWeight: 600,
+                    color: '#2563eb',
+                    marginBottom: '4px',
+                  }}
+                >
+                  {generationStep}
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+                  Elapsed: {genElapsedSeconds}s • Please keep this window open
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div
+                style={{
+                  width: '100%',
+                  height: '6px',
+                  background: '#e2e8f0',
+                  borderRadius: '999px',
+                  overflow: 'hidden',
+                  marginBottom: '24px',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #2563eb, #3b82f6)',
+                    borderRadius: '999px',
+                    width: `${Math.min(95, Math.max(10, Math.round((genElapsedSeconds / 120) * 90)))}%`,
+                    transition: 'width 0.4s ease',
+                  }}
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="prog-btn prog-btn-outline"
+                  onClick={() => setShowGenModal(false)}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    color: '#64748b',
+                    borderColor: '#cbd5e1',
+                  }}
+                >
+                  Run in Background
+                </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── Background Floating Pill (when modal is dismissed) ────────────────── */}
+        {isGenerating && !showGenModal && (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: '24px',
+              right: '24px',
+              background: '#ffffff',
+              border: '1px solid #bfdbfe',
+              boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.2)',
+              borderRadius: '12px',
+              padding: '12px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              zIndex: 1000,
+            }}
+          >
+            <span className="prog-gen-spinner-inline" style={{ width: '16px', height: '16px' }} />
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+                Synthesizing Program ({genElapsedSeconds}s)
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748b' }}>
+                {generationStep}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowGenModal(true)}
+              style={{
+                background: '#eff6ff',
+                color: '#2563eb',
+                border: '1px solid #bfdbfe',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              View
+            </button>
           </div>
         )}
 

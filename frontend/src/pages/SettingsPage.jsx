@@ -45,7 +45,7 @@ export default function SettingsPage() {
         </header>
 
         {savedToast && (
-          <div className="bui-toast" style={{ position: 'fixed', bottom: '32px', right: '32px', zIndex: 100 }}>
+          <div className="bui-toast">
             Settings saved successfully
           </div>
         )}
