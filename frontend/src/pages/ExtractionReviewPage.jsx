@@ -696,7 +696,7 @@ export default function ExtractionReviewPage() {
               Generation Failed
             </h2>
             <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '22px', lineHeight: 1.5, wordBreak: 'break-word' }}>
-              {analysisError}
+              {(analysisError || '').replace(/from LLM across any chunks\.?/i, '').replace(/from LLM\.?/i, '').trim()}
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
               <button

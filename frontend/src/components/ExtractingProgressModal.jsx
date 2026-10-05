@@ -80,11 +80,12 @@ export default function ExtractingProgressModal({
 
         <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px', lineHeight: 1.45 }}>
           {serverStep ? (
-            <span style={{ color: '#0f172a', fontWeight: 600 }}>{serverStep}</span>
+            <span style={{ color: '#0f172a', fontWeight: 600 }}>
+              {serverStep.replace(/Document\s+\d+[\/|of]\d+\s*(\([^)]*\))?\s*—?\s*/i, '').replace(/\(\d+\s*[\/|of]\s*\d+\s*Documents Completed\)/i, '').trim() || serverStep}
+            </span>
           ) : (
             <>
               Analyzing <strong style={{ color: '#0f172a' }}>{documentName}</strong>
-              {safeDocCount > 1 && ` and ${safeDocCount - 1} other source(s)`}
             </>
           )}
         </p>
@@ -144,7 +145,7 @@ export default function ExtractingProgressModal({
           </div>
           <div style={{ textAlign: 'right', maxWidth: '65%' }}>
             <span style={{ fontSize: '11.5px', color: '#64748b', lineHeight: 1.4, display: 'block' }}>
-              Processing may take several minutes depending on document length and AI service response time.
+              Processing documents and visual observations in progress.
             </span>
           </div>
         </div>

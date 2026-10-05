@@ -117,7 +117,7 @@ class BriefAgent:
             )
             cards = self._generate_cards_for_chunk(prompt)
             if not cards:
-                raise RuntimeError("Unable to generate Brief Cards from LLM.")
+                raise RuntimeError("Unable to generate Brief Cards.")
             logger.info(f"Generated {len(cards)} cards via LLM (single chunk).")
             return self._deduplicate_cards(cards)
 
@@ -151,7 +151,7 @@ class BriefAgent:
             all_candidate_cards.extend(chunk_cards)
 
         if not all_candidate_cards:
-            raise RuntimeError("Unable to generate Brief Cards from LLM across any chunks.")
+            raise RuntimeError("Unable to generate Brief Cards.")
 
         # Deduplicate overlapping cards
         final_cards = self._deduplicate_cards(all_candidate_cards)

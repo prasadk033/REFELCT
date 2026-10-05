@@ -811,9 +811,63 @@ export default function ProjectOverviewPage() {
               <h1 className="pov-title">{project?.name || 'Project Overview'}</h1>
               <span className="pov-badge-active">Active</span>
             </div>
-            <p className="pov-subtitle">
-              {project?.project_type || 'Residential Project'} • {project?.location || 'Studio Workspace'}
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
+              <p className="pov-subtitle" style={{ margin: 0 }}>
+                {project?.project_type || 'Residential Project'} • {project?.location || 'Studio Workspace'}
+              </p>
+              <span style={{ color: '#cbd5e1' }}>•</span>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                <span title="Site Location">🌍</span>
+                {project?.site_url ? (
+                  <>
+                    <a
+                      href={project.site_url.startsWith('http') ? project.site_url : `https://${project.site_url}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: '#2563eb', textDecoration: 'none', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}
+                      title={project.site_url}
+                    >
+                      {project.site_url.replace(/^https?:\/\//, '')}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSiteLocationInput(project.site_url)
+                        setIsEditingLocation(true)
+                        setShowSiteLocationModal(true)
+                      }}
+                      style={{ background: 'transparent', border: 'none', padding: '0 2px', color: '#64748b', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}
+                    >
+                      Edit
+                    </button>
+                    {sources.some(s => s.file_type === 'virtual/osm' && s.extracted_text) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const analyzedSource = sources.filter(s => s.file_type === 'virtual/osm' && s.extracted_text).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                          if (analyzedSource) setViewingSource(analyzedSource);
+                        }}
+                        style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '1px 6px', color: '#0f172a', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
+                      >
+                        View Analysis
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSiteLocationInput('')
+                      setIsEditingLocation(true)
+                      setShowSiteLocationModal(true)
+                    }}
+                    style={{ background: 'transparent', border: 'none', padding: 0, color: '#2563eb', cursor: 'pointer', fontSize: '13px', fontWeight: 500, textDecoration: 'underline' }}
+                  >
+                    + Connect Location
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="pov-top-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1064,74 +1118,6 @@ export default function ProjectOverviewPage() {
               className="pov-sketch-img"
             />
           </div>
-        </section>
-
-        {/* SECTION 1.5: Site Location */}
-        <section className="pov-sources-section" style={{ marginBottom: '24px' }}>
-          <div className="pov-sources-header" style={{ borderBottom: '1px solid #cbd5e1', paddingBottom: '16px', marginBottom: '16px' }}>
-            <h2 className="pov-section-title">🌍 Site Location</h2>
-          </div>
-          {!project?.site_url ? (
-            <div className="pov-empty-sources" style={{ textAlign: 'left', padding: '16px' }}>
-              <p style={{ margin: '0 0 16px 0' }}>No site location configured.</p>
-              <button className="pov-btn-add-doc" onClick={() => {
-                setSiteLocationInput('')
-                setIsEditingLocation(true)
-                setShowSiteLocationModal(true)
-              }}>
-                Connect Site Location
-              </button>
-            </div>
-          ) : (
-            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-              <div style={{ flex: 1, minWidth: '250px' }}>
-                <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '14px' }}>Location:</span>
-                  <a href={project.site_url.startsWith('http') ? project.site_url : `https://${project.site_url}`} target="_blank" rel="noreferrer" style={{ fontSize: '13px', color: '#2563eb', textDecoration: 'none', wordBreak: 'break-all' }}>
-                    {project.site_url}
-                  </a>
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                  <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '14px' }}>Status:</span>
-                  <span style={{ fontSize: '13px', color: '#475569', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    {sources.some(s => s.file_type === 'virtual/osm' && s.version === null && s.processing_status === 'uploaded') 
-                     ? (sources.some(s => s.file_type === 'virtual/osm' && s.version !== null) 
-                        ? <><span style={{width:8,height:8,borderRadius:'50%',background:'#eab308'}}></span> Updated — extraction pending</>
-                        : <><span style={{width:8,height:8,borderRadius:'50%',background:'#94a3b8'}}></span> Not yet analyzed</>)
-                     : <><span style={{width:8,height:8,borderRadius:'50%',background:'#22c55e'}}></span> Analysis completed</>}
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  className="bui-btn bui-btn-outline"
-                  style={{ background: '#ffffff', borderColor: '#cbd5e1', padding: '6px 12px', fontSize: '13px' }}
-                  onClick={() => {
-                    setSiteLocationInput(project.site_url)
-                    setIsEditingLocation(true)
-                    setShowSiteLocationModal(true)
-                  }}
-                  disabled={uploading || analyzing}
-                >
-                  Edit
-                </button>
-                {sources.some(s => s.file_type === 'virtual/osm' && s.extracted_text) && (
-                  <button
-                    className="bui-btn bui-btn-secondary"
-                    style={{ background: '#f1f5f9', color: '#0f172a', borderColor: '#cbd5e1', padding: '6px 12px', fontSize: '13px' }}
-                    onClick={() => {
-                      const analyzedSource = sources.filter(s => s.file_type === 'virtual/osm' && s.extracted_text).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
-                      if (analyzedSource) setViewingSource(analyzedSource);
-                    }}
-                  >
-                    View Analysis
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
         </section>
 
         {/* SECTION 2: Project Sources (Grouped by Version Header) */}
@@ -1516,8 +1502,8 @@ export default function ProjectOverviewPage() {
         {/* DOCUMENT TEXT INSPECTOR MODAL */}
         {viewingSource && (
           <div className="bui-modal-overlay" onClick={() => setViewingSource(null)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
-            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px', width: '90%', background: '#ffffff', borderRadius: '12px', padding: '24px 28px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '16px' }}>
+            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px', width: '92%', background: '#ffffff', borderRadius: '12px', padding: '20px 24px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px', marginBottom: '14px' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                     <span style={{ background: '#0f172a', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
@@ -1537,7 +1523,7 @@ export default function ProjectOverviewPage() {
                       </span>
                     )}
                   </div>
-                  <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                  <h2 style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', margin: 0, wordBreak: 'break-all' }}>
                     {viewingSource.file_name}
                   </h2>
                 </div>
@@ -1545,25 +1531,25 @@ export default function ProjectOverviewPage() {
                   type="button"
                   className="bui-close-btn"
                   onClick={() => setViewingSource(null)}
-                  style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}
+                  style={{ background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}
                 >
                   ✕
                 </button>
               </div>
 
-              <div style={{ marginBottom: '18px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '8px' }}>
+              <div style={{ marginBottom: '14px' }}>
+                <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '6px' }}>
                   {viewingSource.file_type === 'image' ? 'Visual Site Observations & Extracted Text' : 'Extracted Document Content'}
                 </span>
                 <div style={{
-                  maxHeight: '400px',
+                  maxHeight: '220px',
                   overflowY: 'auto',
                   background: '#f8fafc',
-                  padding: '16px',
+                  padding: '12px 14px',
                   borderRadius: '8px',
                   border: '1px solid #e2e8f0',
-                  fontSize: '12.5px',
-                  lineHeight: 1.6,
+                  fontSize: '12px',
+                  lineHeight: 1.5,
                   color: '#1e293b',
                   whiteSpace: 'pre-wrap',
                   fontFamily: 'Consolas, Monaco, monospace'
@@ -1576,18 +1562,18 @@ export default function ProjectOverviewPage() {
                 <button
                   type="button"
                   className="bui-btn bui-btn-outline"
-                  style={{ padding: '8px 16px', fontSize: '12.5px', color: '#2563eb', borderColor: '#cbd5e1' }}
+                  style={{ padding: '6px 14px', fontSize: '12px', color: '#2563eb', borderColor: '#cbd5e1' }}
                   onClick={() => {
                     setViewingSource(null)
                     navigate(`/projects/${projectId}/extract`)
                   }}
                 >
-                  ✏ Open in Review Editor →
+                  ✏ Open in Editor →
                 </button>
                 <button
                   type="button"
                   className="bui-btn"
-                  style={{ background: '#0f172a', color: '#ffffff', padding: '8px 18px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                  style={{ background: '#0f172a', color: '#ffffff', padding: '6px 16px', borderRadius: '6px', fontSize: '12.5px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
                   onClick={() => setViewingSource(null)}
                 >
                   Close
@@ -2148,21 +2134,21 @@ export default function ProjectOverviewPage() {
         {/* ANALYSIS ERROR MODAL */}
         {analysisError && (
           <div className="bui-modal-overlay" onClick={() => setAnalysisError(null)} style={{ background: 'rgba(5, 7, 12, 0.85)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
-            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px', textAlign: 'center', padding: '32px 28px', background: '#ffffff', borderRadius: '12px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
-              <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#fef2f2', border: '1.5px solid #fecaca', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '24px' }}>
+            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '460px', textAlign: 'center', padding: '28px 24px', background: '#ffffff', borderRadius: '12px', color: '#0f172a', boxShadow: '0 20px 50px rgba(0,0,0,0.18)' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#fef2f2', border: '1.5px solid #fecaca', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px auto', fontSize: '22px' }}>
                 ⚠️
               </div>
-              <h2 style={{ fontSize: '19px', fontWeight: 700, color: '#991b1b', marginBottom: '8px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#991b1b', marginBottom: '8px' }}>
                 Generation Failed
               </h2>
-              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '22px', lineHeight: 1.5, wordBreak: 'break-word' }}>
-                {analysisError}
+              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px', lineHeight: 1.5, wordBreak: 'break-word' }}>
+                {(analysisError || '').replace(/from LLM across any chunks\.?/i, '').replace(/from LLM\.?/i, '').trim()}
               </p>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
                 <button
                   type="button"
                   className="bui-btn bui-btn-outline"
-                  style={{ padding: '10px 18px', fontSize: '13px', color: '#64748b', borderColor: '#cbd5e1' }}
+                  style={{ padding: '8px 18px', fontSize: '13px', color: '#64748b', borderColor: '#cbd5e1' }}
                   onClick={() => setAnalysisError(null)}
                 >
                   Dismiss
@@ -2170,7 +2156,7 @@ export default function ProjectOverviewPage() {
                 <button
                   type="button"
                   className="bui-btn"
-                  style={{ background: '#0f172a', color: '#ffffff', padding: '10px 20px', borderRadius: '8px', fontWeight: 600, border: 'none', cursor: 'pointer', fontSize: '13px' }}
+                  style={{ background: '#0f172a', color: '#ffffff', padding: '8px 20px', borderRadius: '8px', fontWeight: 600, border: 'none', cursor: 'pointer', fontSize: '13px' }}
                   onClick={() => {
                     setAnalysisError(null)
                     handleRunAnalysis()
@@ -2185,28 +2171,41 @@ export default function ProjectOverviewPage() {
 
         {/* SITE LOCATION MODAL */}
         {showSiteLocationModal && (
-          <div className="bui-modal-overlay" onClick={() => !siteLocationLoading && setShowSiteLocationModal(false)} style={{ background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(5px)', zIndex: 1100 }}>
-            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px', width: '90%', padding: '32px', background: '#ffffff', borderRadius: '16px', color: '#0f172a', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
-              
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-                <h3 style={{ fontSize: '20px', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="20" height="20">
+          <div className="bui-modal-overlay" onClick={() => !siteLocationLoading && setShowSiteLocationModal(false)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1100 }}>
+            <div
+              className="bui-modal"
+              onClick={e => e.stopPropagation()}
+              style={{
+                maxWidth: '460px',
+                width: '92%',
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
+                padding: '22px 24px',
+                color: '#0f172a',
+                boxSizing: 'border-box'
+              }}
+            >
+              <div className="bui-modal-header" style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '12px', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '17px', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" width="18" height="18">
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
                   </svg>
                   Connect Site Location
                 </h3>
                 <button
                   type="button"
+                  className="bui-close-btn"
                   onClick={() => setShowSiteLocationModal(false)}
                   disabled={siteLocationLoading}
-                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '20px', padding: '4px' }}
                 >
                   ✕
                 </button>
               </div>
 
               {error && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '20px' }}>
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 14px', borderRadius: '6px', fontSize: '12.5px', marginBottom: '16px' }}>
                   {error}
                 </div>
               )}
@@ -2219,8 +2218,8 @@ export default function ProjectOverviewPage() {
                   handleSaveSiteLocation(e)
                 }
               }}>
-                <div className="bui-form-group" style={{ marginBottom: '24px' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155', marginBottom: '8px', display: 'block' }}>
+                <div className="bui-form-group" style={{ marginBottom: '18px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '6px', display: 'block' }}>
                     Google Maps URL or Coordinates
                   </label>
                   <input
@@ -2232,22 +2231,23 @@ export default function ProjectOverviewPage() {
                     disabled={siteLocationLoading || !isEditingLocation}
                     autoFocus={isEditingLocation}
                     style={{
-                      background: !isEditingLocation ? '#f1f5f9' : '#f8fafc',
-                      border: '1.5px solid #cbd5e1',
-                      padding: '12px 16px',
-                      borderRadius: '8px',
-                      fontSize: '14px',
+                      background: !isEditingLocation ? '#f1f5f9' : '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      padding: '10px 14px',
+                      borderRadius: '6px',
+                      fontSize: '13.5px',
                       width: '100%',
+                      boxSizing: 'border-box',
                       cursor: !isEditingLocation ? 'not-allowed' : 'text',
                       color: !isEditingLocation ? '#475569' : '#0f172a'
                     }}
                   />
-                  <p style={{ fontSize: '12.5px', color: '#64748b', marginTop: '8px', lineHeight: 1.5 }}>
+                  <p style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', lineHeight: 1.45 }}>
                     Providing a location allows REFLECT to query OpenStreetMap and generate a Site Analysis brief card.
                   </p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '32px' }}>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
                   <button
                     type="button"
                     className="bui-btn bui-btn-outline"
@@ -2260,7 +2260,7 @@ export default function ProjectOverviewPage() {
                       }
                     }}
                     disabled={siteLocationLoading}
-                    style={{ padding: '10px 20px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#475569', borderColor: '#cbd5e1' }}
+                    style={{ padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 500, color: '#64748b', borderColor: '#cbd5e1' }}
                   >
                     Cancel
                   </button>
@@ -2269,9 +2269,9 @@ export default function ProjectOverviewPage() {
                     className="bui-btn bui-btn-primary"
                     disabled={(isEditingLocation && !siteLocationInput.trim()) || siteLocationLoading}
                     style={{
-                      padding: '10px 24px',
-                      borderRadius: '8px',
-                      fontSize: '14px',
+                      padding: '8px 20px',
+                      borderRadius: '6px',
+                      fontSize: '13px',
                       fontWeight: 600,
                       background: '#0f172a',
                       color: '#ffffff',

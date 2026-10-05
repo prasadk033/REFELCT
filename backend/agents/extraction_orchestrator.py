@@ -68,58 +68,9 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     db.commit()
 
                 if needs_osm_extraction:
-                    if osm_source.processing_status != "processing":
-                        osm_source.processing_status = "processing"
-                        db.commit()
-
-                    geo_res = osm_service.geocode_location(project.site_url)
-                    if geo_res:
-                        lat, lon, addr = geo_res
-                        
-                        # Check cache first using exact coordinates
-                        cached_osm = db.query(SiteAnalysisCache).filter(
-                            SiteAnalysisCache.project_id == project_id,
-                            SiteAnalysisCache.radius == 3000,
-                            SiteAnalysisCache.provider == "openstreetmap",
-                            SiteAnalysisCache.latitude == str(lat),
-                            SiteAnalysisCache.longitude == str(lon)
-                        ).first()
-                        
-                        structured_analysis = None
-                        if cached_osm:
-                            structured_analysis = cached_osm.structured_analysis
-                        else:
-                            raw_osm = osm_service.query_overpass(lat, lon, radius=3000)
-                            if raw_osm.get("elements"):
-                                structured_analysis = osm_service.analyze_site_context(raw_osm, lat, lon, radius=3000, address=addr)
-                                new_cache = SiteAnalysisCache(
-                                    id=str(uuid.uuid4()),
-                                    project_id=project_id,
-                                    latitude=str(lat),
-                                    longitude=str(lon),
-                                    radius=3000,
-                                    structured_analysis=structured_analysis
-                                )
-                                db.add(new_cache)
-                        
-                        if structured_analysis:
-                            osm_source.extracted_text = osm_service.format_as_markdown(structured_analysis)
-                            osm_source.processing_status = "extracted"
-                            osm_source.approval_status = "pending_review"
-                        else:
-                            osm_source.extracted_text = "Unable to retrieve site analysis elements from OpenStreetMap."
-                            osm_source.processing_status = "failed"
-                    else:
-                        osm_source.extracted_text = f"Unable to geocode location: {project.site_url}"
-                        osm_source.processing_status = "failed"
-                        
-                    db.commit()
+                    _perform_osm_analysis(db, project_id, project.site_url, osm_source)
             except Exception as e:
-                logger.error(f"[{project_id}] OSM Virtual Source failed: {e}")
-                if 'osm_source' in locals() and osm_source:
-                    osm_source.processing_status = "failed"
-                    osm_source.extracted_text = f"Failed to generate OSM site analysis: {e}"
-                    db.commit()
+                logger.error(f"[{project_id}] OSM Virtual Source setup failed: {e}")
         # ---------------------------------------------
 
         # Target specific sources if provided, otherwise all pending
@@ -288,6 +239,20 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                 project_id=project_id,
             )
 
+        # Phase 2.5: Safety retry — if OSM extraction initially failed due to Overpass load, check and retry before concluding
+        if project and project.site_url:
+            try:
+                active_osm = db.query(Source).filter(
+                    Source.project_id == project_id,
+                    Source.file_type == "virtual/osm",
+                    Source.version.is_(None)
+                ).first()
+                if active_osm and active_osm.processing_status != "extracted":
+                    logger.info(f"[{project_id}] Retrying OSM Site Analysis after document extraction...")
+                    _perform_osm_analysis(db, project_id, project.site_url, active_osm)
+            except Exception as osm_retry_err:
+                logger.warning(f"[{project_id}] Post-extraction OSM retry error: {osm_retry_err}")
+
         elapsed = time.time() - pipeline_start
 
         if failed_docs and completed_count == 0:
@@ -413,3 +378,64 @@ def _update_job(
             job.questions_count = questions_count
         job.updated_at = datetime.now(timezone.utc)
         db.commit()
+
+
+def _perform_osm_analysis(db, project_id: str, site_url: str, osm_source: Source) -> bool:
+    """Attempts to geocode and extract OpenStreetMap site context for the project."""
+    if not site_url or not osm_source:
+        return False
+    try:
+        if osm_source.processing_status != "processing":
+            osm_source.processing_status = "processing"
+            db.commit()
+
+        geo_res = osm_service.geocode_location(site_url)
+        if geo_res:
+            lat, lon, addr = geo_res
+            cached_osm = db.query(SiteAnalysisCache).filter(
+                SiteAnalysisCache.project_id == project_id,
+                SiteAnalysisCache.radius == 3000,
+                SiteAnalysisCache.provider == "openstreetmap",
+                SiteAnalysisCache.latitude == str(lat),
+                SiteAnalysisCache.longitude == str(lon)
+            ).first()
+
+            structured_analysis = None
+            if cached_osm:
+                structured_analysis = cached_osm.structured_analysis
+            else:
+                raw_osm = osm_service.query_overpass(lat, lon, radius=3000)
+                if raw_osm.get("elements"):
+                    structured_analysis = osm_service.analyze_site_context(raw_osm, lat, lon, radius=3000, address=addr)
+                    new_cache = SiteAnalysisCache(
+                        id=str(uuid.uuid4()),
+                        project_id=project_id,
+                        latitude=str(lat),
+                        longitude=str(lon),
+                        radius=3000,
+                        structured_analysis=structured_analysis
+                    )
+                    db.add(new_cache)
+
+            if structured_analysis:
+                osm_source.extracted_text = osm_service.format_as_markdown(structured_analysis)
+                osm_source.processing_status = "extracted"
+                osm_source.approval_status = "pending_review"
+                osm_source.processing_error = None
+                db.commit()
+                logger.info(f"[{project_id}] OSM site analysis extracted successfully.")
+                return True
+            else:
+                osm_source.extracted_text = "Unable to retrieve site analysis elements from OpenStreetMap."
+                osm_source.processing_status = "failed"
+        else:
+            osm_source.extracted_text = f"Unable to geocode location: {site_url}"
+            osm_source.processing_status = "failed"
+        db.commit()
+    except Exception as e:
+        logger.error(f"[{project_id}] OSM Virtual Source failed: {e}")
+        osm_source.processing_status = "failed"
+        osm_source.extracted_text = f"Failed to generate OSM site analysis: {e}"
+        db.commit()
+    return False
+

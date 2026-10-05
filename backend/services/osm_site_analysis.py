@@ -89,38 +89,54 @@ class OSMSiteAnalysisService:
             return None
 
     def query_overpass(self, lat: float, lon: float, radius: int = 3000) -> Dict[str, Any]:
-        """Queries Overpass API for features within radius."""
+        """Queries Overpass API for features within radius, with multi-endpoint fallback and retry."""
         logger.info(f"Querying Overpass for lat={lat}, lon={lon}, r={radius}")
         
-        # Build Overpass QL query
-        query = f"""
-        [out:json][timeout:50];
-        (
-          way["highway"](around:{radius},{lat},{lon});
-          node["public_transport"](around:{radius},{lat},{lon});
-          node["railway"="station"](around:{radius},{lat},{lon});
-          way["building"](around:{radius},{lat},{lon});
-          way["landuse"](around:{radius},{lat},{lon});
-          way["leisure"](around:{radius},{lat},{lon});
-          way["natural"](around:{radius},{lat},{lon});
-          way["waterway"](around:{radius},{lat},{lon});
-          node["amenity"](around:{radius},{lat},{lon});
-          way["amenity"](around:{radius},{lat},{lon});
-        );
-        out center;
-        """
-        
-        data = urllib.parse.urlencode({"data": query}).encode("utf-8")
-        req = urllib.request.Request(self.overpass_url, data=data)
-        req.add_header("User-Agent", self.user_agent)
-        
-        try:
-            response = urllib.request.urlopen(req, context=self.ctx, timeout=60)
-            result = json.loads(response.read().decode("utf-8"))
-            return result
-        except Exception as e:
-            logger.error(f"Overpass query failed: {e}")
-            return {"elements": []}
+        endpoints = [
+            self.overpass_url,
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+        ]
+        # Remove duplicates while preserving order
+        seen = set()
+        endpoints = [e for e in endpoints if e and not (e in seen or seen.add(e))]
+
+        # If a large radius fails or times out, try a slightly tighter radius (1500m)
+        radii_to_try = [radius] if radius <= 1500 else [radius, 1500]
+
+        for r in radii_to_try:
+            query = f"""
+            [out:json][timeout:35];
+            (
+              way["highway"](around:{r},{lat},{lon});
+              node["public_transport"](around:{r},{lat},{lon});
+              node["railway"="station"](around:{r},{lat},{lon});
+              way["building"](around:{r},{lat},{lon});
+              way["landuse"](around:{r},{lat},{lon});
+              way["leisure"](around:{r},{lat},{lon});
+              way["natural"](around:{r},{lat},{lon});
+              way["waterway"](around:{r},{lat},{lon});
+              node["amenity"](around:{r},{lat},{lon});
+              way["amenity"](around:{r},{lat},{lon});
+            );
+            out center;
+            """
+            data = urllib.parse.urlencode({"data": query}).encode("utf-8")
+
+            for ep in endpoints:
+                try:
+                    req = urllib.request.Request(ep, data=data)
+                    req.add_header("User-Agent", self.user_agent)
+                    response = urllib.request.urlopen(req, context=self.ctx, timeout=40)
+                    result = json.loads(response.read().decode("utf-8"))
+                    if result and result.get("elements"):
+                        logger.info(f"Overpass query succeeded via {ep} with {len(result['elements'])} elements (r={r}m)")
+                        return result
+                except Exception as e:
+                    logger.warning(f"Overpass query to {ep} failed (r={r}m): {e}")
+
+        logger.error(f"All Overpass endpoints failed for lat={lat}, lon={lon}")
+        return {"elements": []}
 
     def _get_distance(self, element: Dict[str, Any], center_lat: float, center_lon: float) -> int:
         if "center" in element:
