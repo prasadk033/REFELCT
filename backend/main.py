@@ -58,6 +58,7 @@ from routes.briefs import router as briefs_router
 from routes.cards import router as cards_router
 from routes.activities import router as activities_router
 from routes.jobs import router as jobs_router
+from routes.program import router as program_router
 
 app.include_router(projects_router)
 app.include_router(sources_router)
@@ -65,6 +66,7 @@ app.include_router(briefs_router)
 app.include_router(cards_router)
 app.include_router(activities_router)
 app.include_router(jobs_router)
+app.include_router(program_router)
 
 
 

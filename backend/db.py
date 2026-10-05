@@ -2,7 +2,8 @@
 PostgreSQL application database — SQLAlchemy ORM models and session management.
 
 This is the Reflect application database (separate from LiteLLM's database).
-Contains: users, projects, sources, briefs, cards, processing_jobs.
+Contains: users, projects, sources, briefs, cards, processing_jobs,
+          program_items, program_questions, brief/program published versions.
 """
 import logging
 from datetime import datetime, timezone
@@ -92,6 +93,10 @@ class Project(Base):
     cards = relationship("Card", back_populates="project", cascade="all, delete-orphan")
     processing_jobs = relationship("ProcessingJob", back_populates="project", cascade="all, delete-orphan")
     activity_logs = relationship("ActivityLog", foreign_keys="ActivityLog.project_id", cascade="all, delete-orphan")
+    program_items = relationship("ProgramItem", back_populates="project", cascade="all, delete-orphan")
+    program_questions = relationship("ProgramQuestion", back_populates="project", cascade="all, delete-orphan")
+    brief_published_versions = relationship("BriefPublishedVersion", back_populates="project", cascade="all, delete-orphan")
+    program_published_versions = relationship("ProgramPublishedVersion", back_populates="project", cascade="all, delete-orphan")
 
 
 class Source(Base):
@@ -239,6 +244,122 @@ class ActivityLog(Base):
     project = relationship("Project")
 
 
+# ── New Models: Program Workspace ────────────────────────────────────────────
+
+class ProgramItem(Base):
+    """A single Program Card / Program Item in the working dataset."""
+    __tablename__ = "program_items"
+
+    id = Column(String, primary_key=True)  # UUID
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    program_item_code = Column(String, nullable=True)  # PRG-001, PRG-002, etc.
+    name = Column(String, nullable=False)
+    type = Column(String, nullable=False, default="SPACE")  # SPACE, REQUIREMENT, FUNCTION
+    requirement = Column(Text, nullable=True)
+    function = Column(String, nullable=True)
+    quantity = Column(Float, nullable=True)
+    capacity = Column(String, nullable=True)
+    area = Column(Float, nullable=True)
+    unit = Column(String, nullable=True)
+    key_considerations = Column(JSON, nullable=True)  # List of strings
+    notes = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="PROVISIONAL")  # CONFIRMED, PROVISIONAL, UNDER_REVIEW, QUESTION
+    source_brief_card_ids = Column(JSON, nullable=True)  # List of card IDs this was derived from
+    source_brief_version_id = Column(String, ForeignKey("briefs.id"), nullable=True)  # Which brief gen run produced this
+    created_by = Column(String, nullable=False, default="AI")  # AI or ARCHITECT
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    project = relationship("Project", back_populates="program_items")
+    questions = relationship("ProgramQuestion", back_populates="program_item", cascade="all, delete-orphan")
+
+
+class ProgramQuestion(Base):
+    """An AI-generated clarification question for a Program Item."""
+    __tablename__ = "program_questions"
+
+    id = Column(String, primary_key=True)  # UUID
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    program_item_id = Column(String, ForeignKey("program_items.id", ondelete="SET NULL"), nullable=True, index=True)
+    question = Column(Text, nullable=False)
+    reason = Column(Text, nullable=True)
+    source_brief_card_ids = Column(JSON, nullable=True)  # List of brief card IDs
+    status = Column(String, nullable=False, default="OPEN")  # OPEN, ANSWERED, DISMISSED
+    answer = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    project = relationship("Project", back_populates="program_questions")
+    program_item = relationship("ProgramItem", back_populates="questions")
+
+
+# ── New Models: Version Management ──────────────────────────────────────────
+
+class BriefPublishedVersion(Base):
+    """An immutable published snapshot of the Brief working dataset."""
+    __tablename__ = "brief_published_versions"
+    __table_args__ = (
+        UniqueConstraint("project_id", "version_number", name="uq_brief_project_version"),
+    )
+
+    id = Column(String, primary_key=True)  # UUID
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    version_number = Column(Integer, nullable=False)  # 1, 2, 3...
+    card_count = Column(Integer, nullable=False, default=0)
+    published_at = Column(DateTime, default=utc_now)
+    published_by = Column(String, ForeignKey("users.id"), nullable=True)
+
+    project = relationship("Project", back_populates="brief_published_versions")
+    snapshot_cards = relationship("BriefVersionCard", back_populates="brief_version", cascade="all, delete-orphan")
+
+
+class BriefVersionCard(Base):
+    """Snapshot of a single Card at the time a Brief was published."""
+    __tablename__ = "brief_version_cards"
+
+    id = Column(String, primary_key=True)  # UUID
+    brief_version_id = Column(String, ForeignKey("brief_published_versions.id", ondelete="CASCADE"), nullable=False, index=True)
+    card_id = Column(String, ForeignKey("cards.id", ondelete="SET NULL"), nullable=True)  # Original card (may be deleted later)
+    snapshot_data = Column(JSON, nullable=False)  # Full card data at publish time (immutable)
+
+    brief_version = relationship("BriefPublishedVersion", back_populates="snapshot_cards")
+
+
+class ProgramPublishedVersion(Base):
+    """An immutable published snapshot of the Program working dataset."""
+    __tablename__ = "program_published_versions"
+    __table_args__ = (
+        UniqueConstraint("project_id", "version_number", name="uq_program_project_version"),
+    )
+
+    id = Column(String, primary_key=True)  # UUID
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    version_number = Column(Integer, nullable=False)  # 1, 2, 3...
+    source_brief_version_id = Column(String, ForeignKey("brief_published_versions.id"), nullable=True)  # Which Brief version was used
+    previous_program_version_id = Column(String, ForeignKey("program_published_versions.id"), nullable=True)  # Previous program version context
+    item_count = Column(Integer, nullable=False, default=0)
+    published_at = Column(DateTime, default=utc_now)
+    published_by = Column(String, ForeignKey("users.id"), nullable=True)
+
+    project = relationship("Project", back_populates="program_published_versions")
+    snapshot_items = relationship("ProgramVersionItem", back_populates="program_version", cascade="all, delete-orphan")
+    source_brief_version = relationship("BriefPublishedVersion", foreign_keys=[source_brief_version_id])
+
+
+class ProgramVersionItem(Base):
+    """Snapshot of a single Program Item at the time a Program was published."""
+    __tablename__ = "program_version_items"
+
+    id = Column(String, primary_key=True)  # UUID
+    program_version_id = Column(String, ForeignKey("program_published_versions.id", ondelete="CASCADE"), nullable=False, index=True)
+    program_item_id = Column(String, ForeignKey("program_items.id", ondelete="SET NULL"), nullable=True)  # Original item
+    snapshot_data = Column(JSON, nullable=False)  # Full item data at publish time (immutable)
+
+    program_version = relationship("ProgramPublishedVersion", back_populates="snapshot_items")
+
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+
 def log_activity(db: SessionLocal, user_id: str, event_type: str, title: str, description: str = None, project_id: str = None):
     """Utility to record a real system activity event in the database."""
     import uuid
@@ -271,7 +392,7 @@ def init_db():
     try:
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
-        
+
         # Check sources table columns
         if "sources" in existing_tables:
             source_cols = [c["name"] for c in inspector.get_columns("sources")]
@@ -287,7 +408,7 @@ def init_db():
                             conn.execute(text(f"ALTER TABLE sources ADD COLUMN {col} {col_type};"))
                     except Exception as err:
                         logger.warning(f"Could not add {col} to sources: {err}")
-        
+
         # Check cards table columns
         if "cards" in existing_tables:
             card_cols = [c["name"] for c in inspector.get_columns("cards")]
@@ -328,7 +449,7 @@ def init_db():
                             conn.execute(text(f"ALTER TABLE processing_jobs ADD COLUMN {col} {col_type};"))
                     except Exception as err:
                         logger.warning(f"Could not add {col} to processing_jobs: {err}")
-            
+
             # Enforce DB-level composite uniqueness index on (project_id, idempotency_key)
             try:
                 with engine.begin() as conn:
@@ -336,12 +457,11 @@ def init_db():
             except Exception as idx_err:
                 logger.warning(f"Index creation notice: {idx_err}")
 
-            # Backfill existing historical jobs older than 15 mins to notification_seen=True so they never pop up retrospectively
+            # Backfill existing historical jobs older than 15 mins to notification_seen=True
             try:
                 with engine.begin() as conn:
                     conn.execute(text("UPDATE processing_jobs SET notification_seen = TRUE WHERE (notification_seen IS FALSE OR notification_seen IS NULL) AND created_at < (NOW() - INTERVAL '15 minutes');"))
             except Exception as bf_err:
-                # May fail on SQLite (uses different datetime syntax), handle gracefully
                 try:
                     with engine.begin() as conn:
                         conn.execute(text("UPDATE processing_jobs SET notification_seen = 1 WHERE (notification_seen = 0 OR notification_seen IS NULL) AND created_at < datetime('now', '-15 minutes');"))
@@ -354,9 +474,28 @@ def init_db():
                     conn.execute(text("UPDATE sources SET approval_status = 'pending', processing_status = 'failed' WHERE (extracted_text IS NULL OR TRIM(extracted_text) = '') AND approval_status = 'approved';"))
             except Exception as clean_src_err:
                 logger.warning(f"Notice sanitizing unextracted sources: {clean_src_err}")
-        
+
+        # ── Program & Version Management migrations ──────────────────────────
+        # These tables are created by metadata.create_all above.
+        # Only create unique indexes if they don't already exist.
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_brief_project_version "
+                    "ON brief_published_versions (project_id, version_number);"
+                ))
+        except Exception as idx_err:
+            logger.warning(f"brief_published_versions index notice: {idx_err}")
+
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_program_project_version "
+                    "ON program_published_versions (project_id, version_number);"
+                ))
+        except Exception as idx_err:
+            logger.warning(f"program_published_versions index notice: {idx_err}")
+
         logger.info("Database tables created/verified successfully.")
     except Exception as e:
         logger.warning(f"Database migration notice: {e}")
-
-

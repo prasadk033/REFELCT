@@ -10,19 +10,21 @@ export default function ProjectShell({ children, project }) {
 
   const projectId = project?.id
   const isBrief = location.pathname.includes('/brief')
-  const isOverview = !isBrief
+  const isProgram = location.pathname.includes('/program')
+  const isOverview = !isBrief && !isProgram
+
+  let workspaceLabel = null
+  if (isBrief) workspaceLabel = 'Brief Workspace'
+  if (isProgram) workspaceLabel = 'Program Workspace'
 
   return (
     <div className="p-shell">
-      {/* Project-Specific Sidebar */}
       <aside className="p-sidebar">
-        {/* Brand */}
         <div className="p-sidebar-brand" onClick={() => navigate('/')}>
           <div className="p-logo-icon">R</div>
           <span className="p-brand-name">Reflect</span>
         </div>
 
-        {/* Project Header Widget */}
         <div className="p-sidebar-project-box" onClick={() => projectId && navigate(`/projects/${projectId}`)}>
           <div className="p-project-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="18" height="18">
@@ -31,14 +33,13 @@ export default function ProjectShell({ children, project }) {
           </div>
           <div className="p-project-meta">
             <div className="p-project-title-row">
-              <span className="p-project-title" title={project?.name}>{project?.name || 'Jubilee Hills Residence'}</span>
+              <span className="p-project-title" title={project?.name}>{project?.name || 'Project'}</span>
               <span className="p-project-arrow">▾</span>
             </div>
-            <span className="p-project-sub">{project?.project_type || 'Premium Residential Project'}</span>
+            <span className="p-project-sub">{project?.project_type || 'Project'}</span>
           </div>
         </div>
 
-        {/* Project Navigation Menu */}
         <nav className="p-nav-menu">
           <button
             className={`p-nav-item ${isOverview ? 'active' : ''}`}
@@ -70,8 +71,11 @@ export default function ProjectShell({ children, project }) {
             <span className="p-nav-text">Brief</span>
           </button>
 
-          {/* Placeholders for future workspaces */}
-          <button className="p-nav-item locked" title="Future Workspace">
+          {/* Program — active workspace */}
+          <button
+            className={`p-nav-item ${isProgram ? 'active' : ''}`}
+            onClick={() => projectId && navigate(`/projects/${projectId}/program`)}
+          >
             <span className="p-nav-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -81,7 +85,7 @@ export default function ProjectShell({ children, project }) {
             <span className="p-nav-text">Program</span>
           </button>
 
-          <button className="p-nav-item locked" title="Future Workspace">
+          <button className="p-nav-item locked" title="Coming soon">
             <span className="p-nav-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">
                 <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
@@ -90,7 +94,7 @@ export default function ProjectShell({ children, project }) {
             <span className="p-nav-text">Context</span>
           </button>
 
-          <button className="p-nav-item locked" title="Future Workspace">
+          <button className="p-nav-item locked" title="Coming soon">
             <span className="p-nav-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">
                 <circle cx="12" cy="12" r="10" />
@@ -103,7 +107,7 @@ export default function ProjectShell({ children, project }) {
             <span className="p-nav-text">Focus</span>
           </button>
 
-          <button className="p-nav-item locked" title="Future Workspace">
+          <button className="p-nav-item locked" title="Coming soon">
             <span className="p-nav-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -113,7 +117,7 @@ export default function ProjectShell({ children, project }) {
             <span className="p-nav-text">Problem Frame</span>
           </button>
 
-          <button className="p-nav-item locked" title="Future Workspace">
+          <button className="p-nav-item locked" title="Coming soon">
             <span className="p-nav-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -123,7 +127,6 @@ export default function ProjectShell({ children, project }) {
           </button>
         </nav>
 
-        {/* Project Sidebar Footer with version & sign out */}
         <div className="p-sidebar-footer" style={{ borderTop: 'none', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: '11px', color: '#64748b' }}>Reflect v1.0.0</span>
           <button
@@ -153,12 +156,11 @@ export default function ProjectShell({ children, project }) {
         </div>
       </aside>
 
-      {/* Main Workspace Area */}
       <main className="p-main">
         <TopHeader breadcrumbs={[
           { label: 'Projects', path: '/overview' },
           { label: project?.name || 'Loading...', path: `/projects/${projectId}` },
-          ...(isBrief ? [{ label: 'Brief Workspace' }] : [])
+          ...(workspaceLabel ? [{ label: workspaceLabel }] : [])
         ]} />
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
           <AiHealthBanner />

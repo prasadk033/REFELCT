@@ -131,10 +131,10 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         historical_sources = [s for s in all_approved_sources if s.version is not None and s.version in completed_brief_versions and s not in pending_batch]
 
         # ── Step 1: Ensure Extraction for Pending Batch ──────────────────────
-        _update_job(db, job_id, "parsing", f"Parsing Version {new_version} Documents")
-        print(f"\n[REFLECT] 🚀 Starting Brief Synthesis Pipeline | Project: {project.name} (ID: {project_id[:8]}...) | Target: Version {new_version}")
+        _update_job(db, job_id, "parsing", f"Parsing Document Batch {new_version + 1} Documents")
+        print(f"\n[REFLECT] 🚀 Starting Brief Synthesis Pipeline | Project: {project.name} (ID: {project_id[:8]}...) | Target: Document Batch {new_version + 1}")
         print(f"[REFLECT] 📂 Batch: {len(pending_batch)} new document(s) | Prior History: {len(historical_sources)} existing document(s)")
-        logger.info(f"[{project_id}] Verifying {len(pending_batch)} pending documents for Version {new_version}")
+        logger.info(f"[{project_id}] Verifying {len(pending_batch)} pending documents for Document Batch {new_version + 1}")
 
         source_text_map = {}
 
@@ -172,10 +172,10 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             description=project.description,
         )
 
-        # ── Step 5: Create Brief Version Container ───────────────────────────
-        _update_job(db, job_id, "processing_brief", f"Creating Brief Version (V{new_version})")
-        print(f"[REFLECT] 📝 Creating Brief Version (V{new_version}) container...")
-        logger.info(f"[{project_id}] Creating Brief Version Container for V{new_version}")
+        # ── Step 5: Create Working Brief Container for Batch ─────────────────
+        _update_job(db, job_id, "processing_brief", f"Processing Document Batch {new_version + 1}")
+        print(f"[REFLECT] 📝 Processing Document Batch ({new_version + 1}) container...")
+        logger.info(f"[{project_id}] Creating Working Brief Container for Document Batch {new_version + 1}")
 
         brief_id = str(uuid.uuid4())
         brief = Brief(
@@ -214,10 +214,10 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             job.brief_id = brief_id
             db.commit()
 
-        # ── Step 6: Generate Cards for the New Version ────────────────────────
-        _update_job(db, job_id, "generating_cards", f"Generating Version {new_version} Brief Cards")
-        print(f"[REFLECT] 🤖 Cards are formulated across 9 architectural taxonomies and validated before appearing. (Version {new_version})")
-        logger.info(f"[{project_id}] Generating Cards for pending batch for Brief V{new_version}")
+        # ── Step 6: Generate Cards for the New Batch ─────────────────────────
+        _update_job(db, job_id, "generating_cards", f"Generating Brief Cards for Document Batch {new_version + 1}")
+        print(f"[REFLECT] 🤖 Cards are formulated across 9 architectural taxonomies and validated before appearing. (Document Batch {new_version + 1})")
+        logger.info(f"[{project_id}] Generating Cards for pending batch for Document Batch {new_version + 1}")
 
         total_new_cards = 0
         total_questions = 0
@@ -425,8 +425,8 @@ Return ONLY JSON list.
             db=db,
             user_id=effective_user_id,
             event_type="analysis_completed",
-            title=f"Version {new_version} Brief Generated",
-            description=f"Generated {total_new_cards} Brief Cards for Version {new_version} from {doc_names}",
+            title=f"Document Batch {new_version + 1} Synthesized",
+            description=f"Generated {total_new_cards} Brief Cards for Document Batch {new_version + 1} from {doc_names}",
             project_id=project_id,
         )
 

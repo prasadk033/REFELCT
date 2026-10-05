@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from db import get_db, Project, Source, Brief, Card, User, log_activity
+from db import get_db, Project, Source, Brief, Card, User, log_activity, BriefPublishedVersion
 from auth.dependencies import get_current_user
 from schemas.models import ProjectCreate, ProjectUpdate, ProjectResponse
 from storage import file_store
@@ -126,17 +126,17 @@ def list_projects(
         .all()
     )
 
-    # Batch fetch latest completed brief version per project
-    briefs = (
-        db.query(Brief.project_id, Brief.version)
-        .filter(Brief.project_id.in_(project_ids), Brief.status == "completed")
-        .order_by(Brief.version.desc())
+    # Batch fetch latest published brief version per project (ONLY from BriefPublishedVersion)
+    latest_published_briefs = (
+        db.query(
+            BriefPublishedVersion.project_id,
+            func.max(BriefPublishedVersion.version_number)
+        )
+        .filter(BriefPublishedVersion.project_id.in_(project_ids))
+        .group_by(BriefPublishedVersion.project_id)
         .all()
     )
-    brief_versions = {}
-    for pid, ver in briefs:
-        if pid not in brief_versions:
-            brief_versions[pid] = ver
+    published_brief_versions = dict(latest_published_briefs)
 
     return [
         ProjectResponse(
@@ -150,7 +150,8 @@ def list_projects(
             created_at=p.created_at,
             updated_at=p.updated_at,
             source_count=source_counts.get(p.id, 0),
-            brief_version=brief_versions.get(p.id),
+            brief_version=published_brief_versions.get(p.id),
+            published_brief_version=published_brief_versions.get(p.id),
             card_count=card_counts.get(p.id, 0),
         )
         for p in projects
@@ -250,14 +251,14 @@ def _project_to_response(db: Session, project: Project) -> ProjectResponse:
     """Convert a Project ORM object to ProjectResponse with computed fields."""
     source_count = db.query(func.count(Source.id)).filter(Source.project_id == project.id).scalar() or 0
 
-    # Get latest brief version
-    latest_brief = (
-        db.query(Brief)
-        .filter(Brief.project_id == project.id, Brief.status == "completed")
-        .order_by(Brief.version.desc())
+    # Get latest published brief version (ONLY from BriefPublishedVersion, never legacy briefs)
+    latest_pub = (
+        db.query(BriefPublishedVersion)
+        .filter(BriefPublishedVersion.project_id == project.id)
+        .order_by(BriefPublishedVersion.version_number.desc())
         .first()
     )
-    brief_version = latest_brief.version if latest_brief else None
+    brief_version = latest_pub.version_number if latest_pub else None
 
     card_count = db.query(func.count(Card.id)).filter(Card.project_id == project.id).scalar() or 0
 
@@ -273,5 +274,6 @@ def _project_to_response(db: Session, project: Project) -> ProjectResponse:
         updated_at=project.updated_at,
         source_count=source_count,
         brief_version=brief_version,
+        published_brief_version=brief_version,
         card_count=card_count,
     )

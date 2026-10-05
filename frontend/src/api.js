@@ -284,3 +284,105 @@ export async function getUnacknowledgedJobs() {
 export async function acknowledgeJobNotification(jobId) {
   return apiFetch(`/api/jobs/${jobId}/acknowledge`, { method: "POST" });
 }
+
+// -- Program Workspace --------------------------------------------------------
+
+export async function getProgramSummary(projectId) {
+  return apiFetch(`/api/projects/${projectId}/program`);
+}
+
+export async function listProgramItems(projectId, filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.type) params.set('type', filters.type);
+  if (filters.status) params.set('status', filters.status);
+  if (filters.search) params.set('search', filters.search);
+  const qs = params.toString();
+  return apiFetch(`/api/projects/${projectId}/program/items${qs ? '?' + qs : ''}`);
+}
+
+export async function createProgramItem(projectId, data) {
+  return apiFetch(`/api/projects/${projectId}/program/items`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateProgramItem(itemId, data) {
+  return apiFetch(`/api/program/items/${itemId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteProgramItem(itemId) {
+  return apiFetch(`/api/program/items/${itemId}`, { method: 'DELETE' });
+}
+
+export async function generateProgram(projectId, briefVersionId = null) {
+  const body = briefVersionId ? { brief_version_id: briefVersionId } : {};
+  return apiFetch(`/api/projects/${projectId}/program/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function listProgramQuestions(projectId, status = null) {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const qs = params.toString();
+  return apiFetch(`/api/projects/${projectId}/program/questions${qs ? '?' + qs : ''}`);
+}
+
+export async function updateProgramQuestion(questionId, data) {
+  return apiFetch(`/api/program/questions/${questionId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getBriefSourcesForItem(itemId, programVersionId = null) {
+  const qs = programVersionId ? `?program_version_id=${encodeURIComponent(programVersionId)}` : '';
+  return apiFetch(`/api/program/items/${itemId}/brief-sources${qs}`);
+}
+
+// -- Brief Version Management -------------------------------------------------
+
+export async function getBriefVersionStatus(projectId) {
+  return apiFetch(`/api/projects/${projectId}/brief/version-status`);
+}
+
+export async function listPublishedBriefVersions(projectId, limit = 5) {
+  return apiFetch(`/api/projects/${projectId}/brief/published?limit=${limit}`);
+}
+
+export async function getPublishedBriefVersion(projectId, versionId) {
+  return apiFetch(`/api/projects/${projectId}/brief/published/${versionId}`);
+}
+
+export async function publishBrief(projectId) {
+  return apiFetch(`/api/projects/${projectId}/brief/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+// -- Program Version Management -----------------------------------------------
+
+export async function listPublishedProgramVersions(projectId, limit = 5) {
+  return apiFetch(`/api/projects/${projectId}/program/published?limit=${limit}`);
+}
+
+export async function getPublishedProgramVersion(projectId, versionId) {
+  return apiFetch(`/api/projects/${projectId}/program/published/${versionId}`);
+}
+
+export async function publishProgram(projectId) {
+  return apiFetch(`/api/projects/${projectId}/program/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+}

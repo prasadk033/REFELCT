@@ -4,7 +4,8 @@ import {
   listProjects, getProject,
   listCards, createCard, updateCard, deleteCard,
   acceptCard, rejectCard, listSources, uploadSource,
-  resolveCardReview
+  resolveCardReview,
+  listPublishedBriefVersions, getPublishedBriefVersion, publishBrief, getBriefVersionStatus
 } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 
@@ -296,11 +297,19 @@ export default function BriefPage() {
   // Card Inspector
   const [selectedCard, setSelectedCard] = useState(null)
 
+  // Published Versioning State
+  const [selectedBriefView, setSelectedBriefView] = useState('working') // 'working' | 'published'
+  const [selectedBriefVersionId, setSelectedBriefVersionId] = useState(null)
+  const [publishedBriefVersions, setPublishedBriefVersions] = useState([])
+  const [publishedBriefData, setPublishedBriefData] = useState(null)
+  const [briefVersionStatus, setBriefVersionStatus] = useState(null)
+  const [isPublishingBrief, setIsPublishingBrief] = useState(false)
+  const [showBriefPublishSuccessModal, setShowBriefPublishSuccessModal] = useState(null) // { id, version_number, card_count }
+
   // Modals & Card menus
   const [showAddCard, setShowAddCard] = useState(false)
   const [editingCard, setEditingCard] = useState(null)
   const [activeMenuCardId, setActiveMenuCardId] = useState(null)
-
 
   const [newCard, setNewCard] = useState({
     title: '',
@@ -332,14 +341,18 @@ export default function BriefPage() {
 
       if (currentId) {
         setActiveProjectId(currentId)
-        const [p, c, s] = await Promise.all([
+        const [p, c, s, pubList, status] = await Promise.all([
           getProject(currentId),
           listCards(currentId).catch(() => []),
           listSources(currentId).catch(() => []),
+          listPublishedBriefVersions(currentId, 5).catch(() => []),
+          getBriefVersionStatus(currentId).catch(() => null),
         ])
         setProject(p)
         setCards(c || [])
         setSources(s || [])
+        setPublishedBriefVersions(pubList || [])
+        setBriefVersionStatus(status)
       }
     } catch (err) {
       console.error(err)
@@ -349,7 +362,61 @@ export default function BriefPage() {
     }
   }
 
+  async function handleSelectBriefVersion(target) {
+    if (target === 'working') {
+      setSelectedBriefView('working')
+      setSelectedBriefVersionId(null)
+      setPublishedBriefData(null)
+      try {
+        const [c, status] = await Promise.all([
+          listCards(activeProjectId),
+          getBriefVersionStatus(activeProjectId)
+        ])
+        setCards(c || [])
+        setBriefVersionStatus(status)
+      } catch (err) {
+        showToast(`Failed to load working draft: ${err.message}`)
+      }
+    } else {
+      setSelectedBriefView('published')
+      setSelectedBriefVersionId(target)
+      try {
+        const pub = await getPublishedBriefVersion(activeProjectId, target)
+        setPublishedBriefData(pub)
+        setCards(pub.cards || [])
+      } catch (err) {
+        showToast(`Failed to load published version: ${err.message}`)
+      }
+    }
+  }
+
+  async function handlePublishBrief() {
+    setIsPublishingBrief(true)
+    try {
+      const res = await publishBrief(activeProjectId)
+      setShowBriefPublishSuccessModal({
+        id: res.id,
+        version_number: res.version_number,
+        card_count: res.card_count,
+      })
+      const [pubList, status] = await Promise.all([
+        listPublishedBriefVersions(activeProjectId, 5),
+        getBriefVersionStatus(activeProjectId),
+      ])
+      setPublishedBriefVersions(pubList || [])
+      setBriefVersionStatus(status)
+    } catch (err) {
+      setError(err.message || 'Failed to publish Brief')
+    } finally {
+      setIsPublishingBrief(false)
+    }
+  }
+
   async function handleFileUpload(e) {
+    if (selectedBriefView !== 'working') {
+      showToast('Switch to Current Draft to upload documents.')
+      return
+    }
     const file = e.target.files?.[0]
     if (!file || !activeProjectId) return
     setUploading(true)
@@ -401,6 +468,10 @@ export default function BriefPage() {
   }
 
   async function handleResolveReview(cardId, decision) {
+    if (selectedBriefView !== 'working') {
+      showToast('Published versions are read-only and cannot be modified.')
+      return
+    }
     setResolvingReview(true)
     try {
       await resolveCardReview(cardId, decision)
@@ -422,6 +493,10 @@ export default function BriefPage() {
   }
 
   async function handleStatusChange(cardId, newStatus) {
+    if (selectedBriefView !== 'working') {
+      showToast('Published versions are read-only and cannot be modified.')
+      return
+    }
     if (pendingCards.has(cardId)) return // prevent double-click
     setPendingCards(prev => new Set(prev).add(cardId))
     try {
@@ -453,6 +528,10 @@ export default function BriefPage() {
   }
 
   async function handleDeleteCard(cardId) {
+    if (selectedBriefView !== 'working') {
+      showToast('Published versions are read-only and cannot be modified.')
+      return
+    }
     try {
       await deleteCard(cardId)
       const updated = await listCards(activeProjectId)
@@ -466,6 +545,10 @@ export default function BriefPage() {
 
   async function handleCreateNewCard(e) {
     e.preventDefault()
+    if (selectedBriefView !== 'working') {
+      showToast('Published versions are read-only and cannot be modified.')
+      return
+    }
     if (!newCard.content.trim()) return
     try {
       const created = await createCard(activeProjectId, {
@@ -487,6 +570,10 @@ export default function BriefPage() {
 
   async function handleSaveEditedCard(e) {
     e.preventDefault()
+    if (selectedBriefView !== 'working') {
+      showToast('Published versions are read-only and cannot be modified.')
+      return
+    }
     if (!editingCard) return
     try {
       const updated = await updateCard(editingCard.id, {
@@ -686,23 +773,93 @@ export default function BriefPage() {
             </div>
 
             <div className="bpage-title-row">
-              <h1 className="bpage-title">Brief (Working Draft)</h1>
-              <div className="bpage-draft-pill">
-                <span>Working Draft</span>
-              </div>
+              <h1 className="bpage-title">
+                {selectedBriefView === 'working'
+                  ? 'Brief (Working Draft)'
+                  : `Brief V${publishedBriefData?.version_number || ''}`}
+              </h1>
+              {selectedBriefView === 'working' ? (
+                <div className="bpage-draft-pill">
+                  <span>Working Draft · Editable</span>
+                </div>
+              ) : (
+                <div className="prog-pill prog-pill-locked">
+                  <span>🔒 Published · Read-only</span>
+                </div>
+              )}
             </div>
-            <p className="bpage-subtitle">Document-wise architectural requirements, questions, and conflict analysis.</p>
+            <p className="bpage-subtitle">
+              {selectedBriefView === 'working'
+                ? 'Document-wise architectural requirements, questions, and conflict analysis.'
+                : `Published ${publishedBriefData?.published_at ? new Date(publishedBriefData.published_at).toLocaleDateString() : ''} · Immutable Approved Snapshot (${publishedBriefData?.card_count || 0} cards)`}
+            </p>
           </div>
 
-          <div className="bpage-header-right">
-            <button className="bpage-btn-outline" onClick={() => setShowAddCard(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              <span>Add Card</span>
-            </button>
+          <div className="bpage-header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {/* Version Selector */}
+            <div className="prog-version-selector-wrap">
+              <label className="prog-vlabel" style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Version:</label>
+              <select
+                className="prog-version-select"
+                value={selectedBriefView === 'working' ? 'working' : selectedBriefVersionId || 'working'}
+                onChange={(e) => handleSelectBriefVersion(e.target.value)}
+              >
+                <option value="working">
+                  Current Draft {briefVersionStatus?.has_unpublished_changes ? '● (Unpublished Changes)' : ''}
+                </option>
+                {publishedBriefVersions.map(v => (
+                  <option key={v.id} value={v.id}>
+                    Published V{v.version_number} ({v.card_count} cards)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedBriefView === 'working' ? (
+              <>
+                <button className="bpage-btn-outline" onClick={() => setShowAddCard(true)}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  <span>Add Card</span>
+                </button>
+
+                <button
+                  className="prog-btn prog-btn-primary"
+                  onClick={handlePublishBrief}
+                  disabled={isPublishingBrief || !briefVersionStatus?.has_unpublished_changes || unifiedCards.length === 0}
+                  title={!briefVersionStatus?.has_unpublished_changes ? 'No unpublished changes to publish' : ''}
+                >
+                  {isPublishingBrief ? 'Publishing...' : 'Publish Brief'}
+                </button>
+              </>
+            ) : (
+              <button
+                className="prog-btn prog-btn-primary"
+                onClick={() => handleSelectBriefVersion('working')}
+              >
+                <span>Return to Current Draft →</span>
+              </button>
+            )}
           </div>
         </header>
+
+        {/* Published Read-only Banner */}
+        {selectedBriefView === 'published' && (
+          <div className="prog-banner-readonly" style={{ margin: '14px 24px 0 24px' }}>
+            <span className="prog-banner-icon">🔒</span>
+            <div>
+              <strong>Viewing Immutable Snapshot: Brief V{publishedBriefData?.version_number}</strong>
+              <p>This published version cannot be modified. Switch to Current Draft to add cards or resolve reviews.</p>
+            </div>
+            <button
+              className="prog-btn prog-btn-sm prog-btn-outline"
+              onClick={() => handleSelectBriefVersion('working')}
+            >
+              Switch to Draft
+            </button>
+          </div>
+        )}
 
         {/* Status Tabs: All Cards, Pending, Accepted, Rejected */}
         <div className="bpage-tabs-bar">
@@ -1330,7 +1487,7 @@ export default function BriefPage() {
                   </svg>
                 </div>
 
-                {/* Version Dropdown */}
+                {/* Document Batch Dropdown */}
                 {availableVersions.length > 1 && (
                   <div className="bpage-select-wrap">
                     <select
@@ -1338,10 +1495,10 @@ export default function BriefPage() {
                       onChange={e => setSelectedVersionFilter(e.target.value)}
                       style={{ fontWeight: 600 }}
                     >
-                      <option value="ALL">All Versions ({cards.length})</option>
+                      <option value="ALL">All Document Batches ({cards.length})</option>
                       {availableVersions.map(v => (
                         <option key={v} value={v}>
-                          Version {v} ({cards.filter(c => Number(c.version ?? 0) === v).length})
+                          Document Batch {v + 1} ({cards.filter(c => Number(c.version ?? 0) === v).length})
                         </option>
                       ))}
                     </select>
@@ -2375,6 +2532,49 @@ export default function BriefPage() {
                     {resolvingReview ? 'Processing...' : 'Create Duplicate (Keep Both)'}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Publish Brief Success Modal */}
+        {showBriefPublishSuccessModal && (
+          <div className="prog-modal-overlay">
+            <div className="prog-publish-modal-card">
+              <div className="prog-pub-icon-box">✓</div>
+              <h2 className="prog-pub-title">Brief Published Successfully</h2>
+              <p className="prog-pub-message">
+                Brief V{showBriefPublishSuccessModal.version_number} has been published successfully.
+              </p>
+              <p className="prog-pub-submessage">
+                {showBriefPublishSuccessModal.card_count} Brief Cards are now part of the published project knowledge.
+              </p>
+              <div style={{ margin: '20px 0', padding: '16px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13.5px', color: '#1e293b', lineHeight: 1.5 }}>
+                Would you like to generate the Program from Brief V{showBriefPublishSuccessModal.version_number} now?
+              </div>
+              <div className="prog-pub-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="prog-btn prog-btn-outline"
+                  onClick={() => {
+                    const verId = showBriefPublishSuccessModal.id
+                    setShowBriefPublishSuccessModal(null)
+                    handleSelectBriefVersion(verId)
+                  }}
+                >
+                  Not Now
+                </button>
+                <button
+                  type="button"
+                  className="prog-btn prog-btn-primary"
+                  onClick={() => {
+                    const verId = showBriefPublishSuccessModal.id
+                    setShowBriefPublishSuccessModal(null)
+                    navigate(`/projects/${activeProjectId}/program?generate=true&sourceBriefVersionId=${verId}`)
+                  }}
+                >
+                  Generate Program
+                </button>
               </div>
             </div>
           </div>

@@ -59,6 +59,7 @@ class ProjectResponse(BaseModel):
     updated_at: datetime
     source_count: int = 0
     brief_version: Optional[int] = None
+    published_brief_version: Optional[int] = None
     card_count: int = 0
 
     class Config:

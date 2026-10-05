@@ -558,14 +558,14 @@ export default function ProjectOverviewPage() {
 
   function handleResetVersion(ver) {
     setConfirmModal({
-      title: `Reset Version ${ver}`,
-      message: `Reset Version ${ver} to re-generate Brief Cards? All documents in Version ${ver} will return to pending extraction and synthesis.`,
-      confirmLabel: `Reset Version ${ver}`,
+      title: `Reset Document Batch ${ver + 1}`,
+      message: `Reset Document Batch ${ver + 1} to re-generate Brief Cards? All documents in Document Batch ${ver + 1} will return to pending extraction and synthesis.`,
+      confirmLabel: `Reset Document Batch ${ver + 1}`,
       confirmStyle: 'warning',
       action: async () => {
         try {
           await resetVersion(projectId, ver)
-          showToast(`Version ${ver} reset to pending.`)
+          showToast(`Document Batch ${ver + 1} reset to pending.`)
           await loadProjectData()
         } catch (err) {
           showToast(`Reset failed: ${err.message}`)
@@ -963,6 +963,13 @@ export default function ProjectOverviewPage() {
                 <strong className="pov-stat-number">{rejectedCards}</strong>
                 <span className="pov-stat-label">Rejected<br />Cards</span>
               </div>
+
+              <div className="pov-stat-cell">
+                <strong className="pov-stat-number" style={{ color: (project?.published_brief_version || project?.brief_version) ? '#10b981' : '#64748b' }}>
+                  {(project?.published_brief_version || project?.brief_version) ? `V${project?.published_brief_version || project?.brief_version}` : 'None'}
+                </strong>
+                <span className="pov-stat-label">Published<br />Brief</span>
+              </div>
             </div>
 
             {/* Action Row */}
@@ -1008,7 +1015,7 @@ export default function ProjectOverviewPage() {
                 >
                   <span className="pov-sparkle">✦</span>
                   <span>
-                    {analyzing ? 'Generating Brief...' : `Generate Brief (${completedVersions.length === 0 ? 'Version 0' : `Version ${completedVersions[0] + 1}`})`}
+                    {analyzing ? 'Generating Brief Cards...' : `Generate Brief Cards (${completedVersions.length === 0 ? 'Document Batch 1' : `Document Batch ${completedVersions.length + 1}`})`}
                   </span>
                 </button>
               ) : (
@@ -1132,7 +1139,7 @@ export default function ProjectOverviewPage() {
           <div className="pov-sources-header">
             <div>
               <h2 className="pov-section-title">Project Sources</h2>
-              <p className="pov-sources-desc">All project documents and image sources organized by Version.</p>
+              <p className="pov-sources-desc">All project documents and image sources organized by Document Batch.</p>
             </div>
 
             <div className="pov-sources-actions">
@@ -1185,16 +1192,16 @@ export default function ProjectOverviewPage() {
                       {(extracting && !showExtractModal) ? (
                         <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '4px', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                           <span className="bui-spinner-inline" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderColor: 'rgba(255,255,255,0.4)', borderTopColor: '#ffffff', display: 'inline-block', verticalAlign: 'middle' }} />
-                          Version {authoritativeTargetVersion} — ⏳ Extraction in Background
+                          Document Batch {authoritativeTargetVersion + 1} — ⏳ Extraction in Background
                         </span>
                       ) : (analyzing && !showAnalysisModal) ? (
                         <span style={{ background: '#2563eb', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '4px', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                           <span className="bui-spinner-inline" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderColor: 'rgba(255,255,255,0.4)', borderTopColor: '#ffffff', display: 'inline-block', verticalAlign: 'middle' }} />
-                          Version {authoritativeTargetVersion} — ⏳ Processing in Background
+                          Document Batch {authoritativeTargetVersion + 1} — ⏳ Processing in Background
                         </span>
                       ) : (
                         <span style={{ background: '#0f172a', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '4px', letterSpacing: '0.04em' }}>
-                          Version {authoritativeTargetVersion} (Pending Extraction)
+                          Document Batch {authoritativeTargetVersion + 1} (Pending Extraction)
                         </span>
                       )}
                       <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
@@ -1395,7 +1402,7 @@ export default function ProjectOverviewPage() {
                     <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ background: '#0f172a', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
-                          Version {ver}
+                          Document Batch {ver + 1}
                         </span>
                         <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
                           {groupDocs.length} Document{groupDocs.length !== 1 ? 's' : ''}
@@ -1514,7 +1521,7 @@ export default function ProjectOverviewPage() {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                     <span style={{ background: '#0f172a', color: '#ffffff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.04em' }}>
-                      {viewingSource.version !== null && viewingSource.version !== undefined ? `Version ${viewingSource.version}` : 'Pending'}
+                      {viewingSource.version !== null && viewingSource.version !== undefined ? `Document Batch ${Number(viewingSource.version) + 1}` : 'Pending'}
                     </span>
                     <span style={{ fontSize: '12px', color: '#64748b' }}>
                       {(viewingSource.file_type || 'PDF').toUpperCase()} • {viewingSource.file_size ? formatFileSize(viewingSource.file_size) : ''}
