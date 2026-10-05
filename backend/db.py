@@ -27,21 +27,24 @@ def utc_now():
 
 def _create_db_engine():
     engine_kwargs = {"echo": False}
-    if "sqlite" in config.APP_DATABASE_URL:
+    db_url = config.APP_DATABASE_URL
+    if "sqlite" in db_url:
         engine_kwargs["connect_args"] = {"check_same_thread": False}
     else:
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
         engine_kwargs["pool_pre_ping"] = True
         engine_kwargs["pool_size"] = 10
         engine_kwargs["max_overflow"] = 20
 
     eng = create_engine(
-        config.APP_DATABASE_URL,
+        db_url,
         **engine_kwargs,
     )
     # Test connection
     with eng.connect() as conn:
         pass
-    logger.info(f"Connected to primary database: {config.APP_DATABASE_URL.split('@')[-1]}")
+    logger.info(f"Connected to primary database: {db_url.split('@')[-1]}")
     return eng
 
 engine = _create_db_engine()
