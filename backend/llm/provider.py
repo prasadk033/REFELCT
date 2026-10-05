@@ -30,7 +30,7 @@ class LiteLLMGenerator:
         replies=List[str],
         meta=List[Dict[str, Any]]
     )
-    def run(self, prompt: str):
+    def run(self, prompt: str, **kwargs):
         """
         Send the prompt through the local LiteLLM Proxy.
         """
@@ -43,9 +43,10 @@ class LiteLLMGenerator:
             }
         ]
 
-        timeout_val = self.kwargs.pop("timeout", 300.0)
-        max_tokens_val = self.kwargs.pop("max_tokens", 8192)
-        temperature_val = self.kwargs.pop("temperature", 0.2)
+        merged_kwargs = {**self.kwargs, **kwargs}
+        timeout_val = merged_kwargs.pop("timeout", 300.0)
+        max_tokens_val = merged_kwargs.pop("max_tokens", 3500)
+        temperature_val = merged_kwargs.pop("temperature", 0.2)
         start_time = time.time()
 
         try:
@@ -60,7 +61,7 @@ class LiteLLMGenerator:
                 max_tokens=max_tokens_val,
                 temperature=temperature_val,
                 num_retries=0,
-                **self.kwargs
+                **merged_kwargs
             )
 
             content = response.choices[0].message.content

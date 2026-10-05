@@ -16,7 +16,7 @@ from agents.brief_prompts import CARD_GENERATION_PROMPT
 logger = logging.getLogger(__name__)
 
 
-BRIEF_CHUNK_SIZE = 30000
+BRIEF_CHUNK_SIZE = 14000
 BRIEF_CHUNK_OVERLAP = 1000
 
 class BriefAgent:
@@ -40,7 +40,7 @@ class BriefAgent:
     def _generate_cards_for_chunk(self, prompt: str) -> list:
         """Helper to run the LLM and parse cards for a single chunk."""
         try:
-            result = self.llm.run(prompt=prompt)
+            result = self.llm.run(prompt=prompt, max_tokens=3072)
             raw_response = result["replies"][0]
 
             clean_text = raw_response.strip()

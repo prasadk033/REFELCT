@@ -385,7 +385,7 @@ class ProgramAgent:
         full_prompt = PROGRAM_SYSTEM_PROMPT + "\n\n" + user_prompt
 
         try:
-            result = self.llm.run(prompt=full_prompt)
+            result = self.llm.run(prompt=full_prompt, max_tokens=3500)
             raw_response = result["replies"][0]
         except Exception as e:
             logger.error(f"ProgramAgent LLM call failed: {e}")
