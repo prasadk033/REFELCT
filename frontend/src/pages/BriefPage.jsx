@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   listProjects, getProject,
@@ -362,6 +362,20 @@ export default function BriefPage() {
     }
   }
 
+  const refreshBriefStatus = useCallback(async () => {
+    if (!activeProjectId) return
+    try {
+      const [pubList, status] = await Promise.all([
+        listPublishedBriefVersions(activeProjectId, 5).catch(() => []),
+        getBriefVersionStatus(activeProjectId).catch(() => null),
+      ])
+      if (pubList) setPublishedBriefVersions(pubList)
+      if (status) setBriefVersionStatus(status)
+    } catch (err) {
+      console.warn('Failed to refresh brief version status:', err)
+    }
+  }, [activeProjectId])
+
   async function handleSelectBriefVersion(target) {
     if (target === 'working') {
       setSelectedBriefView('working')
@@ -485,6 +499,7 @@ export default function BriefPage() {
       setReviewModalData(null)
       const updated = await listCards(activeProjectId)
       setCards(updated || [])
+      refreshBriefStatus()
     } catch (err) {
       setError(err.message || 'Failed to resolve review')
     } finally {
@@ -510,6 +525,7 @@ export default function BriefPage() {
         } else {
           showToast('Card accepted into Unified Cards!')
         }
+        refreshBriefStatus()
         return
       } else if (newStatus === 'rejected') {
         await rejectCard(cardId)
@@ -520,6 +536,7 @@ export default function BriefPage() {
       setCards(updated || [])
       setActiveMenuCardId(null)
       showToast(`Card marked as ${newStatus}`)
+      refreshBriefStatus()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -538,6 +555,7 @@ export default function BriefPage() {
       setCards(updated || [])
       setActiveMenuCardId(null)
       showToast('Card deleted')
+      refreshBriefStatus()
     } catch (err) {
       setError(err.message)
     }
@@ -563,6 +581,7 @@ export default function BriefPage() {
       setShowAddCard(false)
       setNewCard({ title: '', content: '', card_type: 'Requirement', source_document: '', evidence: '' })
       showToast('Brief Card created and accepted!')
+      refreshBriefStatus()
     } catch (err) {
       setError(err.message)
     }
@@ -586,6 +605,7 @@ export default function BriefPage() {
       setCards(cards.map(c => c.id === updated.id ? updated : c))
       setEditingCard(null)
       showToast('Card updated successfully')
+      refreshBriefStatus()
     } catch (err) {
       setError(err.message)
     }
@@ -750,6 +770,23 @@ export default function BriefPage() {
     return counts
   }, [cards])
 
+  const eligibleWorkingCardsCount = unifiedCards.length > 0 ? unifiedCards.length : acceptedCount
+  const isInitialPublish = publishedBriefVersions.length === 0
+  const latestPublishedVersionNumber = publishedBriefVersions.length > 0
+    ? publishedBriefVersions[0].version_number
+    : briefVersionStatus?.latest_published_version
+
+  // If there are no published versions yet (V0) and we have working cards -> ALWAYS true!
+  // If briefVersionStatus is not loaded yet -> fallback to true so button is NOT blocked by null status
+  const hasUnpublishedChanges = isInitialPublish
+    ? (eligibleWorkingCardsCount > 0)
+    : (briefVersionStatus?.has_unpublished_changes ?? true)
+
+  const canPublish = selectedBriefView === 'working' &&
+    !isPublishingBrief &&
+    eligibleWorkingCardsCount > 0 &&
+    hasUnpublishedChanges
+
   return (
     <ProjectShell project={project}>
       <div className="bpage-root" onClick={() => setActiveMenuCardId(null)}>
@@ -805,7 +842,7 @@ export default function BriefPage() {
                 onChange={(e) => handleSelectBriefVersion(e.target.value)}
               >
                 <option value="working">
-                  Current Draft {briefVersionStatus?.has_unpublished_changes ? '● (Unpublished Changes)' : ''}
+                  Current Draft {hasUnpublishedChanges ? '● (Unpublished Changes)' : ''}
                 </option>
                 {publishedBriefVersions.map(v => (
                   <option key={v.id} value={v.id}>
@@ -824,14 +861,36 @@ export default function BriefPage() {
                   <span>Add Card</span>
                 </button>
 
-                <button
-                  className="prog-btn prog-btn-primary"
-                  onClick={handlePublishBrief}
-                  disabled={isPublishingBrief || !briefVersionStatus?.has_unpublished_changes || unifiedCards.length === 0}
-                  title={!briefVersionStatus?.has_unpublished_changes ? 'No unpublished changes to publish' : ''}
-                >
-                  {isPublishingBrief ? 'Publishing...' : 'Publish Brief'}
-                </button>
+                {publishedBriefVersions.length > 0 && !hasUnpublishedChanges ? (
+                  <button
+                    className="prog-btn prog-btn-outline"
+                    onClick={() => navigate(`/projects/${activeProjectId}/program`)}
+                    style={{ background: '#f0fdf4', borderColor: '#86efac', color: '#166534', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title={`Brief V${latestPublishedVersionNumber} is published and up to date. Click to proceed to Program.`}
+                  >
+                    <span>✓ Brief V{latestPublishedVersionNumber} Published</span>
+                    <span style={{ fontSize: '11px', color: '#15803d' }}>→ Program</span>
+                  </button>
+                ) : (
+                  <button
+                    className="prog-btn prog-btn-primary"
+                    onClick={handlePublishBrief}
+                    disabled={isPublishingBrief || eligibleWorkingCardsCount === 0}
+                    title={
+                      eligibleWorkingCardsCount === 0
+                        ? 'No cards available to publish'
+                        : isInitialPublish
+                          ? 'Publish Brief as Version 1'
+                          : `Publish updated working draft as Brief V${(latestPublishedVersionNumber || 1) + 1}`
+                    }
+                  >
+                    {isPublishingBrief
+                      ? 'Publishing...'
+                      : isInitialPublish
+                        ? 'Publish Brief'
+                        : `Publish Brief (V${(latestPublishedVersionNumber || 1) + 1})`}
+                  </button>
+                )}
               </>
             ) : (
               <button

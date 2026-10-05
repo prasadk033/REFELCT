@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text
+from sqlalchemy import func, text, or_
 
 from db import (
     get_db, Project, Card, Brief, User,
@@ -138,7 +138,7 @@ def _check_brief_unpublished_changes(db: Session, project_id: str):
     """
     working_cards = db.query(Card).filter(
         Card.project_id == project_id,
-        Card.is_unified == True,
+        or_(Card.is_unified == True, Card.status == "accepted"),
         Card.status != "rejected",
     ).all()
     working_count = len(working_cards)
@@ -965,9 +965,14 @@ def publish_brief(
     # Get all active unified brief cards (the current working dataset)
     working_cards = db.query(Card).filter(
         Card.project_id == project_id,
-        Card.is_unified == True,
+        or_(Card.is_unified == True, Card.status == "accepted"),
         Card.status != "rejected",
     ).all()
+
+    # Ensure all included cards are explicitly unified
+    for card in working_cards:
+        if not card.is_unified:
+            card.is_unified = True
 
     # Determine next version number atomically
     latest_locked = db.query(BriefPublishedVersion).filter(
