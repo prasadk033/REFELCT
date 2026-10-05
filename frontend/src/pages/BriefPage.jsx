@@ -895,9 +895,9 @@ export default function BriefPage() {
             ) : (
               <button
                 className="prog-btn prog-btn-primary"
-                onClick={() => handleSelectBriefVersion('working')}
+                onClick={() => navigate(`/projects/${activeProjectId}/program?generate=true&sourceBriefVersionId=${selectedBriefVersionId}`)}
               >
-                <span>Return to Current Draft →</span>
+                <span>Generate Program (from V{publishedBriefData?.version_number || ''}) →</span>
               </button>
             )}
           </div>
@@ -909,14 +909,8 @@ export default function BriefPage() {
             <span className="prog-banner-icon">🔒</span>
             <div>
               <strong>Viewing Immutable Snapshot: Brief V{publishedBriefData?.version_number}</strong>
-              <p>This published version cannot be modified. Switch to Current Draft to add cards or resolve reviews.</p>
+              <p>This published version is locked and immutable ({publishedBriefData?.card_count || 0} cards). Use the Version dropdown above to switch to Current Draft or another version.</p>
             </div>
-            <button
-              className="prog-btn prog-btn-sm prog-btn-outline"
-              onClick={() => handleSelectBriefVersion('working')}
-            >
-              Switch to Draft
-            </button>
           </div>
         )}
 
@@ -1744,125 +1738,138 @@ export default function BriefPage() {
 
                       {/* Card Footer Actions */}
                       <div className="bcard-footer">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          {card.review_status === 'under_review' && (
-                            <button
-                              className="bui-btn"
-                              style={{ background: '#ef4444', color: '#ffffff', fontSize: '11px', padding: '3px 8px', border: 'none', borderRadius: '4px', fontWeight: 600 }}
-                              onClick={(e) => { e.stopPropagation(); openReviewModal(card); }}
-                            >
-                              Resolve Review
-                            </button>
-                          )}
-                          {displayStatus === 'Accepted' ? (
-                            <>
-                              <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#052e16', padding: '3px 8px', borderRadius: '6px', border: '1px solid #166534' }}>
-                                ✓ Accepted
-                              </span>
-                              <button
-                                className="bui-btn bui-btn-outline"
-                                style={{ fontSize: '11px', padding: '4px 8px' }}
-                                onClick={() => setEditingCard(card)}
-                                title="Edit Card"
-                              >
-                                ✎ Edit
-                              </button>
-                              <button
-                                className="bui-btn bui-btn-outline"
-                                style={{ fontSize: '11px', padding: '4px 8px', color: '#ef4444' }}
-                                onClick={() => handleStatusChange(card.id, 'rejected')}
-                                title="Reject Card"
-                              >
-                                ✕
-                              </button>
-                            </>
-                          ) : displayStatus === 'Rejected' ? (
-                            <>
-                              <span style={{ fontSize: '11px', color: '#f87171', background: '#450a0a', padding: '3px 8px', borderRadius: '6px', border: '1px solid #7f1d1d' }}>
-                                ✕ Rejected
-                              </span>
-                              <button
-                                className="bui-btn bui-btn-outline"
-                                style={{ fontSize: '11px', padding: '4px 8px', color: '#4ade80' }}
-                                onClick={() => handleStatusChange(card.id, 'accepted')}
-                                title="Restore and Accept"
-                              >
-                                ↺ Restore
-                              </button>
-                              <button
-                                className="bui-btn bui-btn-outline"
-                                style={{ fontSize: '11px', padding: '4px 8px', color: '#ef4444' }}
-                                onClick={() => handleDeleteCard(card.id)}
-                                title="Delete Card"
-                              >
-                                🗑
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                className="bui-btn bui-btn-outline"
-                                style={{ fontSize: '11px', padding: '4px 8px', color: '#4ade80', borderColor: '#166534' }}
-                                onClick={() => handleStatusChange(card.id, 'accepted')}
-                                title="Accept into Project Knowledge"
-                              >
-                                ✓ Accept
-                              </button>
-                              <button
-                                className="bui-btn bui-btn-outline"
-                                style={{ fontSize: '11px', padding: '4px 8px' }}
-                                onClick={() => setEditingCard(card)}
-                                title="Edit Card"
-                              >
-                                ✎ Edit
-                              </button>
-                              <button
-                                className="bui-btn bui-btn-outline"
-                                style={{ fontSize: '11px', padding: '4px 8px', color: '#ef4444' }}
-                                onClick={() => handleStatusChange(card.id, 'rejected')}
-                                title="Reject Card"
-                              >
-                                ✕
-                              </button>
-                            </>
-                          )}
-                        </div>
-
-                        <div className="bcard-action-menu-wrap" onClick={e => e.stopPropagation()}>
-                          <button
-                            className="bcard-btn-status-dropdown"
-                            onClick={() => setActiveMenuCardId(isMenuOpen ? null : card.id)}
-                          >
-                            <span>⋮</span>
-                          </button>
-
-                          {isMenuOpen && (
-                            <div className="bcard-dropdown-list">
-                              {displayStatus !== 'Accepted' && (
-                                <button className="bcard-dd-item" onClick={() => handleStatusChange(card.id, 'accepted')}>
-                                  ✓ Accept (Authoritative)
+                        {selectedBriefView === 'published' ? (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                              🔒 Published Snapshot
+                            </span>
+                            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 500 }}>
+                              Read-only
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              {card.review_status === 'under_review' && (
+                                <button
+                                  className="bui-btn"
+                                  style={{ background: '#ef4444', color: '#ffffff', fontSize: '11px', padding: '3px 8px', border: 'none', borderRadius: '4px', fontWeight: 600 }}
+                                  onClick={(e) => { e.stopPropagation(); openReviewModal(card); }}
+                                >
+                                  Resolve Review
                                 </button>
                               )}
-                              <button className="bcard-dd-item" onClick={() => setEditingCard(card)}>
-                                ✎ Edit Details
-                              </button>
-                              {displayStatus !== 'Provisional' && (
-                                <button className="bcard-dd-item" onClick={() => handleStatusChange(card.id, 'under review')}>
-                                  ⏳ Move to Review
-                                </button>
+                              {displayStatus === 'Accepted' ? (
+                                <>
+                                  <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#052e16', padding: '3px 8px', borderRadius: '6px', border: '1px solid #166534' }}>
+                                    ✓ Accepted
+                                  </span>
+                                  <button
+                                    className="bui-btn bui-btn-outline"
+                                    style={{ fontSize: '11px', padding: '4px 8px' }}
+                                    onClick={() => setEditingCard(card)}
+                                    title="Edit Card"
+                                  >
+                                    ✎ Edit
+                                  </button>
+                                  <button
+                                    className="bui-btn bui-btn-outline"
+                                    style={{ fontSize: '11px', padding: '4px 8px', color: '#ef4444' }}
+                                    onClick={() => handleStatusChange(card.id, 'rejected')}
+                                    title="Reject Card"
+                                  >
+                                    ✕
+                                  </button>
+                                </>
+                              ) : displayStatus === 'Rejected' ? (
+                                <>
+                                  <span style={{ fontSize: '11px', color: '#f87171', background: '#450a0a', padding: '3px 8px', borderRadius: '6px', border: '1px solid #7f1d1d' }}>
+                                    ✕ Rejected
+                                  </span>
+                                  <button
+                                    className="bui-btn bui-btn-outline"
+                                    style={{ fontSize: '11px', padding: '4px 8px', color: '#4ade80' }}
+                                    onClick={() => handleStatusChange(card.id, 'accepted')}
+                                    title="Restore and Accept"
+                                  >
+                                    ↺ Restore
+                                  </button>
+                                  <button
+                                    className="bui-btn bui-btn-outline"
+                                    style={{ fontSize: '11px', padding: '4px 8px', color: '#ef4444' }}
+                                    onClick={() => handleDeleteCard(card.id)}
+                                    title="Delete Card"
+                                  >
+                                    🗑
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="bui-btn bui-btn-outline"
+                                    style={{ fontSize: '11px', padding: '4px 8px', color: '#4ade80', borderColor: '#166534' }}
+                                    onClick={() => handleStatusChange(card.id, 'accepted')}
+                                    title="Accept into Project Knowledge"
+                                  >
+                                    ✓ Accept
+                                  </button>
+                                  <button
+                                    className="bui-btn bui-btn-outline"
+                                    style={{ fontSize: '11px', padding: '4px 8px' }}
+                                    onClick={() => setEditingCard(card)}
+                                    title="Edit Card"
+                                  >
+                                    ✎ Edit
+                                  </button>
+                                  <button
+                                    className="bui-btn bui-btn-outline"
+                                    style={{ fontSize: '11px', padding: '4px 8px', color: '#ef4444' }}
+                                    onClick={() => handleStatusChange(card.id, 'rejected')}
+                                    title="Reject Card"
+                                  >
+                                    ✕
+                                  </button>
+                                </>
                               )}
-                              {displayStatus !== 'Rejected' && (
-                                <button className="bcard-dd-item item-reject" onClick={() => handleStatusChange(card.id, 'rejected')}>
-                                  ✕ Reject
-                                </button>
-                              )}
-                              <div className="bcard-dd-sep" />
-                              <button className="bcard-dd-item item-delete" onClick={() => handleDeleteCard(card.id)}>
-                                🗑 Delete Card
-                              </button>
                             </div>
-                          )}
-                        </div>
+
+                            <div className="bcard-action-menu-wrap" onClick={e => e.stopPropagation()}>
+                              <button
+                                className="bcard-btn-status-dropdown"
+                                onClick={() => setActiveMenuCardId(isMenuOpen ? null : card.id)}
+                              >
+                                <span>⋮</span>
+                              </button>
+
+                              {isMenuOpen && (
+                                <div className="bcard-dropdown-list">
+                                  {displayStatus !== 'Accepted' && (
+                                    <button className="bcard-dd-item" onClick={() => handleStatusChange(card.id, 'accepted')}>
+                                      ✓ Accept (Authoritative)
+                                    </button>
+                                  )}
+                                  <button className="bcard-dd-item" onClick={() => setEditingCard(card)}>
+                                    ✎ Edit Details
+                                  </button>
+                                  {displayStatus !== 'Provisional' && (
+                                    <button className="bcard-dd-item" onClick={() => handleStatusChange(card.id, 'under review')}>
+                                      ⏳ Move to Review
+                                    </button>
+                                  )}
+                                  {displayStatus !== 'Rejected' && (
+                                    <button className="bcard-dd-item item-reject" onClick={() => handleStatusChange(card.id, 'rejected')}>
+                                      ✕ Reject
+                                    </button>
+                                  )}
+                                  <div className="bcard-dd-sep" />
+                                  <button className="bcard-dd-item item-delete" onClick={() => handleDeleteCard(card.id)}>
+                                    🗑 Delete Card
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
 
                     </div>
@@ -1870,7 +1877,7 @@ export default function BriefPage() {
                 })}
 
                 {/* Add New Card Box */}
-                {viewMode === 'grid' && (
+                {viewMode === 'grid' && selectedBriefView === 'working' && (
                   <div className="bcard-add-box" onClick={() => setShowAddCard(true)}>
                     <div className="bcard-add-circle">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
@@ -2013,7 +2020,11 @@ export default function BriefPage() {
               {/* Actions: Item 1 applied — Unified/Accepted cards only show Review / Active indicator and Edit, NEVER Accept/Reject */}
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <div>
-                  {(selectedCard.is_unified || selectedCard.status === 'accepted') ? (
+                  {selectedBriefView === 'published' ? (
+                    <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#f1f5f9', padding: '5px 12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      🔒 Published Snapshot · Read-only
+                    </span>
+                  ) : (selectedCard.is_unified || selectedCard.status === 'accepted') ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {selectedCard.review_status === 'under_review' ? (
                         <button
@@ -2073,16 +2084,18 @@ export default function BriefPage() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    onClick={() => {
-                      const c = selectedCard;
-                      setSelectedCard(null);
-                      setEditingCard(c);
-                    }}
-                  >
-                    ✎ Edit
-                  </button>
+                  {selectedBriefView === 'working' && (
+                    <button
+                      style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      onClick={() => {
+                        const c = selectedCard;
+                        setSelectedCard(null);
+                        setEditingCard(c);
+                      }}
+                    >
+                      ✎ Edit
+                    </button>
+                  )}
                   <button
                     style={{ background: '#0f172a', border: '1px solid #0f172a', color: '#ffffff', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
                     onClick={() => setSelectedCard(null)}
