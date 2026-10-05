@@ -147,7 +147,7 @@ export default function ProgramPage() {
 
   // Generation Trigger & Polling
   async function handleStartGeneration(briefVersionId = null) {
-    if (selectedMode !== 'working') {
+    if (selectedView !== 'working') {
       setError('Program generation only updates the working draft. Switch to Working Draft first.')
       return
     }
@@ -288,7 +288,7 @@ export default function ProgramPage() {
   // Submit Add / Edit
   async function handleSubmitItem(e) {
     e.preventDefault()
-    if (selectedMode !== 'working') {
+    if (selectedView !== 'working') {
       setError('Published versions are read-only and cannot be modified.')
       return
     }
@@ -336,7 +336,7 @@ export default function ProgramPage() {
   // Delete Item
   async function handleDeleteItem(item, e) {
     if (e) e.stopPropagation()
-    if (selectedMode !== 'working') {
+    if (selectedView !== 'working') {
       setError('Published versions are read-only and cannot be modified.')
       return
     }
@@ -355,7 +355,7 @@ export default function ProgramPage() {
 
   // Answer AI Question
   async function handleAnswerQuestion(qId) {
-    if (selectedMode !== 'working') {
+    if (selectedView !== 'working') {
       setError('Published versions are read-only and cannot be modified.')
       return
     }
@@ -378,7 +378,7 @@ export default function ProgramPage() {
 
   // Dismiss AI Question
   async function handleDismissQuestion(qId) {
-    if (selectedMode !== 'working') {
+    if (selectedView !== 'working') {
       setError('Published versions are read-only and cannot be modified.')
       return
     }

@@ -157,7 +157,8 @@ class ProgramAgent:
             line += f"\nTitle: {title}"
             line += f"\nContent: {content}"
             if evidence and evidence != "Manual Input":
-                line += f"\nEvidence: {evidence}"
+                clean_ev = str(evidence).strip()[:180]
+                line += f"\nEvidence: {clean_ev}"
             lines.append(line)
             lines.append("")
 

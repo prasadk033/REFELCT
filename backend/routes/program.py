@@ -776,8 +776,8 @@ def _run_program_generation(
 @router.post("/api/projects/{project_id}/program/generate")
 def generate_program(
     project_id: str,
+    background_tasks: BackgroundTasks,
     body: dict = None,
-    background_tasks: BackgroundTasks = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
