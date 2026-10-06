@@ -815,70 +815,11 @@ export default function ProjectOverviewPage() {
               <p className="pov-subtitle" style={{ margin: 0 }}>
                 {project?.project_type || 'Residential Project'} • {project?.location || 'Studio Workspace'}
               </p>
-              <span style={{ color: '#cbd5e1' }}>•</span>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
-                <span title="Site Location">🌍</span>
-                {project?.site_url ? (
-                  <>
-                    <a
-                      href={project.site_url.startsWith('http') ? project.site_url : `https://${project.site_url}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ color: '#2563eb', textDecoration: 'none', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}
-                      title={project.site_url}
-                    >
-                      {project.site_url.replace(/^https?:\/\//, '')}
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSiteLocationInput(project.site_url)
-                        setIsEditingLocation(true)
-                        setShowSiteLocationModal(true)
-                      }}
-                      style={{ background: 'transparent', border: 'none', padding: '0 2px', color: '#64748b', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}
-                    >
-                      Edit
-                    </button>
-                    {sources.some(s => s.file_type === 'virtual/osm' && s.extracted_text) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const analyzedSource = sources.filter(s => s.file_type === 'virtual/osm' && s.extracted_text).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
-                          if (analyzedSource) setViewingSource(analyzedSource);
-                        }}
-                        style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '1px 6px', color: '#0f172a', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
-                      >
-                        View Analysis
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSiteLocationInput('')
-                      setIsEditingLocation(true)
-                      setShowSiteLocationModal(true)
-                    }}
-                    style={{ background: 'transparent', border: 'none', padding: 0, color: '#2563eb', cursor: 'pointer', fontSize: '13px', fontWeight: 500, textDecoration: 'underline' }}
-                  >
-                    + Connect Location
-                  </button>
-                )}
-              </div>
             </div>
           </div>
 
           <div className="pov-top-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button className="pov-btn-share" onClick={() => setShowShareModal(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-              </svg>
-              <span>Share</span>
-            </button>
+
             <button
               type="button"
               className="pov-btn-share"
@@ -1024,6 +965,28 @@ export default function ProjectOverviewPage() {
                 </strong>
                 <span className="pov-stat-label">Published<br />Brief</span>
               </div>
+
+              {/* View Brief Workspace Button placed beside Published Brief */}
+              <div className="pov-stat-cell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px' }}>
+                <button
+                  className="pov-btn-analyse"
+                  style={{
+                    padding: '9px 18px',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                    background: '#0f172a',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => navigate(`/projects/${projectId}/brief`)}
+                >
+                  <span>View Brief Workspace →</span>
+                </button>
+              </div>
             </div>
 
             {/* Action Row */}
@@ -1128,8 +1091,73 @@ export default function ProjectOverviewPage() {
               <p className="pov-sources-desc">All project documents and image sources organized by Document Batch.</p>
             </div>
 
-            <div className="pov-sources-actions">
-              {/* We will add a Site Location block above instead of a button here */}
+            <div className="pov-sources-actions" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+              {/* Connect Location situated directly on top of Add Source */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                {project?.site_url ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '5px 10px', borderRadius: '6px' }}>
+                    <span>🌍</span>
+                    <a
+                      href={project.site_url.startsWith('http') ? project.site_url : `https://${project.site_url}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: '#2563eb', textDecoration: 'none', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}
+                      title={project.site_url}
+                    >
+                      {project.site_url.replace(/^https?:\/\//, '')}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSiteLocationInput(project.site_url)
+                        setIsEditingLocation(true)
+                        setShowSiteLocationModal(true)
+                      }}
+                      style={{ background: 'transparent', border: 'none', padding: '0 2px', color: '#64748b', cursor: 'pointer', fontSize: '11px', textDecoration: 'underline' }}
+                    >
+                      Edit
+                    </button>
+                    {sources.some(s => s.file_type === 'virtual/osm' && s.extracted_text) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const analyzedSource = sources.filter(s => s.file_type === 'virtual/osm' && s.extracted_text).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                          if (analyzedSource) setViewingSource(analyzedSource);
+                        }}
+                        style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '1px 6px', color: '#2563eb', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
+                      >
+                        Analysis
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSiteLocationInput('')
+                      setIsEditingLocation(true)
+                      setShowSiteLocationModal(true)
+                    }}
+                    style={{
+                      background: '#f8fafc',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      padding: '5px 12px',
+                      color: '#2563eb',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                    }}
+                  >
+                    <span>🌍</span>
+                    <span>+ Connect Location</span>
+                  </button>
+                )}
+              </div>
+
               <button
                 className="pov-btn-add-doc"
                 onClick={() => openUploadModal('document')}
@@ -1916,49 +1944,7 @@ export default function ProjectOverviewPage() {
           </div>
         )}
 
-        {/* SHARE MODAL */}
-        {showShareModal && (
-          <div className="bui-modal-overlay" onClick={() => setShowShareModal(false)}>
-            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-              <div className="bui-modal-header">
-                <h2>Share Project</h2>
-                <button className="bui-close-btn" onClick={() => setShowShareModal(false)}>✕</button>
-              </div>
 
-              <div style={{ padding: '8px 0 20px 0' }}>
-                <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '16px' }}>
-                  Share this project link with authorized studio members. Authentication is required to view project details.
-                </p>
-
-                <div className="bui-form-group">
-                  <label>Project Link</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      type="text"
-                      readOnly
-                      value={`${window.location.origin}/projects/${projectId}`}
-                      style={{ background: '#090d16', color: '#f8fafc', fontSize: '12px' }}
-                    />
-                    <button
-                      type="button"
-                      className="bui-btn bui-btn-primary"
-                      onClick={handleCopyShareLink}
-                      style={{ whiteSpace: 'nowrap' }}
-                    >
-                      {copiedLink ? 'Copied!' : 'Copy Link'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bui-modal-actions">
-                <button type="button" className="bui-btn bui-btn-outline" onClick={() => setShowShareModal(false)}>
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* DYNAMIC ANALYSIS IN-PROGRESS MODAL */}
         {analyzing && showAnalysisModal && (

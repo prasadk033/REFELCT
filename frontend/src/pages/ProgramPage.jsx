@@ -561,7 +561,7 @@ export default function ProgramPage() {
               </select>
             </div>
 
-            {/* Action Buttons */}
+            {/* Action Buttons (Publish Program at top right corner) */}
             {isWorkingView ? (
               <div className="prog-header-actions">
                 <button
@@ -575,23 +575,28 @@ export default function ProgramPage() {
                   <span>Add Item</span>
                 </button>
 
-                <button
-                  className="prog-btn prog-btn-secondary"
-                  onClick={() => handleStartGeneration()}
-                  disabled={isGenerating || !summary?.can_generate}
-                  title={!summary?.can_generate ? 'Publish a Brief first to generate Program' : ''}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                  </svg>
-                  <span>{items.length > 0 ? 'Regenerate Program' : 'Generate Program'}</span>
-                </button>
+                {/* Only show Generate Program if no items exist yet */}
+                {items.length === 0 && (
+                  <button
+                    className="prog-btn prog-btn-secondary"
+                    onClick={() => handleStartGeneration()}
+                    disabled={isGenerating || !summary?.can_generate}
+                    title={!summary?.can_generate ? 'Publish a Brief first to generate Program' : ''}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                    </svg>
+                    <span>Generate Program</span>
+                  </button>
+                )}
 
+                {/* Publish Program positioned at the top right corner */}
                 <button
                   className="prog-btn prog-btn-primary"
                   onClick={handlePublishProgram}
                   disabled={isPublishing || isGenerating || !summary?.has_unpublished_changes || items.length === 0}
                   title={!summary?.has_unpublished_changes ? 'No unpublished changes to publish' : ''}
+                  style={{ fontWeight: 700 }}
                 >
                   {isPublishing ? 'Publishing...' : 'Publish Program'}
                 </button>
