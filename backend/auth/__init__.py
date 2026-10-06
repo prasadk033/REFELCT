@@ -57,8 +57,10 @@ def get_or_create_user(google_info: Dict[str, Any]) -> User:
         user = db.query(User).filter(User.google_sub == google_info["sub"]).first()
 
         if not user:
-            # Check by email as fallback
-            user = db.query(User).filter(User.email == google_info["email"]).first()
+            # Check by email as fallback (case-insensitive)
+            from sqlalchemy import func
+            email_val = (google_info.get("email") or "").strip().lower()
+            user = db.query(User).filter(func.lower(User.email) == email_val).first()
 
         if user:
             # Update profile info
