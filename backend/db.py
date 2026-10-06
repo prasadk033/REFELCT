@@ -95,7 +95,7 @@ class Project(Base):
     briefs = relationship("Brief", back_populates="project", cascade="all, delete-orphan")
     cards = relationship("Card", back_populates="project", cascade="all, delete-orphan")
     processing_jobs = relationship("ProcessingJob", back_populates="project", cascade="all, delete-orphan")
-    activity_logs = relationship("ActivityLog", foreign_keys="ActivityLog.project_id", cascade="all, delete-orphan")
+    activity_logs = relationship("ActivityLog", back_populates="project", foreign_keys="ActivityLog.project_id", cascade="all, delete-orphan")
     program_items = relationship("ProgramItem", back_populates="project", cascade="all, delete-orphan")
     program_questions = relationship("ProgramQuestion", back_populates="project", cascade="all, delete-orphan")
     brief_published_versions = relationship("BriefPublishedVersion", back_populates="project", cascade="all, delete-orphan")
@@ -244,7 +244,7 @@ class ActivityLog(Base):
     created_at = Column(DateTime, default=utc_now)
 
     user = relationship("User")
-    project = relationship("Project")
+    project = relationship("Project", back_populates="activity_logs")
 
 
 # ── New Models: Program Workspace ────────────────────────────────────────────
