@@ -268,7 +268,7 @@ class ProgramItem(Base):
     notes = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="PROVISIONAL")  # CONFIRMED, PROVISIONAL, UNDER_REVIEW, QUESTION
     source_brief_card_ids = Column(JSON, nullable=True)  # List of card IDs this was derived from
-    source_brief_version_id = Column(String, ForeignKey("briefs.id"), nullable=True)  # Which brief gen run produced this
+    source_brief_version_id = Column(String, ForeignKey("brief_published_versions.id", ondelete="SET NULL"), nullable=True)  # Published Brief version snapshot this was generated from
     created_by = Column(String, nullable=False, default="AI")  # AI or ARCHITECT
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)

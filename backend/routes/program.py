@@ -619,6 +619,13 @@ def get_brief_sources_for_item(
         _get_user_project(db, working_item.project_id, user.id)
         source_card_ids = working_item.source_brief_card_ids or []
         source_brief_version_id = working_item.source_brief_version_id
+        if not source_brief_version_id:
+            # Fallback to latest published Brief version for this project so working items resolve against immutable snapshots
+            latest_pub = db.query(BriefPublishedVersion).filter(
+                BriefPublishedVersion.project_id == working_item.project_id
+            ).order_by(BriefPublishedVersion.version_number.desc()).first()
+            if latest_pub:
+                source_brief_version_id = latest_pub.id
     else:
         # 2. Try finding in published snapshot (ProgramVersionItem)
         vitem = db.query(ProgramVersionItem).filter(
@@ -746,10 +753,10 @@ def _run_program_generation(
             _generation_status[project_id] = {"status": "failed", "error": "Brief version not found"}
             return
 
-        # Get snapshot cards from the published brief version
+        # Get snapshot cards from the published brief version (sorted deterministically)
         snapshot_cards = db.query(BriefVersionCard).filter(
             BriefVersionCard.brief_version_id == brief_version_id
-        ).all()
+        ).order_by(BriefVersionCard.id.asc()).all()
 
         brief_cards = [sc.snapshot_data for sc in snapshot_cards if sc.snapshot_data]
         if not brief_cards:
@@ -808,7 +815,7 @@ def _run_program_generation(
                 notes=item_data.get("notes"),
                 status=item_data["status"],
                 source_brief_card_ids=item_data.get("source_brief_card_ids") or [],
-                source_brief_version_id=None,  # Reference to brief table is optional
+                source_brief_version_id=brief_version.id,
                 created_by="AI",
             )
             db.add(item)
@@ -908,6 +915,16 @@ def generate_program(
     Requires at least one published Brief version to exist.
     """
     _get_user_project(db, project_id, user.id)
+
+    # Guard against concurrent duplicate generation runs
+    current_status = _generation_status.get(project_id, {})
+    if current_status.get("status") == "generating":
+        started_at = current_status.get("started_at", 0)
+        if time.time() - started_at < 180:
+            raise HTTPException(
+                status_code=409,
+                detail="Program generation is already in progress for this project. Please wait for the current run to finish."
+            )
 
     # Check AI health
     from llm.qwen_health import check_qwen_health
