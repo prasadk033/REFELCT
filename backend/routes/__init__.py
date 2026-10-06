@@ -205,12 +205,27 @@ def delete_project(
     project = _get_user_project(db, project_id, user.id)
     project_name = project.name
 
-    # Cancel ongoing extractions and delete storage files for all project sources
+    # 1. Break self-referencing foreign keys on briefs so delete cascade won't violate FK constraints
+    from db import Brief
+    db.query(Brief).filter(Brief.project_id == project_id).update(
+        {"previous_version_id": None}, synchronize_session=False
+    )
+    db.flush()
+
+    # 2. Cancel ongoing extractions and delete storage files for all project sources
     from documents.loader import cancel_extraction
     sources = db.query(Source).filter(Source.project_id == project_id).all()
     for s in sources:
-        abs_p = file_store.get_absolute_path(s.storage_path) if s.storage_path else None
-        cancel_extraction(source_id=s.id, file_path=abs_p)
+        abs_p = None
+        if s.storage_path:
+            try:
+                abs_p = file_store.get_absolute_path(s.storage_path)
+            except Exception as err:
+                logger.warning(f"Could not get absolute path for {s.storage_path}: {err}")
+        try:
+            cancel_extraction(source_id=s.id, file_path=abs_p)
+        except Exception as err:
+            logger.warning(f"Error canceling extraction for source {s.id}: {err}")
         if s.storage_path:
             try:
                 file_store.delete_file(s.storage_path)
