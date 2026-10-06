@@ -44,11 +44,12 @@ def check_qwen_health(force_refresh: bool = False) -> Dict[str, Any]:
     primary = (config.LITELLM_API_BASE or "").rstrip("/")
     if primary:
         hdrs = {"Authorization": f"Bearer {config.LITELLM_MASTER_KEY}"} if config.LITELLM_MASTER_KEY else {}
+        candidates.append((primary, "/health/liveliness", hdrs))
         candidates.append((primary, "/health", hdrs))
-        # Only check /v1/models if /health wasn't tested
     
     # Fallback to local container only if primary is not local
     if "litellm:4000" not in primary and "127.0.0.1:4000" not in primary and "localhost:4000" not in primary:
+        candidates.append(("http://127.0.0.1:4000", "/health/liveliness", {}))
         candidates.append(("http://127.0.0.1:4000", "/health", {}))
 
     # Direct upstream Qwen GPU server (if configured and different from primary)
@@ -61,7 +62,7 @@ def check_qwen_health(force_refresh: bool = False) -> Dict[str, Any]:
         url = f"{base}{path}"
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=2.0) as resp:
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
                 if resp.status in (200, 204):
                     res = {
                         "healthy": True,
