@@ -40,8 +40,96 @@ from auth.dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
 
-# In-memory generation status tracking: project_id -> status dict
+# Generation lock & status tracking
 _generation_status: Dict[str, Dict[str, Any]] = {}
+_active_locks: Dict[str, float] = {}
+_redis_client_pool = None
+
+
+def _get_redis_client():
+    """Get direct redis client with short timeout, avoiding dependency on rq."""
+    global _redis_client_pool
+    try:
+        import redis
+        from config import config
+        if _redis_client_pool is None:
+            _redis_client_pool = redis.ConnectionPool.from_url(
+                config.REDIS_URL,
+                socket_connect_timeout=1,
+                socket_timeout=2
+            )
+        return redis.Redis(connection_pool=_redis_client_pool)
+    except Exception:
+        return None
+
+
+def _acquire_generation_lock(project_id: str, ttl_seconds: int = 180) -> bool:
+    """
+    Acquire distributed lock for program generation via Redis,
+    falling back to in-memory active_locks tracking if Redis is unreachable.
+    Returns True if acquired, False if already locked.
+    """
+    r = _get_redis_client()
+    if r:
+        try:
+            lock_key = f"lock:program_gen:{project_id}"
+            acquired = r.set(lock_key, "1", nx=True, ex=ttl_seconds)
+            if acquired:
+                _active_locks[project_id] = time.time() + ttl_seconds
+                return True
+            return False
+        except Exception as e:
+            logger.debug(f"Redis lock check bypassed ({e}); using local active_locks tracking.")
+
+    # Local active_locks fallback
+    now = time.time()
+    locked_until = _active_locks.get(project_id, 0)
+    if now < locked_until:
+        return False
+    _active_locks[project_id] = now + ttl_seconds
+    return True
+
+
+def _release_generation_lock(project_id: str):
+    """Release distributed generation lock across Redis and local memory."""
+    _active_locks.pop(project_id, None)
+    r = _get_redis_client()
+    if r:
+        try:
+            r.delete(f"lock:program_gen:{project_id}")
+        except Exception as e:
+            logger.debug(f"Redis lock release error: {e}")
+
+
+def _set_generation_status(project_id: str, status_data: Dict[str, Any]):
+    """Set generation status across processes via Redis with in-memory fallback."""
+    _generation_status[project_id] = status_data
+    r = _get_redis_client()
+    if r:
+        try:
+            import json
+            status_key = f"status:program_gen:{project_id}"
+            r.set(status_key, json.dumps(status_data), ex=3600)
+        except Exception as e:
+            logger.debug(f"Redis status persistence error: {e}")
+
+
+def _get_generation_status(project_id: str) -> Dict[str, Any]:
+    """Get generation status across processes via Redis with in-memory fallback."""
+    r = _get_redis_client()
+    if r:
+        try:
+            import json
+            status_key = f"status:program_gen:{project_id}"
+            raw = r.get(status_key)
+            if raw:
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8")
+                return json.loads(raw)
+        except Exception:
+            pass
+    return _generation_status.get(project_id, {"status": "idle"})
+
 
 router = APIRouter(tags=["program"])
 
@@ -302,7 +390,8 @@ def get_program_summary(
             "version_number": latest_prog_version.version_number,
             "item_count": latest_prog_version.item_count,
         } if latest_prog_version else None,
-        "generation_status": _generation_status.get(project_id, {"status": "idle"}),
+        "generation_status": _get_generation_status(project_id),
+        "coverage_audit": _get_generation_status(project_id).get("coverage_audit"),
     }
 
 
@@ -672,11 +761,11 @@ def get_brief_sources_for_item(
     results = []
     found_card_ids = set()
 
-    # 3. If associated with a published Brief version, resolve directly from immutable BriefVersionCard snapshot
+    # 3. If associated with a published Brief version, resolve directly and strictly from immutable BriefVersionCard snapshot
     if source_brief_version_id:
         snapshot_records = db.query(BriefVersionCard).filter(
             BriefVersionCard.brief_version_id == source_brief_version_id
-        ).all()
+        ).order_by(BriefVersionCard.id.asc()).all()
 
         for rec in snapshot_records:
             sc_data = rec.snapshot_data or {}
@@ -693,26 +782,24 @@ def get_brief_sources_for_item(
                     "status": sc_data.get("status", "accepted"),
                     "is_snapshot": True,
                 })
-                found_card_ids.add(sc_id)
-                if sc_data.get("id"):
-                    found_card_ids.add(sc_data.get("id"))
 
-    # 4. Fallback to live Card table for any remaining card IDs (e.g. unversioned draft)
-    remaining_ids = [cid for cid in source_card_ids if cid not in found_card_ids]
-    if remaining_ids:
-        cards = db.query(Card).filter(Card.id.in_(remaining_ids)).all()
-        for card in cards:
-            results.append({
-                "id": card.id,
-                "card_type": card.card_type,
-                "title": card.title,
-                "content": card.content,
-                "evidence": card.evidence,
-                "source_document": card.source_document,
-                "section": card.section,
-                "status": card.status,
-                "is_snapshot": False,
-            })
+        # Strict requirement: Never fall back to mutable live cards table when source_brief_version_id is available
+        return results
+
+    # 4. Fallback to live Card table ONLY when no published Brief version exists (e.g. unversioned draft)
+    cards = db.query(Card).filter(Card.id.in_(source_card_ids)).all()
+    for card in cards:
+        results.append({
+            "id": card.id,
+            "card_type": card.card_type,
+            "title": card.title,
+            "content": card.content,
+            "evidence": card.evidence,
+            "source_document": card.source_document,
+            "section": card.section,
+            "status": card.status,
+            "is_snapshot": False,
+        })
 
     return results
 
@@ -730,12 +817,12 @@ def _run_program_generation(
     from agents.program_agent import ProgramAgent
     from agents.brief_agent import format_project_context
 
-    _generation_status[project_id] = {
+    _set_generation_status(project_id, {
         "status": "generating",
         "error": None,
         "step": "Synthesizing spatial and functional criteria...",
         "started_at": time.time(),
-    }
+    })
 
     db = SessionLocal()
     try:
@@ -877,28 +964,32 @@ def _run_program_generation(
             project_id=project_id,
         )
 
-        _generation_status[project_id] = {
+        coverage_audit = result.get("coverage_audit", {})
+        _set_generation_status(project_id, {
             "status": "completed",
             "error": None,
             "item_count": len(result["program_items"]),
             "question_count": len(result["ai_questions"]),
+            "coverage_audit": coverage_audit,
             "completed_at": time.time(),
-        }
+        })
 
         logger.info(
             f"Program generation complete for project {project_id}: "
-            f"{len(result['program_items'])} items, {len(result['ai_questions'])} questions."
+            f"{len(result['program_items'])} items, {len(result['ai_questions'])} questions, "
+            f"coverage: {coverage_audit.get('accounted_percentage', 100)}%."
         )
 
     except Exception as e:
         logger.error(f"Program generation failed for project {project_id}: {e}", exc_info=True)
-        _generation_status[project_id] = {
+        _set_generation_status(project_id, {
             "status": "failed",
             "error": str(e),
             "failed_at": time.time(),
-        }
+        })
         db.rollback()
     finally:
+        _release_generation_lock(project_id)
         db.close()
 
 
@@ -917,19 +1008,17 @@ def generate_program(
     _get_user_project(db, project_id, user.id)
 
     # Guard against concurrent duplicate generation runs
-    current_status = _generation_status.get(project_id, {})
-    if current_status.get("status") == "generating":
-        started_at = current_status.get("started_at", 0)
-        if time.time() - started_at < 180:
-            raise HTTPException(
-                status_code=409,
-                detail="Program generation is already in progress for this project. Please wait for the current run to finish."
-            )
+    if not _acquire_generation_lock(project_id, ttl_seconds=180):
+        raise HTTPException(
+            status_code=409,
+            detail="Program generation is already in progress for this project. Please wait for the current run to finish."
+        )
 
     # Check AI health
     from llm.qwen_health import check_qwen_health
     health = check_qwen_health()
     if not health.get("healthy"):
+        _release_generation_lock(project_id)
         raise HTTPException(
             status_code=503,
             detail="AI services are temporarily unavailable. Please try again later."
@@ -948,6 +1037,7 @@ def generate_program(
         ).order_by(BriefPublishedVersion.version_number.desc()).first()
 
     if not brief_version:
+        _release_generation_lock(project_id)
         raise HTTPException(
             status_code=400,
             detail="No published Brief version found. You must publish the Brief before generating the Program."
@@ -966,12 +1056,12 @@ def generate_program(
         f"(prev program: {'V' + str(prev_prog_version.version_number) if prev_prog_version else 'None'})"
     )
 
-    _generation_status[project_id] = {
+    _set_generation_status(project_id, {
         "status": "generating",
         "error": None,
         "step": "Analyzing published Brief...",
         "started_at": time.time(),
-    }
+    })
 
     background_tasks.add_task(
         _run_program_generation,

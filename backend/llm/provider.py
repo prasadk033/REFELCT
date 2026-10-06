@@ -4,7 +4,18 @@ from typing import Dict, Any, List, Optional
 import litellm
 from dotenv import load_dotenv
 from config import config
-from haystack import component
+try:
+    from haystack import component
+except ImportError:
+    class _DummyComponent:
+        def __call__(self, cls):
+            return cls
+        @staticmethod
+        def output_types(**kwargs):
+            def decorator(fn):
+                return fn
+            return decorator
+    component = _DummyComponent()
 
 
 @component
