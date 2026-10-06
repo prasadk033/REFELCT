@@ -34,12 +34,13 @@ export default function GlobalOverviewPage() {
 
   async function loadData() {
     setLoading(true)
+    setError(null)
     try {
-      const projData = await listProjects().catch(() => [])
+      const projData = await listProjects()
       setProjects(projData || [])
     } catch (err) {
-      console.error(err)
-      setError(err.message)
+      console.error('Failed to load projects:', err)
+      setError(err.message || 'Failed to load projects')
     } finally {
       setLoading(false)
     }
