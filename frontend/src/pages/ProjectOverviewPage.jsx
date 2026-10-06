@@ -206,19 +206,36 @@ export default function ProjectOverviewPage() {
   }
 
   async function handleSaveSiteLocation(e) {
-    e.preventDefault()
+    if (e && e.preventDefault) e.preventDefault()
     if (!siteLocationInput.trim()) return
 
     setSiteLocationLoading(true)
     setError(null)
+    const isUpdate = Boolean(project?.site_url)
     try {
       await updateProject(projectId, { site_url: siteLocationInput.trim() })
       setShowSiteLocationModal(false)
       setSiteLocationInput('')
-      showToast('Site Location saved! Run Extraction to generate Site Analysis.')
+      showToast(isUpdate ? 'Site Location updated successfully!' : 'Site Location added! Run Extraction to generate Site Analysis.')
       await loadProjectData()
     } catch (err) {
       showError(err.message || 'Failed to save site location')
+    } finally {
+      setSiteLocationLoading(false)
+    }
+  }
+
+  async function handleRemoveSiteLocation() {
+    setSiteLocationLoading(true)
+    setError(null)
+    try {
+      await updateProject(projectId, { site_url: '' })
+      setShowSiteLocationModal(false)
+      setSiteLocationInput('')
+      showToast('Site Location removed.')
+      await loadProjectData()
+    } catch (err) {
+      showError(err.message || 'Failed to remove site location')
     } finally {
       setSiteLocationLoading(false)
     }
@@ -976,31 +993,10 @@ export default function ProjectOverviewPage() {
                 <span className="pov-stat-label">Published<br />Brief</span>
               </div>
 
-              {/* View Brief Workspace Button placed beside Published Brief */}
-              <div className="pov-stat-cell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px' }}>
-                <button
-                  className="pov-btn-analyse"
-                  style={{
-                    padding: '9px 18px',
-                    fontSize: '12.5px',
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                    background: '#0f172a',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => navigate(`/projects/${projectId}/brief`)}
-                >
-                  <span>View Brief Workspace →</span>
-                </button>
-              </div>
             </div>
 
             {/* Action Row */}
-            <div className="pov-analyse-action-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', ...(analyzing || extractModalOpen ? { opacity: 0.65, pointerEvents: 'none' } : {}) }}>
+            <div className="pov-analyse-action-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', ...(analyzing || extractModalOpen ? { opacity: 0.65, pointerEvents: 'none' } : {}) }}>
               
               {sources.length === 0 ? (
                 /* 1. No documents yet: Add Source CTA */
@@ -1102,16 +1098,38 @@ export default function ProjectOverviewPage() {
             </div>
 
             <div className="pov-sources-actions" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-              {/* Connect Location situated directly on top of Add Source */}
+              {/* Add / Update Location button or badge */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
                 {project?.site_url ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '5px 10px', borderRadius: '6px' }}>
-                    <span>🌍</span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    padding: '5px 10px',
+                    borderRadius: '7px',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                  }}>
+                    <span style={{ display: 'flex', alignItems: 'center', color: '#2563eb' }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" width="14" height="14">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                      </svg>
+                    </span>
                     <a
                       href={project.site_url.startsWith('http') ? project.site_url : `https://${project.site_url}`}
                       target="_blank"
                       rel="noreferrer"
-                      style={{ color: '#2563eb', textDecoration: 'none', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}
+                      style={{
+                        color: '#2563eb',
+                        textDecoration: 'none',
+                        maxWidth: '190px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontWeight: 600,
+                        fontSize: '12px'
+                      }}
                       title={project.site_url}
                     >
                       {project.site_url.replace(/^https?:\/\//, '')}
@@ -1120,12 +1138,22 @@ export default function ProjectOverviewPage() {
                       type="button"
                       onClick={() => {
                         setSiteLocationInput(project.site_url)
-                        setIsEditingLocation(true)
                         setShowSiteLocationModal(true)
                       }}
-                      style={{ background: 'transparent', border: 'none', padding: '0 2px', color: '#64748b', cursor: 'pointer', fontSize: '11px', textDecoration: 'underline' }}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '5px',
+                        padding: '3px 8px',
+                        color: '#0f172a',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Update project site location"
                     >
-                      Edit
+                      Update Location
                     </button>
                     {sources.some(s => s.file_type === 'virtual/osm' && s.extracted_text) && (
                       <button
@@ -1134,7 +1162,17 @@ export default function ProjectOverviewPage() {
                           const analyzedSource = sources.filter(s => s.file_type === 'virtual/osm' && s.extracted_text).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
                           if (analyzedSource) setViewingSource(analyzedSource);
                         }}
-                        style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '1px 6px', color: '#2563eb', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
+                        style={{
+                          background: '#eff6ff',
+                          border: '1px solid #bfdbfe',
+                          borderRadius: '5px',
+                          padding: '3px 8px',
+                          color: '#2563eb',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: 600
+                        }}
+                        title="View OpenStreetMap Site Analysis"
                       >
                         Analysis
                       </button>
@@ -1145,25 +1183,29 @@ export default function ProjectOverviewPage() {
                     type="button"
                     onClick={() => {
                       setSiteLocationInput('')
-                      setIsEditingLocation(true)
                       setShowSiteLocationModal(true)
                     }}
                     style={{
-                      background: '#f8fafc',
+                      background: '#ffffff',
                       border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      padding: '5px 12px',
-                      color: '#2563eb',
+                      borderRadius: '7px',
+                      padding: '6px 12px',
+                      color: '#0f172a',
                       cursor: 'pointer',
                       fontSize: '12px',
                       fontWeight: 600,
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '5px',
+                      gap: '6px',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                      transition: 'all 0.15s ease'
                     }}
+                    title="Add project site location"
                   >
-                    <span>🌍</span>
-                    <span>+ Connect Location</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.2" width="14" height="14">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span>+ Add Location</span>
                   </button>
                 )}
               </div>
@@ -2188,7 +2230,7 @@ export default function ProjectOverviewPage() {
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" width="18" height="18">
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
                   </svg>
-                  Connect Site Location
+                  {project?.site_url ? 'Update Site Location' : 'Add Site Location'}
                 </h3>
                 <button
                   type="button"
@@ -2206,14 +2248,7 @@ export default function ProjectOverviewPage() {
                 </div>
               )}
 
-              <form onSubmit={(e) => {
-                e.preventDefault()
-                if (!isEditingLocation) {
-                  setIsEditingLocation(true)
-                } else {
-                  handleSaveSiteLocation(e)
-                }
-              }}>
+              <form onSubmit={handleSaveSiteLocation}>
                 <div className="bui-form-group" style={{ marginBottom: '18px' }}>
                   <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '6px', display: 'block' }}>
                     Google Maps URL or Coordinates
@@ -2221,40 +2256,54 @@ export default function ProjectOverviewPage() {
                   <input
                     type="text"
                     className="bui-input"
-                    placeholder="e.g. https://maps.app.goo.gl/..."
+                    placeholder="e.g. https://maps.app.goo.gl/... or 37.7749, -122.4194"
                     value={siteLocationInput}
                     onChange={(e) => setSiteLocationInput(e.target.value)}
-                    disabled={siteLocationLoading || !isEditingLocation}
-                    autoFocus={isEditingLocation}
+                    disabled={siteLocationLoading}
+                    autoFocus
                     style={{
-                      background: !isEditingLocation ? '#f1f5f9' : '#ffffff',
+                      background: '#ffffff',
                       border: '1px solid #cbd5e1',
                       padding: '10px 14px',
                       borderRadius: '6px',
                       fontSize: '13.5px',
                       width: '100%',
                       boxSizing: 'border-box',
-                      cursor: !isEditingLocation ? 'not-allowed' : 'text',
-                      color: !isEditingLocation ? '#475569' : '#0f172a'
+                      color: '#0f172a'
                     }}
                   />
                   <p style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', lineHeight: 1.45 }}>
-                    Providing a location allows REFLECT to query OpenStreetMap and generate a Site Analysis brief card.
+                    {project?.site_url
+                      ? 'Updating the location will update project site context and refresh automated OpenStreetMap analysis.'
+                      : 'Providing a location allows REFLECT to query OpenStreetMap and generate an automated Site Analysis brief card.'}
                   </p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', marginTop: '20px' }}>
+                  {project?.site_url && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveSiteLocation}
+                      disabled={siteLocationLoading}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '6px',
+                        fontSize: '12.5px',
+                        fontWeight: 500,
+                        color: '#ef4444',
+                        background: 'transparent',
+                        border: '1px solid #fecaca',
+                        cursor: 'pointer',
+                        marginRight: 'auto'
+                      }}
+                    >
+                      Remove
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="bui-btn bui-btn-outline"
-                    onClick={() => {
-                      if (isEditingLocation && project?.site_url) {
-                        setIsEditingLocation(false)
-                        setSiteLocationInput(project.site_url)
-                      } else {
-                        setShowSiteLocationModal(false)
-                      }
-                    }}
+                    onClick={() => setShowSiteLocationModal(false)}
                     disabled={siteLocationLoading}
                     style={{ padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 500, color: '#64748b', borderColor: '#cbd5e1' }}
                   >
@@ -2263,7 +2312,7 @@ export default function ProjectOverviewPage() {
                   <button
                     type="submit"
                     className="bui-btn bui-btn-primary"
-                    disabled={(isEditingLocation && !siteLocationInput.trim()) || siteLocationLoading}
+                    disabled={!siteLocationInput.trim() || siteLocationLoading}
                     style={{
                       padding: '8px 20px',
                       borderRadius: '6px',
@@ -2272,11 +2321,13 @@ export default function ProjectOverviewPage() {
                       background: '#0f172a',
                       color: '#ffffff',
                       border: 'none',
-                      cursor: (isEditingLocation && !siteLocationInput.trim()) ? 'not-allowed' : 'pointer',
-                      opacity: (isEditingLocation && !siteLocationInput.trim()) ? 0.6 : 1
+                      cursor: !siteLocationInput.trim() ? 'not-allowed' : 'pointer',
+                      opacity: !siteLocationInput.trim() ? 0.6 : 1
                     }}
                   >
-                    {!isEditingLocation ? 'Edit URL' : siteLocationLoading ? 'Saving...' : 'Connect Location'}
+                    {project?.site_url
+                      ? (siteLocationLoading ? 'Updating...' : 'Update Location')
+                      : (siteLocationLoading ? 'Saving...' : 'Add Location')}
                   </button>
                 </div>
               </form>

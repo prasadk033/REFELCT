@@ -2634,9 +2634,10 @@ th.th-actions {
 }
 
 .pov-stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 32px;
+  flex-wrap: wrap;
   margin-bottom: 22px;
 }
 
