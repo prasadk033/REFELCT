@@ -76,18 +76,27 @@ STATUS RULES:
 - Use "UNDER_REVIEW" for ambiguous or partially specified requirements.
 - Use "QUESTION" when there is a missing quantity, capacity, or unclear specification that must be answered.
 
-AI QUESTIONS: Generate questions when quantity is required but unknown, capacity is required but unknown, intended use is ambiguous, duration of occupation is unclear, accessibility needs are unclear, functional relationships are unclear, or important information is missing. Questions must be concise and actionable. Do not answer the question yourself.
+AI QUESTIONS: MANDATORY: Generate between 3 to 6 high-value, actionable AI clarification questions. Questions must be generated when quantity is required but unknown, capacity is required but unknown, intended use is ambiguous, duration of occupation is unclear, accessibility needs are unclear, functional relationships are unclear, or important architectural constraints are missing. Questions must be concise and actionable. Do not answer the question yourself.
 
 CONCISENESS AND COMPLETENESS RULES:
-- Generate between 12 to 25 essential, high-quality Program Items covering the primary spaces, functions, and key project requirements. Consolidate related minor details rather than creating dozens of fragmented micro-items.
+- Generate between 3 to 6 high-value, actionable AI clarification questions in "ai_questions".
+- Generate between 12 to 25 essential, high-quality Program Items in "program_items" covering the primary spaces, functions, and key project requirements. Consolidate related minor details rather than creating dozens of fragmented micro-items.
 - Keep "requirement" and "function" descriptions clear and concise (1 to 2 sentences max).
 - Limit "key_considerations" to at most 3 concise bullet strings per item.
-- Generate between 2 to 6 high-value, actionable AI clarification questions.
 
 OUTPUT FORMAT:
-Return ONLY valid JSON. No markdown. No explanations outside JSON.
+Return ONLY valid JSON. No markdown. No explanations outside JSON. Place "ai_questions" first.
 
 {
+  "ai_questions": [
+    {
+      "question": "string",
+      "reason": "string",
+      "source_brief_card_ids": ["string"],
+      "program_item_reference": "string | null",
+      "status": "OPEN"
+    }
+  ],
   "program_items": [
     {
       "name": "string",
@@ -102,15 +111,6 @@ Return ONLY valid JSON. No markdown. No explanations outside JSON.
       "notes": "string | null",
       "status": "CONFIRMED | PROVISIONAL | UNDER_REVIEW | QUESTION",
       "source_brief_card_ids": ["string"]
-    }
-  ],
-  "ai_questions": [
-    {
-      "question": "string",
-      "reason": "string",
-      "source_brief_card_ids": ["string"],
-      "program_item_reference": "string | null",
-      "status": "OPEN"
     }
   ]
 }"""
@@ -279,14 +279,19 @@ class ProgramAgent:
             p_items_idx = clean_text.find('"program_items"')
             q_items_idx = clean_text.find('"ai_questions"')
 
-            if p_items_idx != -1:
-                end_idx = q_items_idx if (q_items_idx != -1 and q_items_idx > p_items_idx) else len(clean_text)
-                items_section = clean_text[p_items_idx:end_idx]
+            if p_items_idx != -1 and q_items_idx != -1:
+                if p_items_idx < q_items_idx:
+                    items_section = clean_text[p_items_idx:q_items_idx]
+                    questions_section = clean_text[q_items_idx:]
+                else:
+                    questions_section = clean_text[q_items_idx:p_items_idx]
+                    items_section = clean_text[p_items_idx:]
                 items = self._extract_complete_json_objects(items_section)
-
-            if q_items_idx != -1:
-                questions_section = clean_text[q_items_idx:]
                 questions = self._extract_complete_json_objects(questions_section)
+            elif p_items_idx != -1:
+                items = self._extract_complete_json_objects(clean_text[p_items_idx:])
+            elif q_items_idx != -1:
+                questions = self._extract_complete_json_objects(clean_text[q_items_idx:])
 
             if items or questions:
                 logger.info(

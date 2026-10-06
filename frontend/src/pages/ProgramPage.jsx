@@ -9,7 +9,9 @@ import {
   deleteProgramItem,
   generateProgram,
   listProgramQuestions,
+  createProgramQuestion,
   updateProgramQuestion,
+  deleteProgramQuestion,
   getBriefSourcesForItem,
   listPublishedProgramVersions,
   getPublishedProgramVersion,
@@ -17,6 +19,7 @@ import {
   listPublishedBriefVersions
 } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
+import ConfirmModal from '../components/ConfirmModal.jsx'
 
 export default function ProgramPage() {
   const { projectId } = useParams()
@@ -59,6 +62,10 @@ export default function ProgramPage() {
   const [selectedItemDetail, setSelectedItemDetail] = useState(null)
   const [itemBriefSources, setItemBriefSources] = useState([])
   const [loadingBriefSources, setLoadingBriefSources] = useState(false)
+  const [confirmModal, setConfirmModal] = useState(null)
+  const [showAddQuestionModal, setShowAddQuestionModal] = useState(false)
+  const [newQuestionForm, setNewQuestionForm] = useState({ question: '', reason: '', program_item_id: '' })
+  const [isSavingQuestion, setIsSavingQuestion] = useState(false)
 
   // Form State for Add / Edit
   const [formData, setFormData] = useState({
@@ -129,11 +136,15 @@ export default function ProgramPage() {
       setSelectedView('working')
       setSelectedVersionId(null)
       setPublishedVersionData(null)
-      // Refresh working items
-      const working = await listProgramItems(projectId)
+      // Refresh working items, summary, and questions
+      const [working, sum, q] = await Promise.all([
+        listProgramItems(projectId).catch(() => []),
+        getProgramSummary(projectId).catch(() => null),
+        listProgramQuestions(projectId).catch(() => []),
+      ])
       setItems(working || [])
-      const sum = await getProgramSummary(projectId)
       setSummary(sum)
+      setQuestions(q || [])
     } else {
       setSelectedView('published')
       setSelectedVersionId(target)
@@ -362,24 +373,33 @@ export default function ProgramPage() {
     }
   }
 
-  // Delete Item
-  async function handleDeleteItem(item, e) {
+  // Delete Item (uses custom ConfirmModal)
+  function handleDeleteItem(item, e) {
     if (e) e.stopPropagation()
     if (selectedView !== 'working') {
       setError('Published versions are read-only and cannot be modified.')
       return
     }
-    if (!window.confirm(`Are you sure you want to delete ${item.program_item_code || item.name}?`)) return
-    try {
-      await deleteProgramItem(item.id)
-      setItems(prev => prev.filter(it => it.id !== item.id))
-      showToastMsg(`Deleted item`)
-      if (selectedItemDetail?.id === item.id) setSelectedItemDetail(null)
-      const updatedSum = await getProgramSummary(projectId)
-      setSummary(updatedSum)
-    } catch (err) {
-      setError(err.message || 'Failed to delete item')
-    }
+    const label = item.program_item_code || item.name || 'Program Item'
+    setConfirmModal({
+      title: `Delete ${label}?`,
+      message: `Are you sure you want to delete "${label}"? This will permanently remove it from the working draft.`,
+      confirmLabel: 'Delete Item',
+      cancelLabel: 'Keep Item',
+      confirmStyle: 'danger',
+      onConfirm: async () => {
+        try {
+          await deleteProgramItem(item.id)
+          setItems(prev => prev.filter(it => it.id !== item.id))
+          showToastMsg(`✓ Deleted ${label}`)
+          if (selectedItemDetail?.id === item.id) setSelectedItemDetail(null)
+          const updatedSum = await getProgramSummary(projectId)
+          setSummary(updatedSum)
+        } catch (err) {
+          setError(err.message || 'Failed to delete item')
+        }
+      }
+    })
   }
 
   // Answer AI Question
@@ -405,20 +425,79 @@ export default function ProgramPage() {
     }
   }
 
-  // Dismiss AI Question
-  async function handleDismissQuestion(qId) {
+  // Dismiss AI Question (uses custom ConfirmModal)
+  function handleDismissQuestion(qId) {
     if (selectedView !== 'working') {
       setError('Published versions are read-only and cannot be modified.')
       return
     }
+    setConfirmModal({
+      title: 'Dismiss Question?',
+      message: 'Are you sure you want to dismiss this clarification question?',
+      confirmLabel: 'Dismiss',
+      cancelLabel: 'Cancel',
+      confirmStyle: 'warning',
+      onConfirm: async () => {
+        try {
+          const updated = await updateProgramQuestion(qId, { status: 'DISMISSED' })
+          setQuestions(prev => prev.map(q => q.id === qId ? updated : q))
+          showToastMsg('Question dismissed')
+          const updatedSum = await getProgramSummary(projectId)
+          setSummary(updatedSum)
+        } catch (err) {
+          setError(err.message || 'Failed to dismiss question')
+        }
+      }
+    })
+  }
+
+  // Delete Question (uses custom ConfirmModal)
+  function handleDeleteQuestion(qId) {
+    if (selectedView !== 'working') {
+      setError('Published versions are read-only and cannot be modified.')
+      return
+    }
+    setConfirmModal({
+      title: 'Delete Question?',
+      message: 'Are you sure you want to permanently delete this clarification question?',
+      confirmLabel: 'Delete Question',
+      cancelLabel: 'Cancel',
+      confirmStyle: 'danger',
+      onConfirm: async () => {
+        try {
+          await deleteProgramQuestion(qId)
+          setQuestions(prev => prev.filter(q => q.id !== qId))
+          showToastMsg('✓ Question deleted')
+          const updatedSum = await getProgramSummary(projectId)
+          setSummary(updatedSum)
+        } catch (err) {
+          setError(err.message || 'Failed to delete question')
+        }
+      }
+    })
+  }
+
+  // Create Manual Question
+  async function handleCreateQuestion(e) {
+    e.preventDefault()
+    if (!newQuestionForm.question.trim()) return
+    setIsSavingQuestion(true)
     try {
-      const updated = await updateProgramQuestion(qId, { status: 'DISMISSED' })
-      setQuestions(prev => prev.map(q => q.id === qId ? updated : q))
-      showToastMsg('Question dismissed')
+      const created = await createProgramQuestion(projectId, {
+        question: newQuestionForm.question.trim(),
+        reason: newQuestionForm.reason.trim() || 'Architect inquiry',
+        program_item_id: newQuestionForm.program_item_id || null,
+      })
+      setQuestions(prev => [created, ...prev])
+      setShowAddQuestionModal(false)
+      setNewQuestionForm({ question: '', reason: '', program_item_id: '' })
+      showToastMsg('✓ Clarification question added')
       const updatedSum = await getProgramSummary(projectId)
       setSummary(updatedSum)
     } catch (err) {
-      setError(err.message || 'Failed to dismiss question')
+      setError(err.message || 'Failed to create clarification question')
+    } finally {
+      setIsSavingQuestion(false)
     }
   }
 
@@ -1164,20 +1243,41 @@ export default function ProgramPage() {
         {/* ── TAB 2: AI QUESTIONS & CLARIFICATIONS ──────────────────────────────── */}
         {activeTab === 'questions' && (
           <div className="prog-questions-container">
-            <div className="prog-questions-header">
+            <div className="prog-questions-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <h2>AI Clarification Questions ({questions.length})</h2>
                 <p>
-                  Questions identified by the AI when information in the Brief was ambiguous, missing, or unclear.
+                  Questions identified by AI analysis and project architects to resolve ambiguities, missing areas, or operational criteria.
                 </p>
               </div>
+              {isWorkingView && (
+                <button
+                  type="button"
+                  className="prog-btn prog-btn-primary"
+                  onClick={() => setShowAddQuestionModal(true)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <span>+</span> Add Clarification Question
+                </button>
+              )}
             </div>
 
             {questions.length === 0 ? (
-              <div className="prog-empty-state">
-                <div className="prog-empty-icon">✓</div>
-                <h3>No Open Questions</h3>
-                <p>The AI identified no ambiguous or missing requirements in this Program dataset.</p>
+              <div className="prog-empty-state" style={{ padding: '48px 24px', textAlign: 'center', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', margin: '20px 0' }}>
+                <div className="prog-empty-icon" style={{ fontSize: '32px', marginBottom: '12px' }}>💡</div>
+                <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', margin: '0 0 6px 0' }}>No Clarification Questions Yet</h3>
+                <p style={{ maxWidth: '480px', margin: '0 auto 20px auto', color: '#64748b', fontSize: '13.5px', lineHeight: 1.5 }}>
+                  The AI identified no open questions for this dataset, or questions have been answered. You can add new clarification inquiries for the client or team anytime.
+                </p>
+                {isWorkingView && (
+                  <button
+                    type="button"
+                    className="prog-btn prog-btn-primary"
+                    onClick={() => setShowAddQuestionModal(true)}
+                  >
+                    + Add Clarification Question
+                  </button>
+                )}
               </div>
             ) : (
               <div className="prog-questions-grid">
@@ -1187,13 +1287,26 @@ export default function ProgramPage() {
                     className={`prog-question-card ${q.status.toLowerCase()}`}
                   >
                     <div className="prog-q-top">
-                      <span className={`prog-q-status ${q.status.toLowerCase()}`}>
-                        {q.status}
-                      </span>
-                      {q.program_item_id && (
-                        <span className="prog-q-item-ref">
-                          Linked to: {items.find(i => i.id === q.program_item_id)?.name || 'Program Item'}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span className={`prog-q-status ${q.status.toLowerCase()}`}>
+                          {q.status}
                         </span>
+                        {q.program_item_id && (
+                          <span className="prog-q-item-ref">
+                            Linked to: {items.find(i => i.id === q.program_item_id)?.name || 'Program Item'}
+                          </span>
+                        )}
+                      </div>
+                      {isWorkingView && (
+                        <button
+                          type="button"
+                          className="prog-action-btn prog-action-del"
+                          onClick={() => handleDeleteQuestion(q.id)}
+                          title="Delete Question"
+                          style={{ width: '28px', height: '28px' }}
+                        >
+                          ✕
+                        </button>
                       )}
                     </div>
 
@@ -1554,6 +1667,167 @@ export default function ProgramPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* ── Add Clarification Question Modal ───────────────────────────────────── */}
+        {showAddQuestionModal && (
+          <div
+            className="bui-modal-overlay"
+            onClick={() => !isSavingQuestion && setShowAddQuestionModal(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(5px)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <div
+              className="bui-modal"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                maxWidth: '520px',
+                width: '92%',
+                background: '#ffffff',
+                borderRadius: '14px',
+                padding: '28px 26px',
+                color: '#0f172a',
+                boxShadow: '0 25px 60px rgba(0,0,0,0.22)',
+                border: '1px solid #e2e8f0',
+                textAlign: 'left',
+                boxSizing: 'border-box',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>
+                  Add Clarification Question
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowAddQuestionModal(false)}
+                  style={{ background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateQuestion}>
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                    Clarification Question <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                    }}
+                    placeholder="e.g. What are the specific clearance dimensions and acoustic ratings for this space?"
+                    value={newQuestionForm.question}
+                    onChange={(e) => setNewQuestionForm({ ...newQuestionForm, question: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                    Architectural Context / Reason
+                  </label>
+                  <input
+                    type="text"
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                      outline: 'none',
+                    }}
+                    placeholder="e.g. Required to determine HVAC load and structural constraints"
+                    value={newQuestionForm.reason}
+                    onChange={(e) => setNewQuestionForm({ ...newQuestionForm, reason: e.target.value })}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '22px' }}>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                    Linked Program Item (Optional)
+                  </label>
+                  <select
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                      outline: 'none',
+                      background: '#fff',
+                    }}
+                    value={newQuestionForm.program_item_id}
+                    onChange={(e) => setNewQuestionForm({ ...newQuestionForm, program_item_id: e.target.value })}
+                  >
+                    <option value="">-- General Project Question (No Specific Item) --</option>
+                    {items.map((it) => (
+                      <option key={it.id} value={it.id}>
+                        {it.program_item_code ? `${it.program_item_code} - ` : ''}{it.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="prog-btn prog-btn-outline"
+                    onClick={() => setShowAddQuestionModal(false)}
+                    disabled={isSavingQuestion}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="prog-btn prog-btn-primary"
+                    disabled={isSavingQuestion || !newQuestionForm.question.trim()}
+                  >
+                    {isSavingQuestion ? 'Saving...' : 'Add Question'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── Custom Confirmation Modal (Replaces browser window.confirm) ─────────── */}
+        {confirmModal && (
+          <ConfirmModal
+            title={confirmModal.title}
+            message={confirmModal.message}
+            confirmLabel={confirmModal.confirmLabel || 'Confirm'}
+            cancelLabel={confirmModal.cancelLabel || 'Cancel'}
+            confirmStyle={confirmModal.confirmStyle || 'danger'}
+            loading={confirmModal.loading}
+            onCancel={() => setConfirmModal(null)}
+            onConfirm={async () => {
+              if (confirmModal.onConfirm) {
+                await confirmModal.onConfirm()
+              }
+              setConfirmModal(null)
+            }}
+          />
         )}
 
       </div>

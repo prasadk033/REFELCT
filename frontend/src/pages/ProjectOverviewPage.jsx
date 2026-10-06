@@ -673,82 +673,92 @@ export default function ProjectOverviewPage() {
       return
     }
 
-    let docs = unextractedDocs
-    let skipSiteAnalysis = false
-
-    const hasPendingSite = docs.some(s => s.file_type === 'virtual/osm')
-    if (hasPendingSite) {
-      const wantsSite = window.confirm("Site location has been updated. Do you want to analyze the new site location alongside the documents?")
-      if (!wantsSite) {
-        skipSiteAnalysis = true
-        docs = docs.filter(s => s.file_type !== 'virtual/osm')
+    async function proceedBatchExtraction(docsToProcess, skipSite) {
+      if (docsToProcess.length === 0) {
+        navigate(`/projects/${projectId}/extract`)
+        return
       }
-    }
 
-    if (docs.length === 0) {
-      navigate(`/projects/${projectId}/extract`)
-      return
-    }
+      const docCount = docsToProcess.length
+      let totalP = 0
+      docsToProcess.forEach(d => {
+        const ext = d.file_name?.split('.').pop()?.toLowerCase() || ''
+        const isImg = d.file_type?.startsWith('image') || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
+        if (isImg) totalP += 1
+        else {
+          const pm = (d.file_name || '').match(/(\d+)\s*pages?/i)
+          if (pm) totalP += parseInt(pm[1], 10)
+          else if (d.file_size && d.file_size > 500000) totalP += Math.max(2, Math.round(d.file_size / (120 * 1024)))
+          else totalP = 20
+        }
+      })
+      totalP = Math.max(1, totalP)
+      const allImages = docsToProcess.every(d => {
+        const ext = d.file_name?.split('.').pop()?.toLowerCase() || ''
+        return d.file_type?.startsWith('image') || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
+      })
+      const estSec = allImages ? Math.max(8, docsToProcess.length * 8) : Math.max(20, totalP * 2)
 
-    const docCount = docs.length
-    let totalP = 0
-    docs.forEach(d => {
-      const ext = d.file_name?.split('.').pop()?.toLowerCase() || ''
-      const isImg = d.file_type?.startsWith('image') || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
-      if (isImg) totalP += 1
-      else {
-        const pm = (d.file_name || '').match(/(\d+)\s*pages?/i)
-        if (pm) totalP += parseInt(pm[1], 10)
-        else if (d.file_size && d.file_size > 500000) totalP += Math.max(2, Math.round(d.file_size / (120 * 1024)))
-        else totalP = 20
-      }
-    })
-    totalP = Math.max(1, totalP)
-    const allImages = docs.every(d => {
-      const ext = d.file_name?.split('.').pop()?.toLowerCase() || ''
-      return d.file_type?.startsWith('image') || ['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext)
-    })
-    const estSec = allImages ? Math.max(8, docs.length * 8) : Math.max(20, totalP * 2)
+      setExtractDocName(docsToProcess.length === 1 ? (docsToProcess[0]?.file_name || 'Document') : `${docsToProcess.length} Documents (${docsToProcess[0]?.file_name}...)`)
+      setExtractDocCount(docCount)
+      setExtractDocsCompleted(0)
+      setExtractServerStep(`Initiating extraction for ${docsToProcess.length === 1 ? docsToProcess[0]?.file_name : `${docsToProcess.length} pending documents`}...`)
+      setExtractTotalPages(totalP)
+      setExtractEstSeconds(estSec)
+      setExtractElapsedSeconds(0)
+      setExtractModalOpen(true)
+      setShowExtractModal(true)
+      setExtracting(true)
 
-    setExtractDocName(docs.length === 1 ? (docs[0]?.file_name || 'Document') : `${docs.length} Documents (${docs[0]?.file_name}...)`)
-    setExtractDocCount(docCount)
-    setExtractDocsCompleted(0)
-    setExtractServerStep(`Initiating extraction for ${docs.length === 1 ? docs[0]?.file_name : `${docs.length} pending documents`}...`)
-    setExtractTotalPages(totalP)
-    setExtractEstSeconds(estSec)
-    setExtractElapsedSeconds(0)
-    setExtractModalOpen(true)
-    setShowExtractModal(true)
-    setExtracting(true)
-
-    try {
-      const resp = await extractSources(projectId, skipSiteAnalysis)
-      if (resp && resp.job_id) {
-        startExtractionPolling()
-      } else {
-        // Fallback if no job id or already extracted
-        await loadProjectData()
+      try {
+        const resp = await extractSources(projectId, skipSite)
+        if (resp && resp.job_id) {
+          startExtractionPolling()
+        } else {
+          await loadProjectData()
+          setExtracting(false)
+          setExtractModalOpen(false)
+          setShowExtractModal(false)
+          navigate(`/projects/${projectId}/extract`)
+        }
+      } catch (err) {
+        console.error('Batch extraction error:', err)
         setExtracting(false)
         setExtractModalOpen(false)
         setShowExtractModal(false)
-        navigate(`/projects/${projectId}/extract`)
-      }
-    } catch (err) {
-      console.error('Batch extraction error:', err)
-      setExtracting(false)
-      setExtractModalOpen(false)
-      setShowExtractModal(false)
-      const isConcurrency = err.message?.includes('Another extraction task is currently running')
-      if (isConcurrency) {
-        showError(err.message)
-      } else {
-        const msg = err.message?.includes('AI services') || err.status === 503
-          ? 'It might take some time, AI services are temporarily low.'
-          : `Extraction failed: ${err.message}`
-        setAiFallbackErrorMsg(msg)
-        setAiFallbackModalOpen(true)
+        const isConcurrency = err.message?.includes('Another extraction task is currently running')
+        if (isConcurrency) {
+          showError(err.message)
+        } else {
+          const msg = err.message?.includes('AI services') || err.status === 503
+            ? 'It might take some time, AI services are temporarily low.'
+            : `Extraction failed: ${err.message}`
+          setAiFallbackErrorMsg(msg)
+          setAiFallbackModalOpen(true)
+        }
       }
     }
+
+    const hasPendingSite = unextractedDocs.some(s => s.file_type === 'virtual/osm')
+    if (hasPendingSite) {
+      setConfirmModal({
+        title: 'Include Site Location Analysis?',
+        message: 'A site location has been attached. Would you like to analyze the site context alongside your documents?',
+        confirmLabel: 'Analyze With Site',
+        cancelLabel: 'Documents Only',
+        confirmStyle: 'primary',
+        action: async () => {
+          await proceedBatchExtraction(unextractedDocs, false)
+        },
+        onCancel: async () => {
+          setConfirmModal(null)
+          await proceedBatchExtraction(unextractedDocs.filter(s => s.file_type !== 'virtual/osm'), true)
+        }
+      })
+      return
+    }
+
+    proceedBatchExtraction(unextractedDocs, false)
   }
 
   // Real Counts & Status Breakdown
@@ -2321,7 +2331,10 @@ export default function ProjectOverviewPage() {
                   type="button"
                   className="bui-btn bui-btn-outline"
                   style={{ padding: '10px 20px', fontSize: '13px', fontWeight: 600, color: '#475569', borderColor: '#cbd5e1', borderRadius: '8px', cursor: 'pointer' }}
-                  onClick={() => setConfirmModal(null)}
+                  onClick={() => {
+                    if (confirmModal.onCancel) confirmModal.onCancel()
+                    else setConfirmModal(null)
+                  }}
                   disabled={confirmLoading}
                 >
                   Cancel

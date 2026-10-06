@@ -58,7 +58,7 @@ export default function GlobalOverviewPage() {
       setProjects(prev => prev.filter(p => p.id !== confirmDeleteProject.id))
       setConfirmDeleteProject(null)
     } catch (err) {
-      alert(`Failed to delete project: ${err.message}`)
+      setError(`Failed to delete project: ${err.message}`)
     } finally {
       setDeleting(false)
     }

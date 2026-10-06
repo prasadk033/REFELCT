@@ -344,6 +344,20 @@ export async function updateProgramQuestion(questionId, data) {
   });
 }
 
+export async function createProgramQuestion(projectId, data) {
+  return apiFetch(`/api/projects/${projectId}/program/questions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteProgramQuestion(questionId) {
+  return apiFetch(`/api/program/questions/${questionId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function getBriefSourcesForItem(itemId, programVersionId = null) {
   const qs = programVersionId ? `?program_version_id=${encodeURIComponent(programVersionId)}` : '';
   return apiFetch(`/api/program/items/${itemId}/brief-sources${qs}`);

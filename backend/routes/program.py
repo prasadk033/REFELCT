@@ -483,7 +483,7 @@ def list_program_questions(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List AI Questions for this project's program."""
+    """List AI Questions for this project's program. Synthesizes initial questions if none exist yet."""
     _get_user_project(db, project_id, user.id)
 
     query = db.query(ProgramQuestion).filter(ProgramQuestion.project_id == project_id)
@@ -491,7 +491,81 @@ def list_program_questions(
         query = query.filter(ProgramQuestion.status == status_filter.upper())
 
     questions = query.order_by(ProgramQuestion.created_at).all()
+
+    # If no questions exist yet and no filter applied, synthesize questions from existing items
+    if not questions and not status_filter:
+        items = db.query(ProgramItem).filter(ProgramItem.project_id == project_id).all()
+        if items:
+            synth_qs = []
+            for item in items:
+                st = (item.status or "").upper()
+                has_missing = not item.area or not item.capacity
+                if st in ("UNDER_REVIEW", "QUESTION") or (has_missing and len(synth_qs) < 4):
+                    q_text = f"What are the target spatial area, capacity, and layout requirements for {item.name}?"
+                    q = ProgramQuestion(
+                        id=str(uuid.uuid4()),
+                        project_id=project_id,
+                        program_item_id=item.id,
+                        question=q_text,
+                        reason=f"Synthesized from {item.name} ({st}): {item.requirement or 'Specification requires clarification.'}",
+                        source_brief_card_ids=item.source_brief_card_ids or [],
+                        status="OPEN",
+                    )
+                    db.add(q)
+                    synth_qs.append(q)
+                    if len(synth_qs) >= 5:
+                        break
+            if synth_qs:
+                db.commit()
+                for sq in synth_qs:
+                    db.refresh(sq)
+                questions = synth_qs
+
     return [_question_to_dict(q) for q in questions]
+
+
+@router.post("/api/projects/{project_id}/program/questions", status_code=201)
+def create_program_question(
+    project_id: str,
+    body: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new manual clarification question."""
+    _get_user_project(db, project_id, user.id)
+    question_text = (body.get("question") or "").strip()
+    if not question_text:
+        raise HTTPException(status_code=400, detail="Question text is required")
+
+    q = ProgramQuestion(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        program_item_id=body.get("program_item_id") or None,
+        question=question_text,
+        reason=(body.get("reason") or "").strip() or "Architect clarification inquiry",
+        source_brief_card_ids=body.get("source_brief_card_ids") or [],
+        status="OPEN",
+    )
+    db.add(q)
+    db.commit()
+    db.refresh(q)
+    return _question_to_dict(q)
+
+
+@router.delete("/api/program/questions/{question_id}")
+def delete_program_question(
+    question_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a clarification question."""
+    q = db.query(ProgramQuestion).filter(ProgramQuestion.id == question_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Question not found")
+    _get_user_project(db, q.project_id, user.id)
+    db.delete(q)
+    db.commit()
+    return {"status": "deleted", "id": question_id}
 
 
 @router.patch("/api/program/questions/{question_id}")
@@ -741,6 +815,27 @@ def _run_program_generation(
             item_name_to_id[item_data["name"]] = item.id
 
         db.flush()
+
+        # Fallback: Synthesize clarification questions if model returned fewer than 2
+        ai_questions_list = list(result.get("ai_questions") or [])
+        if len(ai_questions_list) < 2:
+            for item_data in result.get("program_items", []):
+                st = (item_data.get("status") or "").upper()
+                name = item_data.get("name") or "Space"
+                has_missing_spec = not item_data.get("area") or not item_data.get("capacity")
+                if st in ("UNDER_REVIEW", "QUESTION") or (has_missing_spec and len(ai_questions_list) < 5):
+                    req = item_data.get("requirement") or "Dimensional and programmatic requirements require confirmation."
+                    q_text = f"What are the target spatial area, capacity, and layout requirements for {name}?"
+                    ai_questions_list.append({
+                        "question": q_text,
+                        "reason": f"Flagged from {name} ({st}): {req[:160]}",
+                        "program_item_reference": name,
+                        "source_brief_card_ids": item_data.get("source_brief_card_ids") or [],
+                        "status": "OPEN",
+                    })
+                    if len(ai_questions_list) >= 5:
+                        break
+        result["ai_questions"] = ai_questions_list
 
         # Insert AI Questions
         for q_data in result["ai_questions"]:
