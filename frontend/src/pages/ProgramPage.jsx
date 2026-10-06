@@ -1073,7 +1073,7 @@ export default function ProgramPage() {
                 <table className="prog-table">
                   <thead>
                     <tr>
-                      <th style={{ width: '90px' }}>Code</th>
+                      <th style={{ width: '95px', whiteSpace: 'nowrap' }}>Code</th>
                       <th style={{ minWidth: '180px' }}>Name</th>
                       <th style={{ width: '120px' }}>Type</th>
                       <th>Requirement / Function</th>
@@ -1091,7 +1091,7 @@ export default function ProgramPage() {
                         className={`prog-table-row ${selectedItemDetail?.id === item.id ? 'selected' : ''}`}
                         onClick={() => openItemDetail(item)}
                       >
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           <span className="prog-code-pill">{item.program_item_code || '—'}</span>
                         </td>
                         <td>

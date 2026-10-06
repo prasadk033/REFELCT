@@ -5859,6 +5859,8 @@ th.th-actions {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 .prog-version-selector-wrap {
@@ -6285,9 +6287,12 @@ th.th-actions {
   font-weight: 700;
   background: #f1f5f9;
   color: #0f172a;
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
   border: 1px solid #e2e8f0;
+  white-space: nowrap;
+  display: inline-block;
+  letter-spacing: 0.3px;
 }
 
 .prog-item-name-cell {
@@ -6528,19 +6533,20 @@ th.th-actions {
 .prog-questions-grid {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .prog-question-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: 9px;
+  padding: 13px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  border-left: 4px solid #7c3aed;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  gap: 6px;
+  border-left: 3.5px solid #7c3aed;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  transition: all 0.15s ease;
 }
 
 .prog-question-card.answered {
@@ -6549,58 +6555,77 @@ th.th-actions {
 
 .prog-question-card.dismissed {
   border-left-color: #94a3b8;
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .prog-q-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 2px;
 }
 
 .prog-q-status {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 4px;
   background: #f5f3ff;
   color: #6d28d9;
+  letter-spacing: 0.3px;
 }
 
 .prog-q-item-ref {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   color: #2563eb;
 }
 
 .prog-q-text {
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 700;
   color: #0f172a;
+  margin: 0;
+  line-height: 1.35;
 }
 
 .prog-q-reason {
-  font-size: 13px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.prog-q-reason strong {
   color: #475569;
-  line-height: 1.45;
 }
 
 .prog-q-answer-box {
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 12.5px;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
   color: #166534;
+  margin-top: 2px;
+}
+
+.prog-q-answer-box strong {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #15803d;
 }
 
 .prog-q-answer-box p {
-  margin-top: 4px;
+  margin: 2px 0 0 0;
+  font-weight: 500;
 }
 
 .prog-q-actions {
-  padding-top: 10px;
+  padding-top: 6px;
   border-top: 1px solid #f1f5f9;
+  margin-top: 2px;
 }
 
 .prog-q-btn-group {

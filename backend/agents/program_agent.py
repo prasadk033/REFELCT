@@ -116,6 +116,19 @@ DUPLICATE PROTECTION:
 Do not blindly deduplicate distinct spaces. Distinct spaces (such as Master Bedroom vs Guest Bedroom, or Bedroom 1 vs Bedroom 2) must remain separate items.
 However, true synonyms for the exact same space (e.g., Master Bedroom and Primary Bedroom) describing the same requirement should be consolidated into one item with all supporting card IDs.
 
+AI QUESTIONS & CLARIFICATIONS RULES (MANDATORY ARCHITECTURAL SPECIFICITY):
+Generate AI Questions in `ai_questions` whenever a Brief Card contains unresolved ambiguities, unconfirmed optional amenities, missing user criteria, unstated spatial relationships, or architectural choices requiring client or team confirmation.
+CRITICAL RULES FOR AI QUESTIONS:
+1. NEVER USE GENERIC FORMULAIC BOILERPLATE: Strictly forbidden from generating repetitive copy-paste questions like "What are the target spatial area, capacity, and layout requirements for [X]?".
+2. TAILORED ARCHITECTURAL INQUIRIES: Every question must directly address the specific substantive ambiguity or decision present in its source Brief Card(s):
+   - Optional/encouraged secondary amenities (e.g. gym, wine cellar, sauna, workshop): Ask which specific secondary functions should be formally incorporated into the spatial program.
+   - Structural or opening modifications (e.g. roof skylights, facade changes): Ask which structural openings are targeted and what conservation, thermal, or daylight performance constraints apply.
+   - Design identity or material performance: Ask which specific spaces require specialized acoustic dampening, custom millwork, or identity finishes.
+   - Spatial relationships and layout choices: Ask whether functions should be integrated into an open-plan configuration or acoustically and visually partitioned.
+   - User group allocations: Ask for the explicit distribution between primary resident suites vs guest accommodation and ensuite requirements.
+3. SUBSTANTIVE REASONING: The `reason` field must cite the specific text or tension from the supporting Brief Card(s) that justifies the inquiry.
+4. VALID TRACEABILITY: Always populate `source_brief_card_ids` with the card IDs that generated the question, and link `program_item_reference` when it relates to an identified program item.
+
 OUTPUT FORMAT:
 Return ONLY valid JSON. No markdown. No explanations outside JSON. Place "non_program_relevant_cards" and "ai_questions" first.
 

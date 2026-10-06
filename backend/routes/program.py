@@ -565,6 +565,62 @@ def delete_program_item(
 
 # ── AI Questions ──────────────────────────────────────────────────────────────
 
+def _build_contextual_question(
+    name: str,
+    item_type: str = "SPACE",
+    requirement: Optional[str] = None,
+    missing_area: bool = False,
+    missing_capacity: bool = False,
+    status: str = "PROPOSED"
+) -> tuple[str, str]:
+    """Generate a context-aware, non-boilerplate architectural question based on item details."""
+    itype = (item_type or "SPACE").upper()
+    req_snippet = (requirement or "").strip()
+    name_lower = (name or "").lower()
+
+    if itype == "SPACE":
+        if "bedroom" in name_lower:
+            q_text = f"What is the required allocation of family vs guest rooms, and are ensuite bathrooms required for {name}?"
+            reason = f"Clarify accommodation breakdown and sanitary adjacencies for {name}."
+        elif "kitchen" in name_lower or "dining" in name_lower or "living" in name_lower:
+            q_text = f"Should {name} be configured as an integrated open-plan environment or acoustically partitioned?"
+            reason = f"Clarify functional spatial relationship and enclosure criteria for {name}."
+        elif missing_area and missing_capacity:
+            q_text = f"What are the target floor area, occupancy capacity, and specific spatial boundaries for {name}?"
+            reason = f"Dimensional envelope and occupancy criteria for {name} are unstated in the Brief."
+        elif missing_area:
+            q_text = f"What is the intended net square footage or spatial allocation for {name}?"
+            reason = f"Target floor area for {name} is unconfirmed."
+        else:
+            q_text = f"What are the primary functional adjacencies and access requirements for {name}?"
+            reason = f"Spatial orientation and adjacency relationships for {name} require confirmation."
+    elif itype == "FUNCTION":
+        if any(w in name_lower for w in ("additional", "secondary", "amenit", "recreat")):
+            q_text = f"Which specific secondary or optional functions (e.g. gym, workshop, wine cellar) should be formally programmed for {name}?"
+            reason = f"Scope and inclusion of optional secondary facilities under {name} requires confirmation."
+        else:
+            q_text = f"What spatial provisions, equipment, and environmental criteria are required to support {name}?"
+            reason = f"Operational requirements and physical accommodations for {name} require architectural clarification."
+    elif itype == "REQUIREMENT":
+        if any(w in name_lower for w in ("opening", "window", "skylight", "facade", "exterior", "appearance")):
+            q_text = f"What specific structural, conservation, or aesthetic constraints apply to {name}?"
+            reason = f"Clarify heritage, building envelope, and regulatory specifications for {name}."
+        elif any(w in name_lower for w in ("interior", "material", "finish", "identity", "quality")):
+            q_text = f"What specific architectural materials, finishes, or acoustic standards must be established for {name}?"
+            reason = f"Material specifications and identity standards for {name} require definition."
+        else:
+            q_text = f"How should the project requirement for '{name}' be resolved and integrated into the spatial program?"
+            reason = f"Implementation criteria and spatial implications for {name} require confirmation."
+    else:
+        q_text = f"What specific programmatic criteria and client expectations must be met for {name}?"
+        reason = f"Project criteria for {name} require clarification."
+
+    if req_snippet:
+        reason += f" Synthesized from {name} ({status}): {req_snippet[:140]}"
+
+    return q_text, reason
+
+
 @router.get("/api/projects/{project_id}/program/questions")
 def list_program_questions(
     project_id: str,
@@ -590,13 +646,20 @@ def list_program_questions(
                 st = (item.status or "").upper()
                 has_missing = not item.area or not item.capacity
                 if st in ("UNDER_REVIEW", "QUESTION") or (has_missing and len(synth_qs) < 4):
-                    q_text = f"What are the target spatial area, capacity, and layout requirements for {item.name}?"
+                    q_text, q_reason = _build_contextual_question(
+                        name=item.name,
+                        item_type=item.type or "SPACE",
+                        requirement=item.requirement,
+                        missing_area=not item.area,
+                        missing_capacity=not item.capacity,
+                        status=st
+                    )
                     q = ProgramQuestion(
                         id=str(uuid.uuid4()),
                         project_id=project_id,
                         program_item_id=item.id,
                         question=q_text,
-                        reason=f"Synthesized from {item.name} ({st}): {item.requirement or 'Specification requires clarification.'}",
+                        reason=q_reason,
                         source_brief_card_ids=item.source_brief_card_ids or [],
                         status="OPEN",
                     )
@@ -918,11 +981,17 @@ def _run_program_generation(
                 name = item_data.get("name") or "Space"
                 has_missing_spec = not item_data.get("area") or not item_data.get("capacity")
                 if st in ("UNDER_REVIEW", "QUESTION") or (has_missing_spec and len(ai_questions_list) < 5):
-                    req = item_data.get("requirement") or "Dimensional and programmatic requirements require confirmation."
-                    q_text = f"What are the target spatial area, capacity, and layout requirements for {name}?"
+                    q_text, q_reason = _build_contextual_question(
+                        name=name,
+                        item_type=item_data.get("type") or "SPACE",
+                        requirement=item_data.get("requirement"),
+                        missing_area=not item_data.get("area"),
+                        missing_capacity=not item_data.get("capacity"),
+                        status=st
+                    )
                     ai_questions_list.append({
                         "question": q_text,
-                        "reason": f"Flagged from {name} ({st}): {req[:160]}",
+                        "reason": q_reason,
                         "program_item_reference": name,
                         "source_brief_card_ids": item_data.get("source_brief_card_ids") or [],
                         "status": "OPEN",
