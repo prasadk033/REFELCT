@@ -206,9 +206,12 @@ def delete_project(
     project_name = project.name
 
     # 1. Break self-referencing foreign keys on briefs so delete cascade won't violate FK constraints
-    from db import Brief
+    from db import Brief, SiteAnalysisCache
     db.query(Brief).filter(Brief.project_id == project_id).update(
         {"previous_version_id": None}, synchronize_session=False
+    )
+    db.query(SiteAnalysisCache).filter(SiteAnalysisCache.project_id == project_id).delete(
+        synchronize_session=False
     )
     db.flush()
 

@@ -100,6 +100,7 @@ class Project(Base):
     program_questions = relationship("ProgramQuestion", back_populates="project", cascade="all, delete-orphan")
     brief_published_versions = relationship("BriefPublishedVersion", back_populates="project", cascade="all, delete-orphan")
     program_published_versions = relationship("ProgramPublishedVersion", back_populates="project", cascade="all, delete-orphan")
+    site_analysis_cache = relationship("SiteAnalysisCache", back_populates="project", cascade="all, delete-orphan")
 
 
 class Source(Base):
@@ -194,7 +195,7 @@ class SiteAnalysisCache(Base):
     )
 
     id = Column(String, primary_key=True)  # UUID
-    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     latitude = Column(String, nullable=False)
     longitude = Column(String, nullable=False)
     radius = Column(Integer, nullable=False)
@@ -203,7 +204,7 @@ class SiteAnalysisCache(Base):
     fetched_at = Column(DateTime, default=utc_now)
     created_at = Column(DateTime, default=utc_now)
 
-    project = relationship("Project")
+    project = relationship("Project", back_populates="site_analysis_cache")
 
 
 class ProcessingJob(Base):
