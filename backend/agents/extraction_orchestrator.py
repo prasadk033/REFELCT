@@ -394,7 +394,6 @@ def _perform_osm_analysis(db, project_id: str, site_url: str, osm_source: Source
             lat, lon, addr = geo_res
             cached_osm = db.query(SiteAnalysisCache).filter(
                 SiteAnalysisCache.project_id == project_id,
-                SiteAnalysisCache.radius == 3000,
                 SiteAnalysisCache.provider == "openstreetmap",
                 SiteAnalysisCache.latitude == str(lat),
                 SiteAnalysisCache.longitude == str(lon)
@@ -404,15 +403,15 @@ def _perform_osm_analysis(db, project_id: str, site_url: str, osm_source: Source
             if cached_osm:
                 structured_analysis = cached_osm.structured_analysis
             else:
-                raw_osm = osm_service.query_overpass(lat, lon, radius=3000)
+                raw_osm = osm_service.query_overpass(lat, lon, radius=500)
                 if raw_osm.get("elements"):
-                    structured_analysis = osm_service.analyze_site_context(raw_osm, lat, lon, radius=3000, address=addr)
+                    structured_analysis = osm_service.analyze_site_context(raw_osm, lat, lon, radius=500, address=addr)
                     new_cache = SiteAnalysisCache(
                         id=str(uuid.uuid4()),
                         project_id=project_id,
                         latitude=str(lat),
                         longitude=str(lon),
-                        radius=3000,
+                        radius=500,
                         structured_analysis=structured_analysis
                     )
                     db.add(new_cache)

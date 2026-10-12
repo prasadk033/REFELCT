@@ -24,6 +24,14 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 def _ensure_osm_source(db: Session, project_id: str, site_url: str, user_id: str, is_new_or_changed: bool = False):
     if not site_url:
+        unversioned = db.query(Source).filter(
+            Source.project_id == project_id,
+            Source.file_type == "virtual/osm",
+            Source.version.is_(None)
+        ).first()
+        if unversioned:
+            db.delete(unversioned)
+            db.commit()
         return
     # Check if there's already an active OSM source for this project
     existing_unversioned = db.query(Source).filter(

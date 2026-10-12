@@ -88,30 +88,38 @@ class OSMSiteAnalysisService:
             logger.error(f"Geocoding failed for '{location_str}': {e}")
             return None
 
-    def query_overpass(self, lat: float, lon: float, radius: int = 3000) -> Dict[str, Any]:
+    def query_overpass(self, lat: float, lon: float, radius: int = 500) -> Dict[str, Any]:
         """Queries Overpass API for features within radius, with multi-endpoint fallback and retry."""
         logger.info(f"Querying Overpass for lat={lat}, lon={lon}, r={radius}")
         
         endpoints = [
             self.overpass_url,
+            "https://lz4.overpass-api.de/api/interpreter",
+            "https://z.overpass-api.de/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter",
-            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
         ]
         # Remove duplicates while preserving order
         seen = set()
         endpoints = [e for e in endpoints if e and not (e in seen or seen.add(e))]
 
-        # If a large radius fails or times out, try a slightly tighter radius (1500m)
-        radii_to_try = [radius] if radius <= 1500 else [radius, 1500]
+        # Standard architectural site catchment: 500m (~5-10 min walk, 1km diameter).
+        # Fallback to 300m for ultra-dense metropolitan cores if needed.
+        effective_r = min(radius, 500)
+        radii_to_try = [effective_r] if effective_r <= 300 else [effective_r, 300]
 
         for r in radii_to_try:
+            # Building sample radius is capped to 250m to prevent server RAM/504 exhaustion
+            building_r = min(r, 250)
             query = f"""
-            [out:json][timeout:35];
+            [out:json][timeout:25];
             (
               way["highway"](around:{r},{lat},{lon});
               node["public_transport"](around:{r},{lat},{lon});
               node["railway"="station"](around:{r},{lat},{lon});
-              way["building"](around:{r},{lat},{lon});
+              way["railway"="station"](around:{r},{lat},{lon});
+              node["highway"="bus_stop"](around:{r},{lat},{lon});
+              way["building"](around:{building_r},{lat},{lon});
               way["landuse"](around:{r},{lat},{lon});
               way["leisure"](around:{r},{lat},{lon});
               way["natural"](around:{r},{lat},{lon});
@@ -127,10 +135,11 @@ class OSMSiteAnalysisService:
                 try:
                     req = urllib.request.Request(ep, data=data)
                     req.add_header("User-Agent", self.user_agent)
-                    response = urllib.request.urlopen(req, context=self.ctx, timeout=40)
+                    response = urllib.request.urlopen(req, context=self.ctx, timeout=30)
                     result = json.loads(response.read().decode("utf-8"))
                     if result and result.get("elements"):
                         logger.info(f"Overpass query succeeded via {ep} with {len(result['elements'])} elements (r={r}m)")
+                        result["_sample_building_radius_m"] = building_r
                         return result
                 except Exception as e:
                     logger.warning(f"Overpass query to {ep} failed (r={r}m): {e}")
@@ -147,7 +156,7 @@ class OSMSiteAnalysisService:
             return -1
         return haversine_distance(center_lat, center_lon, elat, elon)
 
-    def analyze_site_context(self, raw_data: Dict[str, Any], lat: float, lon: float, radius: int = 3000, address: str = "") -> Dict[str, Any]:
+    def analyze_site_context(self, raw_data: Dict[str, Any], lat: float, lon: float, radius: int = 500, address: str = "") -> Dict[str, Any]:
         """Process raw Overpass JSON into deterministic structured analysis."""
         analysis = {
             "site_location": {
@@ -167,6 +176,7 @@ class OSMSiteAnalysisService:
         
         elements = raw_data.get("elements", [])
         building_count = 0
+        building_sample_r = raw_data.get("_sample_building_radius_m", min(radius, 350))
         
         for el in elements:
             tags = el.get("tags", {})
@@ -186,9 +196,14 @@ class OSMSiteAnalysisService:
                 building_count += 1
                 
             # Public Transport
-            if tags.get("public_transport") in ["station", "platform"] or tags.get("railway") == "station":
-                if name != "Unnamed" and dist >= 0:
-                    analysis["public_transport"].append({"name": name, "type": tags.get("public_transport", "station"), "distance_m": dist})
+            is_transport = (
+                tags.get("public_transport") in ["station", "platform", "stop_position"]
+                or tags.get("railway") in ["station", "subway_entrance", "tram_stop"]
+                or tags.get("highway") == "bus_stop"
+            )
+            if is_transport and dist >= 0:
+                tp_type = tags.get("railway") or tags.get("public_transport") or tags.get("highway", "station")
+                analysis["public_transport"].append({"name": name, "type": tp_type, "distance_m": dist})
                     
             # Landuse / Amenities
             if "amenity" in tags:
@@ -207,8 +222,8 @@ class OSMSiteAnalysisService:
                 if name != "Unnamed" and dist >= 0:
                     analysis["blue_infrastructure"].append({"name": name, "type": tags.get("waterway", "water"), "distance_m": dist})
                     
-        # Deterministic Density
-        area_sqkm = (math.pi * (radius ** 2)) / 1000000
+        # Deterministic Density based on sampled building area
+        area_sqkm = (math.pi * (building_sample_r ** 2)) / 1000000
         density_per_sqkm = building_count / area_sqkm if area_sqkm > 0 else 0
         
         if density_per_sqkm > 1000:
@@ -223,11 +238,25 @@ class OSMSiteAnalysisService:
             
         analysis["building_uses"] = list(analysis["building_uses"])[:10]  # top 10 unique uses
         
-        # Sort distance-based lists
-        analysis["public_transport"] = sorted(analysis["public_transport"], key=lambda x: x["distance_m"])[:5]
-        analysis["open_spaces"] = sorted(analysis["open_spaces"], key=lambda x: x["distance_m"])[:5]
-        analysis["blue_infrastructure"] = sorted(analysis["blue_infrastructure"], key=lambda x: x["distance_m"])[:5]
-        analysis["significant_surroundings"] = sorted(analysis["significant_surroundings"], key=lambda x: x["distance_m"])[:5]
+        # Sort and deduplicate distance-based lists by name
+        def _dedup_by_name(items, limit=5):
+            seen_names = set()
+            result = []
+            for item in sorted(items, key=lambda x: x["distance_m"]):
+                nm = item.get("name")
+                if nm and nm != "Unnamed":
+                    if nm in seen_names:
+                        continue
+                    seen_names.add(nm)
+                result.append(item)
+                if len(result) >= limit:
+                    break
+            return result
+
+        analysis["public_transport"] = _dedup_by_name(analysis["public_transport"], 5)
+        analysis["open_spaces"] = _dedup_by_name(analysis["open_spaces"], 5)
+        analysis["blue_infrastructure"] = _dedup_by_name(analysis["blue_infrastructure"], 5)
+        analysis["significant_surroundings"] = _dedup_by_name(analysis["significant_surroundings"], 5)
         
         return analysis
 
