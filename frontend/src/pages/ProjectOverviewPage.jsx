@@ -170,10 +170,10 @@ export default function ProjectOverviewPage() {
           if (statusRes.current_step) setExtractServerStep(statusRes.current_step)
           startExtractionPolling()
         } else if (statusRes.status === 'completed' && !statusRes.notification_seen) {
-          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
+          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
           await loadProjectData()
         } else if ((statusRes.status === 'failed' || statusRes.status === 'partial') && !statusRes.notification_seen) {
-          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
+          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
           await loadProjectData()
         }
       }
@@ -186,7 +186,7 @@ export default function ProjectOverviewPage() {
     if (!file) return
     setFileTypeError(null)
     const ext = file.name.split('.').pop()?.toLowerCase()
-    
+
     if (uploadCategory === 'document') {
       const allowed = ['pdf', 'docx', 'doc', 'txt']
       if (!allowed.includes(ext)) {
@@ -333,7 +333,7 @@ export default function ProjectOverviewPage() {
             setShowExtractModal(false)
             await loadProjectData()
             setShowExtractCompleteModal(true)
-            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
+            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
             showToast('✓ Extraction completed for all pending sources')
           } else if (statusRes.status === 'partial') {
             clearInterval(extractTimerRef.current)
@@ -341,18 +341,18 @@ export default function ProjectOverviewPage() {
             setExtracting(false)
             setExtractModalOpen(false)
             setShowExtractModal(false)
-            
+
             const completedCount = statusRes.cards_generated || 0
             const totalCount = statusRes.questions_count || 1
             const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('unavailable') || statusRes.error?.includes('timed out') || statusRes.error?.includes('low')
               ? 'AI services are temporarily unavailable. Please try again later.'
               : (statusRes.error || 'AI services are temporarily unavailable. Please try again later.')
-            
+
             setAiFallbackTitle('PARTIAL / FAILED')
             setAiFallbackBadge(`${completedCount} / ${totalCount} Documents Completed`)
             setAiFallbackErrorMsg(msg)
             setAiFallbackModalOpen(true)
-            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
+            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
             showToast(`⚠ Partial extraction (${completedCount}/${totalCount} completed)`)
             await loadProjectData()
           } else if (statusRes.status === 'failed') {
@@ -361,17 +361,17 @@ export default function ProjectOverviewPage() {
             setExtracting(false)
             setExtractModalOpen(false)
             setShowExtractModal(false)
-            
+
             const totalCount = statusRes.questions_count || 1
             const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('low') || statusRes.error?.includes('unavailable') || statusRes.error?.includes('timed out')
               ? 'AI services are temporarily unavailable. Please try again later.'
               : (statusRes.error ? `Extraction failed: ${statusRes.error}` : 'AI services are temporarily unavailable. Please try again later.')
-            
+
             setAiFallbackTitle('FAILED')
             setAiFallbackBadge(`0 / ${totalCount} Documents Completed`)
             setAiFallbackErrorMsg(msg)
             setAiFallbackModalOpen(true)
-            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
+            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
             showToast('✕ Extraction failed')
             await loadProjectData()
           }
@@ -397,14 +397,14 @@ export default function ProjectOverviewPage() {
           pollIntervalRef.current = null
           setAnalyzing(false)
           setShowAnalysisModal(false)
-          
+
           // Reload updated project data
           const [freshCards, freshProj] = await Promise.all([
             listCards(projectId).catch(() => []),
             getProject(projectId).catch(() => null),
             loadProjectData()
           ])
-          
+
           const docGeneratedCount = typeof statusRes.cards_generated === 'number'
             ? statusRes.cards_generated
             : 0
@@ -414,7 +414,7 @@ export default function ProjectOverviewPage() {
           const cCount = typeof statusRes.conflicts_count === 'number'
             ? statusRes.conflicts_count
             : (freshCards || []).filter(c => c.card_type === 'CONFLICT' || c.card_type === 'TENSION').length
-          
+
           setAnalysisSummary({
             cardsGenerated: docGeneratedCount,
             projectTotalCards: (freshCards || []).length,
@@ -423,7 +423,7 @@ export default function ProjectOverviewPage() {
             documents: statusRes.document_names || sources.map(s => s.file_name).join(', ')
           })
           setShowCompleteModal(true)
-          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
+          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
           showToast(`✦ ${docGeneratedCount} Brief Cards generated for "${freshProj?.name || project?.name || 'Project'}"!`)
         } else if (statusRes.status === 'failed') {
           clearInterval(pollIntervalRef.current)
@@ -433,14 +433,14 @@ export default function ProjectOverviewPage() {
           const rawErr = statusRes.error || statusRes.error_message || ''
           const isAiDown = !rawErr || rawErr.includes('AI services') || rawErr.includes('unavailable') || rawErr.includes('timed out') || rawErr.includes('503') || rawErr.includes('low')
           setAnalysisError(isAiDown ? 'AI services are temporarily unavailable. Please try again later.' : rawErr)
-          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => {})
-          loadProjectData().catch(() => {})
+          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
+          loadProjectData().catch(() => { })
         } else if (statusRes.status === 'cancelled') {
           clearInterval(pollIntervalRef.current)
           pollIntervalRef.current = null
           setAnalyzing(false)
           setShowAnalysisModal(false)
-          loadProjectData().catch(() => {})
+          loadProjectData().catch(() => { })
         }
       } catch (pollErr) {
         console.error('Polling error:', pollErr)
@@ -821,7 +821,7 @@ export default function ProjectOverviewPage() {
   return (
     <ProjectShell project={project}>
       <div className="pov-container">
-        
+
         {/* Hidden File Input */}
         <input
           type="file"
@@ -997,7 +997,7 @@ export default function ProjectOverviewPage() {
 
             {/* Action Row */}
             <div className="pov-analyse-action-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', ...(analyzing || extractModalOpen ? { opacity: 0.65, pointerEvents: 'none' } : {}) }}>
-              
+
               {sources.length === 0 ? (
                 /* 1. No documents yet: Add Source CTA */
                 <button
@@ -1070,12 +1070,12 @@ export default function ProjectOverviewPage() {
                 {sources.length === 0
                   ? 'Upload project documents (PDF, DOCX, TXT) or images to begin.'
                   : pendingNeedsExtraction
-                  ? `${pendingBatchSources.length} document(s) uploaded. Extract data and review before generating Brief.`
-                  : pendingNeedsReview
-                  ? `${pendingBatchSources.length} document(s) extracted. Review and approve before generating Brief.`
-                  : hasApprovedPendingReadyForBrief
-                  ? `Approved ${pendingBatchSources.length} document(s). Ready to synthesize Brief Cards.`
-                  : `All ${sources.length} sources analysed and structured into Brief Cards.`}
+                    ? `${pendingBatchSources.length} document(s) uploaded. Extract data and review before generating Brief.`
+                    : pendingNeedsReview
+                      ? `${pendingBatchSources.length} document(s) extracted. Review and approve before generating Brief.`
+                      : hasApprovedPendingReadyForBrief
+                        ? `Approved ${pendingBatchSources.length} document(s). Ready to synthesize Brief Cards.`
+                        : `All ${sources.length} sources analysed and structured into Brief Cards.`}
               </span>
             </div>
           </div>
@@ -1159,7 +1159,7 @@ export default function ProjectOverviewPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          const analyzedSource = sources.filter(s => s.file_type === 'virtual/osm' && s.extracted_text).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                          const analyzedSource = sources.filter(s => s.file_type === 'virtual/osm' && s.extracted_text).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
                           if (analyzedSource) setViewingSource(analyzedSource);
                         }}
                         style={{
@@ -1251,7 +1251,7 @@ export default function ProjectOverviewPage() {
                     } : {})
                   }}
                 >
-                  
+
                   {/* Single Pending Group Header */}
                   <div style={{ background: (extracting && !showExtractModal) ? '#eff6ff' : (analyzing && !showAnalysisModal) ? '#eff6ff' : '#f8fafc', borderBottom: '1px dashed #cbd5e1', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.3s' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1463,7 +1463,7 @@ export default function ProjectOverviewPage() {
                 const groupDocs = versionedSources.filter(s => Number(s.version) === ver)
                 return (
                   <div key={`ver-${ver}`} className="pov-version-group-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
-                    
+
                     {/* Single Version Group Header */}
                     <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1762,7 +1762,7 @@ export default function ProjectOverviewPage() {
 
                 {/* Step 1: Category Selection Tabs */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-                  
+
                   <button
                     type="button"
                     onClick={() => switchUploadCategory('document')}
@@ -1914,7 +1914,7 @@ export default function ProjectOverviewPage() {
                       </label>
                     </div>
                     <p style={{ fontSize: '11.5px', color: '#64748b', margin: '8px 0 0 0', lineHeight: 1.45 }}>
-                      {containsImages 
+                      {containsImages
                         ? "✦ Comprehensive document processing including diagrams, drawings, plans, and embedded visual content."
                         : "Standard pipeline: Fast structured text and tabular data extraction for standard text documents, specifications, and reports."}
                     </p>
@@ -1987,8 +1987,8 @@ export default function ProjectOverviewPage() {
                   {uploading
                     ? 'Uploading...'
                     : uploadCategory === 'image'
-                    ? 'Upload Image for Visual Analysis'
-                    : 'Upload & Save Source'}
+                      ? 'Upload Image for Visual Analysis'
+                      : 'Upload & Save Source'}
                 </button>
               </div>
 
@@ -2115,11 +2115,11 @@ export default function ProjectOverviewPage() {
               <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '22px' }}>
                 ✓
               </div>
-              
+
               <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
                 Analysis Complete
               </h2>
-              
+
               <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px', lineHeight: 1.5 }}>
                 Project information has been analysed and the Brief Cards have been generated successfully.
               </p>
@@ -2275,7 +2275,7 @@ export default function ProjectOverviewPage() {
                   <p style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', lineHeight: 1.45 }}>
                     {project?.site_url
                       ? 'Updating the location will update project site context and refresh automated OpenStreetMap analysis.'
-                      : 'Providing a location allows REFLECT to query OpenStreetMap and generate an automated Site Analysis brief card.'}
+                      : 'Help REFLECT build a more informed project brief by adding the site Location.'}
                   </p>
                 </div>
 
