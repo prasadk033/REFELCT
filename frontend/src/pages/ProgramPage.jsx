@@ -152,6 +152,7 @@ export default function ProgramPage() {
         const pub = await getPublishedProgramVersion(projectId, target)
         setPublishedVersionData(pub)
         setItems(pub.items || [])
+        setQuestions(pub.questions || [])
       } catch (err) {
         showToastMsg(`Failed to load published version: ${err.message}`)
       }
@@ -214,7 +215,7 @@ export default function ProgramPage() {
 
           const genStatus = updatedSum?.generation_status?.status
 
-          if (genStatus === 'completed' || (updatedItems && updatedItems.length > 0)) {
+          if (genStatus === 'completed') {
             cleanup()
             setSummary(updatedSum)
             setItems(updatedItems || [])
@@ -228,7 +229,7 @@ export default function ProgramPage() {
             const rawErr = updatedSum?.generation_status?.error || 'Generation encountered an error'
             setError(`Program synthesis failed: ${rawErr}`)
             showToastMsg('✕ Program synthesis failed')
-          } else if (Date.now() - pollStart > 180000) {
+          } else if (Date.now() - pollStart > 360000) {
             cleanup()
             setIsGenerating(false)
             showToastMsg('Program synthesis is running in the background. Your items will appear shortly.')

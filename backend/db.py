@@ -342,6 +342,7 @@ class ProgramPublishedVersion(Base):
     source_brief_version_id = Column(String, ForeignKey("brief_published_versions.id"), nullable=True)  # Which Brief version was used
     previous_program_version_id = Column(String, ForeignKey("program_published_versions.id"), nullable=True)  # Previous program version context
     item_count = Column(Integer, nullable=False, default=0)
+    snapshot_questions = Column(JSON, nullable=True)  # Snapshot of all AI questions and answers at publish time
     published_at = Column(DateTime, default=utc_now)
     published_by = Column(String, ForeignKey("users.id"), nullable=True)
 
@@ -453,6 +454,16 @@ def init_db():
                             conn.execute(text(f"ALTER TABLE processing_jobs ADD COLUMN {col} {col_type};"))
                     except Exception as err:
                         logger.warning(f"Could not add {col} to processing_jobs: {err}")
+
+        # Check program_published_versions table columns
+        if "program_published_versions" in existing_tables:
+            prog_ver_cols = [c["name"] for c in inspector.get_columns("program_published_versions")]
+            if "snapshot_questions" not in prog_ver_cols:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE program_published_versions ADD COLUMN snapshot_questions JSON;"))
+                except Exception as err:
+                    logger.warning(f"Could not add snapshot_questions to program_published_versions: {err}")
 
             # Enforce DB-level composite uniqueness index on (project_id, idempotency_key)
             try:

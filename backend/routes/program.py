@@ -1418,6 +1418,7 @@ def get_published_program_version(
         "previous_program_version_id": v.previous_program_version_id,
         "published_at": v.published_at.isoformat() if v.published_at else None,
         "items": items,
+        "questions": v.snapshot_questions or [],
     }
 
 
@@ -1455,6 +1456,11 @@ def publish_program(
         ProgramItem.project_id == project_id
     ).order_by(ProgramItem.program_item_code, ProgramItem.created_at).all()
 
+    working_questions = db.query(ProgramQuestion).filter(
+        ProgramQuestion.project_id == project_id
+    ).order_by(ProgramQuestion.created_at).all()
+    snapshot_questions = [_question_to_dict(q) for q in working_questions]
+
     # Determine next version atomically
     latest_locked = db.query(ProgramPublishedVersion).filter(
         ProgramPublishedVersion.project_id == project_id
@@ -1475,6 +1481,7 @@ def publish_program(
             source_brief_version_id=latest_brief_version.id if latest_brief_version else None,
             previous_program_version_id=latest_locked.id if latest_locked else None,
             item_count=len(working_items),
+            snapshot_questions=snapshot_questions,
             published_at=utc_now(),
             published_by=user.id,
         )
