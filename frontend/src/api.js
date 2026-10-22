@@ -431,6 +431,12 @@ export async function getAdminJobs(status = '', limit = 50) {
   return apiFetch(`/api/admin/jobs${qStr}`);
 }
 
+export async function dismissAdminJob(jobId) {
+  return apiFetch(`/api/admin/jobs/${jobId}/dismiss`, {
+    method: 'POST',
+  });
+}
+
 export async function getAdminHealth() {
   return apiFetch('/api/admin/health');
 }

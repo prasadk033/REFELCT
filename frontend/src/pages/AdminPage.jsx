@@ -7,6 +7,7 @@ import {
   updateAdminUserRole,
   getAdminProjects,
   getAdminJobs,
+  dismissAdminJob,
   getAdminHealth,
   getAdminAuditLogs
 } from '../api.js'
@@ -115,6 +116,20 @@ export default function AdminPage() {
       setError(err.message || 'Failed to update user role.')
     } finally {
       setRoleUpdatingUserId(null)
+    }
+  }
+
+  // Handle Dismissing / Aborting Stale Jobs
+  async function handleDismissJob(jobId) {
+    if (!jobId) return
+    if (!window.confirm('Mark this interrupted/stale job as failed? It will be cleared from the running queue.')) return
+    try {
+      await dismissAdminJob(jobId)
+      setSuccessNotice('Job marked as interrupted/failed and cleared from active queue.')
+      setTimeout(() => setSuccessNotice(null), 4000)
+      loadSectionData(true)
+    } catch (err) {
+      setError(err.message || 'Failed to dismiss job.')
     }
   }
 
@@ -1084,21 +1099,44 @@ export default function AdminPage() {
                             {formatDate(p.created_at)}
                           </td>
                           <td style={{ padding: '13px 16px', textAlign: 'right' }}>
-                            <button
-                              onClick={() => navigate(`/projects/${p.id}`)}
-                              style={{
-                                background: '#f8fafc',
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '6px',
-                                padding: '5px 9px',
-                                fontSize: '11.5px',
-                                fontWeight: 600,
-                                color: '#4f46e5',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              Open →
-                            </button>
+                            {p.owner_id === user?.id ? (
+                              <button
+                                onClick={() => navigate(`/projects/${p.id}`)}
+                                style={{
+                                  background: '#f8fafc',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: '6px',
+                                  padding: '5px 9px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 600,
+                                  color: '#4f46e5',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Open →
+                              </button>
+                            ) : (
+                              <span
+                                title="Tenant Isolated: Private to project owner. Admin cannot modify client workspace."
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  color: '#64748b',
+                                  background: '#f1f5f9',
+                                  padding: '3px 8px',
+                                  borderRadius: '5px'
+                                }}
+                              >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="11" height="11">
+                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                </svg>
+                                Isolated
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -1212,17 +1250,35 @@ export default function AdminPage() {
                               fontSize: '11.5px',
                               fontWeight: 600,
                               textTransform: 'capitalize',
-                              background: job.status === 'completed' ? '#ecfdf5' : job.status === 'failed' ? '#fef2f2' : '#eff6ff',
-                              color: job.status === 'completed' ? '#065f46' : job.status === 'failed' ? '#991b1b' : '#1d4ed8'
+                              background: job.is_stale || job.status === 'interrupted' 
+                                ? '#fffbeb' 
+                                : job.status === 'completed' 
+                                  ? '#ecfdf5' 
+                                  : job.status === 'failed' 
+                                    ? '#fef2f2' 
+                                    : '#eff6ff',
+                              color: job.is_stale || job.status === 'interrupted'
+                                ? '#b45309'
+                                : job.status === 'completed' 
+                                  ? '#065f46' 
+                                  : job.status === 'failed' 
+                                    ? '#991b1b' 
+                                    : '#1d4ed8'
                             }}>
                               <span style={{
                                 width: '6px',
                                 height: '6px',
                                 borderRadius: '50%',
-                                background: job.status === 'completed' ? '#10b981' : job.status === 'failed' ? '#ef4444' : '#3b82f6',
+                                background: job.is_stale || job.status === 'interrupted'
+                                  ? '#f59e0b'
+                                  : job.status === 'completed' 
+                                    ? '#10b981' 
+                                    : job.status === 'failed' 
+                                      ? '#ef4444' 
+                                      : '#3b82f6',
                                 animation: job.is_active ? 'pulse 1.5s infinite' : 'none'
                               }} />
-                              {job.status}
+                              {job.is_stale || job.status === 'interrupted' ? 'Interrupted (Stale)' : job.status}
                             </span>
                           </td>
                           <td style={{ padding: '12px 14px', color: '#334155' }}>
@@ -1238,27 +1294,47 @@ export default function AdminPage() {
                             {formatDate(job.created_at)}
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                            {job.error ? (
-                              <button
-                                onClick={() => setSelectedErrorModal(job)}
-                                style={{
-                                  background: '#fee2e2',
-                                  border: '1px solid #fca5a5',
-                                  color: '#b91c1c',
-                                  borderRadius: '5px',
-                                  padding: '4px 8px',
-                                  fontSize: '11px',
-                                  fontWeight: 600,
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                View Error
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
-                                {job.cards_generated ? `${job.cards_generated} cards` : 'OK'}
-                              </span>
-                            )}
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              {(job.is_stale || job.status === 'interrupted') && (
+                                <button
+                                  onClick={() => handleDismissJob(job.id)}
+                                  style={{
+                                    background: '#fef3c7',
+                                    border: '1px solid #fde68a',
+                                    color: '#92400e',
+                                    borderRadius: '5px',
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Job was interrupted by past server restart. Click to clear."
+                                >
+                                  Clear Job
+                                </button>
+                              )}
+                              {job.error ? (
+                                <button
+                                  onClick={() => setSelectedErrorModal(job)}
+                                  style={{
+                                    background: '#fee2e2',
+                                    border: '1px solid #fca5a5',
+                                    color: '#b91c1c',
+                                    borderRadius: '5px',
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  View Error
+                                </button>
+                              ) : !job.is_stale && (
+                                <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+                                  {job.cards_generated ? `${job.cards_generated} cards` : 'OK'}
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))

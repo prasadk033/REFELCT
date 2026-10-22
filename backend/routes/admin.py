@@ -328,20 +328,30 @@ def list_admin_jobs(
 
             is_active = j.status in ["queued", "parsing", "extracting_images", "processing_brief", "generating_cards"]
 
+            # Detect if job is stale/abandoned (active state with no updates for over 30 mins)
+            is_stale = False
+            last_touch = j.updated_at or j.created_at
+            if is_active and last_touch:
+                lt = last_touch if last_touch.tzinfo else last_touch.replace(tzinfo=timezone.utc)
+                if (now - lt).total_seconds() > 1800:
+                    is_stale = True
+
             results.append({
                 "id": j.id,
                 "project_id": j.project_id,
                 "project_name": proj.name if proj else "Unknown Project",
                 "user_id": j.user_id,
                 "user_email": user.email if user else "—",
-                "status": j.status,
+                "status": "interrupted" if is_stale else j.status,
+                "raw_status": j.status,
                 "current_step": j.current_step or "—",
                 "error": j.error,
                 "cards_generated": j.cards_generated or 0,
                 "questions_count": j.questions_count or 0,
                 "document_names": j.document_names or "—",
                 "duration_seconds": duration_sec,
-                "is_active": is_active,
+                "is_active": is_active and not is_stale,
+                "is_stale": is_stale,
                 "created_at": j.created_at.isoformat() if j.created_at else None,
                 "updated_at": j.updated_at.isoformat() if j.updated_at else None,
             })
@@ -350,6 +360,24 @@ def list_admin_jobs(
     except Exception as e:
         logger.error(f"Admin jobs list failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve AI processing jobs")
+
+
+@router.post("/jobs/{job_id}/dismiss")
+def dismiss_stale_job(
+    job_id: str,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Mark an orphaned or interrupted job as failed so it stops clogging the live queue."""
+    job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job.status = "failed"
+    job.error = "Job interrupted: Server worker restart or timeout before completion."
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    logger.info(f"Admin {admin.email} dismissed stale job {job.id}")
+    return {"message": "Job marked as interrupted/failed", "job_id": job.id}
 
 
 # ── 5. System Health ────────────────────────────────────────────────────────
