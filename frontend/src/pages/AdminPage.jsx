@@ -940,21 +940,41 @@ export default function AdminPage() {
 
                             {/* Status */}
                             <td style={{ padding: '13px 16px' }}>
-                              <span style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                fontSize: '12px',
-                                color: u.is_online ? '#059669' : '#64748b'
-                              }}>
+                              {u.is_generating ? (
                                 <span style={{
-                                  width: '6px',
-                                  height: '6px',
-                                  borderRadius: '50%',
-                                  background: u.is_online ? '#10b981' : '#cbd5e1'
-                                }} />
-                                {u.is_online ? 'Active now' : 'Offline'}
-                              </span>
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  fontSize: '12px',
+                                  fontWeight: 600,
+                                  color: '#2563eb'
+                                }}>
+                                  <span style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    background: '#3b82f6',
+                                    animation: 'pulse 1.5s infinite'
+                                  }} />
+                                  Generating AI...
+                                </span>
+                              ) : (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  fontSize: '12px',
+                                  color: u.is_online ? '#059669' : '#64748b'
+                                }}>
+                                  <span style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    background: u.is_online ? '#10b981' : '#cbd5e1'
+                                  }} />
+                                  {u.is_online ? 'Active now' : 'Offline'}
+                                </span>
+                              )}
                             </td>
 
                             {/* Last Activity */}

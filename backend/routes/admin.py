@@ -142,21 +142,46 @@ def list_admin_users(
             proj_count = db.query(func.count(Project.id)).filter(Project.user_id == u.id).scalar() or 0
             job_count = db.query(func.count(ProcessingJob.id)).filter(ProcessingJob.user_id == u.id).scalar() or 0
             
-            # Find latest activity
+            # Find latest activity log
             latest_act = (
                 db.query(ActivityLog.created_at)
                 .filter(ActivityLog.user_id == u.id)
                 .order_by(ActivityLog.created_at.desc())
                 .first()
             )
-            last_activity_time = latest_act[0] if latest_act else u.updated_at or u.created_at
+            
+            # Find latest processing job
+            latest_job = (
+                db.query(ProcessingJob.updated_at)
+                .filter(ProcessingJob.user_id == u.id)
+                .order_by(ProcessingJob.updated_at.desc())
+                .first()
+            )
 
-            # Convert to UTC-aware if naive for comparison
-            cmp_time = last_activity_time
+            # Check if currently running a job
+            has_running_job = bool(
+                db.query(ProcessingJob.id)
+                .filter(
+                    ProcessingJob.user_id == u.id,
+                    ProcessingJob.status.in_(["parsing", "extracting_images", "processing_brief", "generating_cards"]),
+                    ProcessingJob.updated_at >= thirty_mins_ago
+                )
+                .first()
+            )
+
+            # Max of login (updated_at), activity log, or job
+            candidates = [t for t in [
+                u.updated_at,
+                latest_act[0] if latest_act else None,
+                latest_job[0] if latest_job else None,
+                u.created_at
+            ] if t is not None]
+
+            cmp_time = max(candidates) if candidates else None
             if cmp_time and cmp_time.tzinfo is None:
                 cmp_time = cmp_time.replace(tzinfo=timezone.utc)
 
-            is_online = bool(cmp_time and cmp_time >= thirty_mins_ago)
+            is_online = bool(has_running_job or (cmp_time and cmp_time >= thirty_mins_ago))
             is_root = is_root_admin(u.email)
             is_admin_flag = bool(is_root or getattr(u, "is_admin", False))
 
@@ -170,6 +195,7 @@ def list_admin_users(
                 "role": "Super Admin" if is_root else ("Admin" if is_admin_flag else "User"),
                 "projects_count": proj_count,
                 "jobs_count": job_count,
+                "is_generating": has_running_job,
                 "created_at": u.created_at.isoformat() if u.created_at else None,
                 "last_activity": cmp_time.isoformat() if cmp_time else None,
                 "is_online": is_online,
