@@ -31,6 +31,12 @@ export default function TopHeader({ breadcrumbs = [] }) {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))
   }
 
+  const userEmail = (user?.email || '').trim().toLowerCase()
+  const isUserAdmin = Boolean(
+    user?.is_admin ||
+    userEmail === 'prasad.k@datai2i.com'
+  )
+
   return (
     <header className="top-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box' }}>
       <div className="th-breadcrumbs" style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
@@ -48,6 +54,34 @@ export default function TopHeader({ breadcrumbs = [] }) {
       </div>
 
       <div className="th-actions" style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0, width: 'auto', marginLeft: 'auto' }}>
+        {isUserAdmin && (
+          <button
+            onClick={() => navigate('/admin')}
+            title="Open Admin Console"
+            style={{
+              background: '#e0e7ff',
+              color: '#4338ca',
+              border: '1px solid #c7d2fe',
+              borderRadius: '6px',
+              padding: '5px 11px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="13" height="13">
+              <rect x="3" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="14" width="7" height="7" rx="1.5" />
+              <rect x="3" y="14" width="7" height="7" rx="1.5" />
+            </svg>
+            <span>Admin Console</span>
+          </button>
+        )}
+
         <button 
           className="th-icon-btn" 
           title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
@@ -115,19 +149,35 @@ export default function TopHeader({ breadcrumbs = [] }) {
                   {user?.picture ? <img src={user.picture} alt="Avatar" /> : <span>{user?.name?.[0] || 'A'}</span>}
                 </div>
                 <div className="th-dropdown-userinfo">
-                  <div className="th-dropdown-name">{user?.name || 'Architect'}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div className="th-dropdown-name">{user?.name || 'Architect'}</div>
+                    {isUserAdmin && (
+                      <span style={{
+                        fontSize: '9.5px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        background: '#e0e7ff',
+                        color: '#4338ca',
+                        padding: '1px 5px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.04em'
+                      }}>
+                        Admin
+                      </span>
+                    )}
+                  </div>
                   <div className="th-dropdown-email">{user?.email || 'architect@studio.com'}</div>
                 </div>
               </div>
               
               <div className="th-dropdown-divider"></div>
               
-              {Boolean(user?.is_admin || (user?.email && user.email.toLowerCase() === 'prasad@datai2i.com')) && (
+              {isUserAdmin && (
                 <>
                   <button 
                     className="th-dropdown-item" 
                     onClick={() => { setDropdownOpen(false); navigate('/admin'); }}
-                    style={{ color: '#4f46e5', fontWeight: 600 }}
+                    style={{ color: '#4f46e5', fontWeight: 600, background: '#f5f3ff' }}
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
                       <rect x="3" y="3" width="7" height="7" rx="1.5" />

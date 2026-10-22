@@ -45,8 +45,8 @@ function AdminRoute({ children }) {
       </div>
     )
   }
-  if (!isAuthenticated) return <Navigate to="/login" replace />
-  const isAdmin = Boolean(user?.is_admin || (user?.email && user.email.toLowerCase() === 'prasad@datai2i.com'))
+  const userEmail = (user?.email || '').trim().toLowerCase()
+  const isAdmin = Boolean(user?.is_admin || userEmail === 'prasad.k@datai2i.com')
   if (!isAdmin) return <Navigate to="/overview" replace />
   return children
 }

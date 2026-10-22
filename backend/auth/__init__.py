@@ -62,7 +62,8 @@ def get_or_create_user(google_info: Dict[str, Any]) -> User:
             email_val = (google_info.get("email") or "").strip().lower()
             user = db.query(User).filter(func.lower(User.email) == email_val).first()
 
-        is_root_admin = (google_info.get("email") or "").strip().lower() == "prasad@datai2i.com"
+        email_clean = (google_info.get("email") or "").strip().lower()
+        is_root_admin = (email_clean == "prasad.k@datai2i.com")
         if user:
             # Update profile info
             user.name = google_info.get("name", user.name)

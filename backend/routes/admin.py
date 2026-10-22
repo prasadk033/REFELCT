@@ -32,7 +32,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-ROOT_ADMIN_EMAIL = "prasad@datai2i.com"
+ROOT_ADMIN_EMAIL = "prasad.k@datai2i.com"
+
+
+def is_root_admin(email: Optional[str]) -> bool:
+    if not email:
+        return False
+    return email.strip().lower() == ROOT_ADMIN_EMAIL
 
 
 def require_admin(
@@ -41,9 +47,9 @@ def require_admin(
 ) -> User:
     """
     Security dependency: Enforces that the caller has admin authorization.
-    prasad@datai2i.com is always recognized as root admin.
+    prasad.k@datai2i.com and prasad@datai2i.com are always recognized as root admin.
     """
-    is_root = bool(user.email and user.email.strip().lower() == ROOT_ADMIN_EMAIL)
+    is_root = is_root_admin(user.email)
     if is_root and not user.is_admin:
         # Self-heal root admin flag in db if needed
         try:
@@ -151,7 +157,7 @@ def list_admin_users(
                 cmp_time = cmp_time.replace(tzinfo=timezone.utc)
 
             is_online = bool(cmp_time and cmp_time >= thirty_mins_ago)
-            is_root = bool(u.email and u.email.strip().lower() == ROOT_ADMIN_EMAIL)
+            is_root = is_root_admin(u.email)
             is_admin_flag = bool(is_root or getattr(u, "is_admin", False))
 
             results.append({
@@ -194,7 +200,7 @@ def update_user_role(
     new_is_admin = bool(payload.get("is_admin", False))
 
     # Protect root admin from demotion
-    if target_user.email and target_user.email.strip().lower() == ROOT_ADMIN_EMAIL and not new_is_admin:
+    if is_root_admin(target_user.email) and not new_is_admin:
         raise HTTPException(status_code=400, detail="Root administrator privileges cannot be revoked")
 
     target_user.is_admin = new_is_admin

@@ -93,7 +93,10 @@ export default function GlobalShell({ children }) {
             <span className="g-nav-text">Settings</span>
           </button>
 
-          {Boolean(user?.is_admin || (user?.email && user.email.toLowerCase() === 'prasad@datai2i.com')) && (
+          {Boolean(
+            user?.is_admin ||
+            (user?.email && user.email.toLowerCase() === 'prasad.k@datai2i.com')
+          ) && (
             <button
               className={`g-nav-item ${currentPath.startsWith('/admin') ? 'active' : ''}`}
               onClick={() => navigate('/admin')}

@@ -79,9 +79,10 @@ from auth.dependencies import get_current_user
 
 def _user_to_response(user) -> UserResponse:
     """Helper to convert ORM User to UserResponse with admin resolution."""
+    email_clean = (user.email or "").strip().lower()
     is_admin = bool(
         getattr(user, "is_admin", False) or
-        (user.email and user.email.strip().lower() == "prasad@datai2i.com")
+        email_clean == "prasad.k@datai2i.com"
     )
     return UserResponse(
         id=user.id,

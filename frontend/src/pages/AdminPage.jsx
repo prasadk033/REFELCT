@@ -36,16 +36,6 @@ export default function AdminPage() {
   const [roleUpdatingUserId, setRoleUpdatingUserId] = useState(null)
   const [selectedErrorModal, setSelectedErrorModal] = useState(null)
 
-  // Fetch overview data
-  const loadOverview = useCallback(async () => {
-    try {
-      const data = await getAdminOverview()
-      setOverviewData(data)
-    } catch (err) {
-      console.error('Failed to load admin overview:', err)
-    }
-  }, [])
-
   // Fetch active section data
   const loadSectionData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -88,6 +78,7 @@ export default function AdminPage() {
 
   // Initial tab load & tab switch
   useEffect(() => {
+    setSearchQuery('')
     loadSectionData()
   }, [loadSectionData])
 
@@ -825,7 +816,7 @@ export default function AdminPage() {
               borderRadius: '12px',
               padding: '24px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <div>
                   <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: '#0f172a' }}>
                     Users & Active Sessions
@@ -834,8 +825,26 @@ export default function AdminPage() {
                     Account status, assigned roles, project counts, and administrator privileges.
                   </p>
                 </div>
-                <div style={{ fontSize: '12.5px', color: '#64748b' }}>
-                  Total: <strong style={{ color: '#0f172a' }}>{usersList.length}</strong> registered users
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <input
+                    type="text"
+                    placeholder="Search users..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '6px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      color: '#0f172a',
+                      outline: 'none',
+                      width: '180px'
+                    }}
+                  />
+                  <div style={{ fontSize: '12.5px', color: '#64748b' }}>
+                    Total: <strong style={{ color: '#0f172a' }}>{usersList.length}</strong> registered users
+                  </div>
                 </div>
               </div>
 
@@ -853,14 +862,14 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {usersList.length === 0 ? (
+                    {usersList.filter(u => !searchQuery || u.email?.toLowerCase().includes(searchQuery.toLowerCase()) || u.name?.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
                       <tr>
                         <td colSpan="6" style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
-                          No users found.
+                          No users found matching search criteria.
                         </td>
                       </tr>
                     ) : (
-                      usersList.map(u => {
+                      usersList.filter(u => !searchQuery || u.email?.toLowerCase().includes(searchQuery.toLowerCase()) || u.name?.toLowerCase().includes(searchQuery.toLowerCase())).map(u => {
                         const isUpdating = roleUpdatingUserId === u.id
                         return (
                           <tr key={u.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -984,7 +993,7 @@ export default function AdminPage() {
               borderRadius: '12px',
               padding: '24px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <div>
                   <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: '#0f172a' }}>
                     Projects Administration
@@ -993,8 +1002,26 @@ export default function AdminPage() {
                     Track project creation dates, owners, sources, brief cards and published versions.
                   </p>
                 </div>
-                <div style={{ fontSize: '12.5px', color: '#64748b' }}>
-                  Total: <strong style={{ color: '#0f172a' }}>{projectsList.length}</strong> projects
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <input
+                    type="text"
+                    placeholder="Search projects..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '6px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      color: '#0f172a',
+                      outline: 'none',
+                      width: '180px'
+                    }}
+                  />
+                  <div style={{ fontSize: '12.5px', color: '#64748b' }}>
+                    Total: <strong style={{ color: '#0f172a' }}>{projectsList.length}</strong> projects
+                  </div>
                 </div>
               </div>
 
@@ -1013,14 +1040,14 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {projectsList.length === 0 ? (
+                    {projectsList.filter(p => !searchQuery || p.name?.toLowerCase().includes(searchQuery.toLowerCase()) || p.client?.toLowerCase().includes(searchQuery.toLowerCase()) || p.owner_email?.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
                       <tr>
                         <td colSpan="7" style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
-                          No projects recorded yet.
+                          No projects matching search criteria.
                         </td>
                       </tr>
                     ) : (
-                      projectsList.map(p => (
+                      projectsList.filter(p => !searchQuery || p.name?.toLowerCase().includes(searchQuery.toLowerCase()) || p.client?.toLowerCase().includes(searchQuery.toLowerCase()) || p.owner_email?.toLowerCase().includes(searchQuery.toLowerCase())).map(p => (
                         <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '13px 16px' }}>
                             <div style={{ fontWeight: 600, color: '#0f172a' }}>{p.name}</div>
