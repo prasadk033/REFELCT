@@ -400,3 +400,47 @@ export async function publishProgram(projectId) {
     headers: { 'Content-Type': 'application/json' },
   });
 }
+
+// -- Admin Console API --------------------------------------------------------
+
+export async function getAdminOverview() {
+  return apiFetch('/api/admin/overview');
+}
+
+export async function getAdminUsers() {
+  return apiFetch('/api/admin/users');
+}
+
+export async function updateAdminUserRole(userId, isAdmin) {
+  return apiFetch(`/api/admin/users/${userId}/role`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_admin: isAdmin }),
+  });
+}
+
+export async function getAdminProjects() {
+  return apiFetch('/api/admin/projects');
+}
+
+export async function getAdminJobs(status = '', limit = 50) {
+  const query = new URLSearchParams();
+  if (status) query.append('status', status);
+  if (limit) query.append('limit', limit);
+  const qStr = query.toString() ? `?${query.toString()}` : '';
+  return apiFetch(`/api/admin/jobs${qStr}`);
+}
+
+export async function getAdminHealth() {
+  return apiFetch('/api/admin/health');
+}
+
+export async function getAdminAuditLogs(eventType = '', limit = 50, offset = 0) {
+  const query = new URLSearchParams();
+  if (eventType) query.append('event_type', eventType);
+  if (limit) query.append('limit', limit);
+  if (offset) query.append('offset', offset);
+  const qStr = query.toString() ? `?${query.toString()}` : '';
+  return apiFetch(`/api/admin/audit-logs${qStr}`);
+}
+

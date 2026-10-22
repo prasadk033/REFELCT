@@ -70,6 +70,7 @@ class User(Base):
     name = Column(String, nullable=True)
     picture = Column(String, nullable=True)
     google_sub = Column(String, unique=True, nullable=True, index=True)
+    is_admin = Column(Boolean, default=False, nullable=True)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
@@ -397,6 +398,16 @@ def init_db():
     try:
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
+
+        # Check users table columns
+        if "users" in existing_tables:
+            user_cols = [c["name"] for c in inspector.get_columns("users")]
+            if "is_admin" not in user_cols:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;"))
+                except Exception as err:
+                    logger.warning(f"Could not add is_admin to users: {err}")
 
         # Check sources table columns
         if "sources" in existing_tables:

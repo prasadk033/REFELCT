@@ -62,12 +62,15 @@ def get_or_create_user(google_info: Dict[str, Any]) -> User:
             email_val = (google_info.get("email") or "").strip().lower()
             user = db.query(User).filter(func.lower(User.email) == email_val).first()
 
+        is_root_admin = (google_info.get("email") or "").strip().lower() == "prasad@datai2i.com"
         if user:
             # Update profile info
             user.name = google_info.get("name", user.name)
             user.picture = google_info.get("picture", user.picture)
             if not user.google_sub:
                 user.google_sub = google_info["sub"]
+            if is_root_admin:
+                user.is_admin = True
             user.updated_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(user)
@@ -80,6 +83,7 @@ def get_or_create_user(google_info: Dict[str, Any]) -> User:
             name=google_info.get("name"),
             picture=google_info.get("picture"),
             google_sub=google_info["sub"],
+            is_admin=is_root_admin,
         )
         db.add(user)
         db.commit()

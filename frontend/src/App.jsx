@@ -9,6 +9,7 @@ import BriefPage from './pages/BriefPage.jsx'
 import ProgramPage from './pages/ProgramPage.jsx'
 import ExtractionReviewPage from './pages/ExtractionReviewPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
+import AdminPage from './pages/AdminPage.jsx'
 
 function HomeRoute() {
   const { isAuthenticated, loading } = useAuth()
@@ -35,12 +36,28 @@ function ProtectedRoute({ children }) {
   return children
 }
 
+function AdminRoute({ children }) {
+  const { user, isAuthenticated, loading } = useAuth()
+  if (loading) {
+    return (
+      <div className="brief-ui-loading">
+        <span className="bui-spinner" />
+      </div>
+    )
+  }
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  const isAdmin = Boolean(user?.is_admin || (user?.email && user.email.toLowerCase() === 'prasad@datai2i.com'))
+  if (!isAdmin) return <Navigate to="/overview" replace />
+  return children
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<HomeRoute />} />
       <Route path="/overview" element={<ProtectedRoute><GlobalOverviewPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+      <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/projects/:projectId" element={<ProtectedRoute><ProjectOverviewPage /></ProtectedRoute>} />
       <Route path="/projects/:projectId/extract" element={<ProtectedRoute><ExtractionReviewPage /></ProtectedRoute>} />

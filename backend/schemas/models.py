@@ -24,6 +24,7 @@ class UserResponse(BaseModel):
     email: str
     name: Optional[str] = None
     picture: Optional[str] = None
+    is_admin: bool = False
 
     class Config:
         from_attributes = True

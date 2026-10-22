@@ -59,6 +59,7 @@ from routes.cards import router as cards_router
 from routes.activities import router as activities_router
 from routes.jobs import router as jobs_router
 from routes.program import router as program_router
+from routes.admin import router as admin_router
 
 app.include_router(projects_router)
 app.include_router(sources_router)
@@ -67,12 +68,28 @@ app.include_router(cards_router)
 app.include_router(activities_router)
 app.include_router(jobs_router)
 app.include_router(program_router)
+app.include_router(admin_router)
 
 
 
 # ── Auth Endpoints ───────────────────────────────────────────────────────────
 from schemas.models import GoogleLoginRequest, AuthResponse, UserResponse
 from auth.dependencies import get_current_user
+
+
+def _user_to_response(user) -> UserResponse:
+    """Helper to convert ORM User to UserResponse with admin resolution."""
+    is_admin = bool(
+        getattr(user, "is_admin", False) or
+        (user.email and user.email.strip().lower() == "prasad@datai2i.com")
+    )
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        picture=user.picture,
+        is_admin=is_admin,
+    )
 
 
 @app.post("/api/auth/google", response_model=AuthResponse)
@@ -89,12 +106,7 @@ def google_login(body: GoogleLoginRequest):
 
     return AuthResponse(
         access_token=access_token,
-        user=UserResponse(
-            id=user.id,
-            email=user.email,
-            name=user.name,
-            picture=user.picture,
-        ),
+        user=_user_to_response(user),
     )
 
 
@@ -103,7 +115,7 @@ def get_current_user_profile(
     user = Depends(get_current_user)
 ):
     """Get current authenticated user's profile."""
-    return UserResponse(id=user.id, email=user.email, name=user.name, picture=user.picture)
+    return _user_to_response(user)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────

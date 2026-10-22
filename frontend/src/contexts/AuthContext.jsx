@@ -32,6 +32,14 @@ export function AuthProvider({ children }) {
       if (stored) {
         try { setUser(JSON.parse(stored)) } catch { /* ignore */ }
       }
+      getCurrentUser()
+        .then(freshUser => {
+          if (freshUser) {
+            setUser(freshUser)
+            localStorage.setItem('reflect_user', JSON.stringify(freshUser))
+          }
+        })
+        .catch(() => { /* ignore network error, keep stored user */ })
       verifyAiHealth()
     }
     setLoading(false)
