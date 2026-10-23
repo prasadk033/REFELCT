@@ -419,8 +419,70 @@ export async function updateAdminUserRole(userId, isAdmin) {
   });
 }
 
-export async function getAdminProjects() {
-  return apiFetch('/api/admin/projects');
+export async function getAdminProjects(params = {}) {
+  const query = new URLSearchParams();
+  if (params.search) query.append('search', params.search);
+  if (params.sort_by) query.append('sort_by', params.sort_by);
+  if (params.progression && params.progression !== 'all') query.append('progression', params.progression);
+  if (params.owner_id) query.append('owner_id', params.owner_id);
+  if (params.permission_filter && params.permission_filter !== 'all') query.append('permission_filter', params.permission_filter);
+  const qStr = query.toString() ? `?${query.toString()}` : '';
+  return apiFetch(`/api/admin/projects${qStr}`);
+}
+
+export async function getAdminProjectDetails(projectId) {
+  return apiFetch(`/api/admin/projects/${projectId}`);
+}
+
+export async function updateAdminProject(projectId, updateData) {
+  return apiFetch(`/api/admin/projects/${projectId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updateData),
+  });
+}
+
+export async function deleteAdminProject(projectId) {
+  return apiFetch(`/api/admin/projects/${projectId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getAdminPermissions(adminUserId = '', projectId = '') {
+  const query = new URLSearchParams();
+  if (adminUserId) query.append('admin_user_id', adminUserId);
+  if (projectId) query.append('project_id', projectId);
+  const qStr = query.toString() ? `?${query.toString()}` : '';
+  return apiFetch(`/api/admin/permissions${qStr}`);
+}
+
+export async function assignAdminPermission(adminUserId, projectId, canRead, canEdit, canDelete) {
+  return apiFetch('/api/admin/permissions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      admin_user_id: adminUserId,
+      project_id: projectId,
+      can_read: canRead,
+      can_edit: canEdit,
+      can_delete: canDelete,
+    }),
+  });
+}
+
+export async function revokeAdminPermission(permissionId) {
+  return apiFetch(`/api/admin/permissions/${permissionId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getAdminLogins(email = '', limit = 50, offset = 0) {
+  const query = new URLSearchParams();
+  if (email) query.append('email', email);
+  if (limit) query.append('limit', limit);
+  if (offset) query.append('offset', offset);
+  const qStr = query.toString() ? `?${query.toString()}` : '';
+  return apiFetch(`/api/admin/logins${qStr}`);
 }
 
 export async function getAdminJobs(status = '', limit = 50) {

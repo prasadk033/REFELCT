@@ -9,13 +9,22 @@ import {
   getAdminJobs,
   dismissAdminJob,
   getAdminHealth,
-  getAdminAuditLogs
+  getAdminAuditLogs,
+  getAdminProjectDetails,
+  updateAdminProject,
+  deleteAdminProject,
+  getAdminPermissions,
+  assignAdminPermission,
+  revokeAdminPermission,
+  getAdminLogins
 } from '../api.js'
 
 export default function AdminPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState('overview') // 'overview' | 'users' | 'projects' | 'jobs' | 'health' | 'audit'
+  const isSuperAdmin = (user?.email || '').toLowerCase() === 'prasad.k@datai2i.com' || (user?.email || '').toLowerCase() === 'prasad@datai2i.com'
+
+  const [activeTab, setActiveTab] = useState('overview') // 'overview' | 'users' | 'projects' | 'permissions' | 'logins' | 'jobs' | 'health' | 'audit'
   
   // Data state
   const [overviewData, setOverviewData] = useState(null)
@@ -24,6 +33,8 @@ export default function AdminPage() {
   const [jobsList, setJobsList] = useState([])
   const [healthData, setHealthData] = useState(null)
   const [auditLogsData, setAuditLogsData] = useState({ logs: [], total: 0 })
+  const [permissionsList, setPermissionsList] = useState([])
+  const [loginsData, setLoginsData] = useState({ logins: [], total: 0 })
   
   // UI & loading state
   const [loading, setLoading] = useState(true)
@@ -36,6 +47,29 @@ export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [roleUpdatingUserId, setRoleUpdatingUserId] = useState(null)
   const [selectedErrorModal, setSelectedErrorModal] = useState(null)
+
+  // Project Sorting & Filters
+  const [projectSort, setProjectSort] = useState('newest')
+  const [projectProgressionFilter, setProjectProgressionFilter] = useState('all')
+  const [projectPermFilter, setProjectPermFilter] = useState('all')
+
+  // Edit Project Modal
+  const [editingProject, setEditingProject] = useState(null)
+  const [editFormData, setEditFormData] = useState({ name: '', project_type: '', client: '', location: '', description: '' })
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  // Delete Project Modal
+  const [deletingProject, setDeletingProject] = useState(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deletingLoading, setDeletingLoading] = useState(false)
+
+  // Permission Assignment Form State (Super Admin)
+  const [permTargetAdminId, setPermTargetAdminId] = useState('')
+  const [permTargetProjectId, setPermTargetProjectId] = useState('')
+  const [permCanRead, setPermCanRead] = useState(true)
+  const [permCanEdit, setPermCanEdit] = useState(false)
+  const [permCanDelete, setPermCanDelete] = useState(false)
+  const [savingPerm, setSavingPerm] = useState(false)
 
   // Fetch active section data
   const loadSectionData = useCallback(async (isRefresh = false) => {
@@ -55,8 +89,25 @@ export default function AdminPage() {
         const data = await getAdminUsers()
         setUsersList(data || [])
       } else if (activeTab === 'projects') {
-        const data = await getAdminProjects()
+        const data = await getAdminProjects({
+          search: searchQuery,
+          sort_by: projectSort,
+          progression: projectProgressionFilter,
+          permission_filter: projectPermFilter
+        })
         setProjectsList(data || [])
+      } else if (activeTab === 'permissions') {
+        const [perms, users, projs] = await Promise.all([
+          getAdminPermissions(),
+          getAdminUsers(),
+          getAdminProjects({ sort_by: 'name_asc' })
+        ])
+        setPermissionsList(perms || [])
+        setUsersList(users || [])
+        setProjectsList(projs || [])
+      } else if (activeTab === 'logins') {
+        const data = await getAdminLogins()
+        setLoginsData(data || { logins: [], total: 0 })
       } else if (activeTab === 'jobs') {
         const filterParam = jobFilter === 'all' ? '' : jobFilter
         const data = await getAdminJobs(filterParam, 50)
@@ -75,11 +126,10 @@ export default function AdminPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [activeTab, jobFilter, auditFilter])
+  }, [activeTab, jobFilter, auditFilter, searchQuery, projectSort, projectProgressionFilter, projectPermFilter])
 
   // Initial tab load & tab switch
   useEffect(() => {
-    setSearchQuery('')
     loadSectionData()
   }, [loadSectionData])
 
@@ -130,6 +180,104 @@ export default function AdminPage() {
       loadSectionData(true)
     } catch (err) {
       setError(err.message || 'Failed to dismiss job.')
+    }
+  }
+
+  // ── Project Action Handlers ──
+  function handleOpenEditModal(p) {
+    setEditingProject(p)
+    setEditFormData({
+      name: p.name || '',
+      project_type: p.project_type || '',
+      client: p.client === '—' ? '' : (p.client || ''),
+      location: p.location === '—' ? '' : (p.location || ''),
+      description: p.description || ''
+    })
+  }
+
+  async function handleSaveProjectEdit(e) {
+    if (e) e.preventDefault()
+    if (!editingProject) return
+    setSavingEdit(true)
+    setError(null)
+    try {
+      const res = await updateAdminProject(editingProject.id, editFormData)
+      setSuccessNotice(res.message || 'Project updated successfully.')
+      setTimeout(() => setSuccessNotice(null), 4000)
+      setEditingProject(null)
+      loadSectionData(true)
+    } catch (err) {
+      setError(err.message || 'Failed to update project. Permissions may have changed.')
+      setEditingProject(null)
+      loadSectionData(true)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  function handleOpenDeleteModal(p) {
+    setDeletingProject(p)
+    setDeleteConfirmText('')
+  }
+
+  async function handleConfirmDelete() {
+    if (!deletingProject) return
+    if (deleteConfirmText.trim() !== deletingProject.name.trim()) return
+    setDeletingLoading(true)
+    setError(null)
+    try {
+      const res = await deleteAdminProject(deletingProject.id)
+      setSuccessNotice(res.message || 'Project deleted successfully.')
+      setTimeout(() => setSuccessNotice(null), 4000)
+      setDeletingProject(null)
+      loadSectionData(true)
+    } catch (err) {
+      setError(err.message || 'Failed to delete project. Permissions may have changed.')
+      setDeletingProject(null)
+      loadSectionData(true)
+    } finally {
+      setDeletingLoading(false)
+    }
+  }
+
+  // ── Permissions Handlers (Super Admin Only) ──
+  async function handleAssignPermission(e) {
+    if (e) e.preventDefault()
+    if (!permTargetAdminId || !permTargetProjectId) {
+      setError('Please select both an administrator and a target project.')
+      return
+    }
+    setSavingPerm(true)
+    setError(null)
+    try {
+      const res = await assignAdminPermission(
+        permTargetAdminId,
+        permTargetProjectId,
+        permCanRead,
+        permCanEdit,
+        permCanDelete
+      )
+      setSuccessNotice(res.message || 'Permission granted successfully.')
+      setTimeout(() => setSuccessNotice(null), 4000)
+      loadSectionData(true)
+    } catch (err) {
+      setError(err.message || 'Failed to assign permission.')
+    } finally {
+      setSavingPerm(false)
+    }
+  }
+
+  async function handleRevokePermission(permId) {
+    if (!permId) return
+    if (!window.confirm('Revoke all delegated permissions for this administrator on this project?')) return
+    setError(null)
+    try {
+      const res = await revokeAdminPermission(permId)
+      setSuccessNotice(res.message || 'Permission revoked successfully.')
+      setTimeout(() => setSuccessNotice(null), 4000)
+      loadSectionData(true)
+    } catch (err) {
+      setError(err.message || 'Failed to revoke permission.')
     }
   }
 
@@ -301,6 +449,27 @@ export default function AdminPage() {
                 icon: (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                  </svg>
+                )
+              },
+              ...(isSuperAdmin ? [{
+                id: 'permissions',
+                label: 'Permissions',
+                badge: 'Super Admin',
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                )
+              }] : []),
+              {
+                id: 'logins',
+                label: 'Login Telemetry',
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
                   </svg>
                 )
               },
@@ -1019,7 +1188,7 @@ export default function AdminPage() {
           )}
 
           {/* ═══════════════════════════════════════════════════════════════ */}
-          {/* TAB 3: PROJECTS                                                 */}
+          {/* TAB 3: PROJECTS (Enhanced with Search, Sort, Filters, Actions)   */}
           {/* ═══════════════════════════════════════════════════════════════ */}
           {activeTab === 'projects' && (
             <div style={{
@@ -1028,35 +1197,149 @@ export default function AdminPage() {
               borderRadius: '12px',
               padding: '24px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
                 <div>
                   <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: '#0f172a' }}>
                     Projects Administration
                   </h2>
                   <p style={{ margin: 0, fontSize: '12.5px', color: '#64748b' }}>
-                    Track project creation dates, owners, sources, brief cards and published versions.
+                    Track project creation dates, owners, artifacts, progression, and delegated RBAC permissions.
                   </p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <input
-                    type="text"
-                    placeholder="Search projects..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => setActiveTab('permissions')}
                     style={{
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '6px',
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      color: '#0f172a',
-                      outline: 'none',
-                      width: '180px'
+                      background: '#4f46e5',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '7px',
+                      padding: '7px 14px',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
                     }}
-                  />
-                  <div style={{ fontSize: '12.5px', color: '#64748b' }}>
-                    Total: <strong style={{ color: '#0f172a' }}>{projectsList.length}</strong> projects
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    Manage Permissions →
+                  </button>
+                )}
+              </div>
+
+              {/* Enhanced Toolbar: Search, Sort & Filters */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: 1 }}>
+                  {/* Search */}
+                  <div style={{ position: 'relative', minWidth: '220px' }}>
+                    <input
+                      type="text"
+                      placeholder="Search name, client, owner..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        padding: '6px 12px',
+                        fontSize: '12.5px',
+                        color: '#0f172a',
+                        outline: 'none',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    />
                   </div>
+
+                  {/* Sort By */}
+                  <select
+                    value={projectSort}
+                    onChange={(e) => setProjectSort(e.target.value)}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      padding: '6px 10px',
+                      fontSize: '12px',
+                      color: '#334155',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="newest">Sort: Newest First</option>
+                    <option value="oldest">Sort: Oldest First</option>
+                    <option value="updated_desc">Sort: Recently Updated</option>
+                    <option value="updated_asc">Sort: Least Recently Updated</option>
+                    <option value="name_asc">Sort: Name (A-Z)</option>
+                    <option value="name_desc">Sort: Name (Z-A)</option>
+                  </select>
+
+                  {/* Progression Filter */}
+                  <select
+                    value={projectProgressionFilter}
+                    onChange={(e) => setProjectProgressionFilter(e.target.value)}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      padding: '6px 10px',
+                      fontSize: '12px',
+                      color: '#334155',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="all">Workflow: All Stages</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Sources Uploaded">Sources Uploaded</option>
+                    <option value="Brief Review">Brief Review</option>
+                    <option value="Brief Published">Brief Published</option>
+                    <option value="Program in Progress">Program in Progress</option>
+                    <option value="Program Published">Program Published</option>
+                  </select>
+
+                  {/* Permission Filter */}
+                  <select
+                    value={projectPermFilter}
+                    onChange={(e) => setProjectPermFilter(e.target.value)}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      padding: '6px 10px',
+                      fontSize: '12px',
+                      color: '#334155',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="all">Access: All Projects</option>
+                    <option value="permitted_only">Permitted (View Access)</option>
+                    <option value="editable_only">Editable</option>
+                    <option value="deletable_only">Deletable</option>
+                    <option value="my_projects">My Owned Projects</option>
+                  </select>
+                </div>
+
+                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                  Showing <strong style={{ color: '#0f172a' }}>{projectsList.length}</strong> projects
                 </div>
               </div>
 
@@ -1071,98 +1354,805 @@ export default function AdminPage() {
                       <th style={{ padding: '11px 16px', fontWeight: 600 }}>Artifacts</th>
                       <th style={{ padding: '11px 16px', fontWeight: 600 }}>Versions</th>
                       <th style={{ padding: '11px 16px', fontWeight: 600 }}>Created</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projectsList.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" style={{ padding: '36px', textAlign: 'center', color: '#94a3b8' }}>
+                          No projects matching the selected search or filter criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      projectsList.map(p => {
+                        const perms = p.effective_permissions || {}
+                        return (
+                          <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '13px 16px' }}>
+                              <div style={{ fontWeight: 600, color: '#0f172a' }}>{p.name}</div>
+                              <div style={{ fontSize: '11.5px', color: '#64748b' }}>
+                                {p.project_type} {p.client ? `• ${p.client}` : ''}
+                              </div>
+                            </td>
+                            <td style={{ padding: '13px 16px' }}>
+                              <div style={{ fontWeight: 500, color: '#334155' }}>
+                                {p.owner_name}
+                                {perms.is_owner && (
+                                  <span style={{
+                                    marginLeft: '6px',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    padding: '2px 5px',
+                                    borderRadius: '4px',
+                                    background: '#ecfdf5',
+                                    color: '#059669'
+                                  }}>
+                                    YOU
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '11.5px', color: '#64748b' }}>{p.owner_email}</div>
+                            </td>
+                            <td style={{ padding: '13px 16px' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11.5px',
+                                fontWeight: 600,
+                                background: '#f1f5f9',
+                                color: '#334155'
+                              }}>
+                                {p.progression}
+                              </span>
+                            </td>
+                            <td style={{ padding: '13px 16px', fontSize: '12px', color: '#475569' }}>
+                              <div>{p.source_count} sources</div>
+                              <div style={{ color: '#64748b' }}>{p.cards_count} brief cards</div>
+                            </td>
+                            <td style={{ padding: '13px 16px', fontSize: '12px', color: '#64748b' }}>
+                              <div>Brief V{p.brief_versions_count}</div>
+                              <div>Program V{p.program_versions_count}</div>
+                            </td>
+                            <td style={{ padding: '13px 16px', fontSize: '12px', color: '#64748b' }}>
+                              {formatDate(p.created_at)}
+                            </td>
+                            <td style={{ padding: '13px 16px', textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                {/* READ / VIEW ACTION */}
+                                {perms.can_read ? (
+                                  <button
+                                    onClick={() => navigate(`/projects/${p.id}`)}
+                                    title="Open Project Workspace"
+                                    style={{
+                                      background: '#f8fafc',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: '6px',
+                                      padding: '5px 9px',
+                                      fontSize: '11.5px',
+                                      fontWeight: 600,
+                                      color: '#2563eb',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    View →
+                                  </button>
+                                ) : null}
+
+                                {/* EDIT ACTION */}
+                                {perms.can_edit ? (
+                                  <button
+                                    onClick={() => handleOpenEditModal(p)}
+                                    title="Edit Project Metadata"
+                                    style={{
+                                      background: '#fffbeb',
+                                      border: '1px solid #fde68a',
+                                      borderRadius: '6px',
+                                      padding: '5px 9px',
+                                      fontSize: '11.5px',
+                                      fontWeight: 600,
+                                      color: '#b45309',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    Edit
+                                  </button>
+                                ) : null}
+
+                                {/* DELETE ACTION */}
+                                {perms.can_delete ? (
+                                  <button
+                                    onClick={() => handleOpenDeleteModal(p)}
+                                    title="Permanently Delete Project"
+                                    style={{
+                                      background: '#fef2f2',
+                                      border: '1px solid #fecaca',
+                                      borderRadius: '6px',
+                                      padding: '5px 9px',
+                                      fontSize: '11.5px',
+                                      fontWeight: 600,
+                                      color: '#dc2626',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                ) : null}
+
+                                {/* ISOLATED BADGE */}
+                                {!perms.can_read && !perms.can_edit && !perms.can_delete && (
+                                  <span
+                                    title="Tenant Isolated: Private to project owner. No delegated permissions granted."
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      fontSize: '11px',
+                                      fontWeight: 600,
+                                      color: '#94a3b8',
+                                      background: '#f1f5f9',
+                                      padding: '3px 8px',
+                                      borderRadius: '5px'
+                                    }}
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="11" height="11">
+                                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                    </svg>
+                                    Isolated
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* TAB 3B: PERMISSIONS MANAGEMENT (Super Admin Only)               */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {activeTab === 'permissions' && isSuperAdmin && (
+            <div style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '24px'
+            }}>
+              <div style={{ marginBottom: '22px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: '#0f172a' }}>
+                  Role-Based Permissions Management
+                </h2>
+                <p style={{ margin: 0, fontSize: '12.5px', color: '#64748b' }}>
+                  Super Admin controls which administrative actions (READ, EDIT, DELETE) each Admin can perform on specific client projects.
+                </p>
+              </div>
+
+              {/* Grant Form Card */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '18px 20px',
+                marginBottom: '24px'
+              }}>
+                <h3 style={{ fontSize: '13.5px', fontWeight: 700, margin: '0 0 12px', color: '#0f172a' }}>
+                  Grant or Update Project Permission
+                </h3>
+
+                <form onSubmit={handleAssignPermission} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+                    {/* Admin User Selector */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '5px' }}>
+                        Administrator
+                      </label>
+                      <select
+                        value={permTargetAdminId}
+                        onChange={(e) => setPermTargetAdminId(e.target.value)}
+                        required
+                        style={{
+                          width: '100%',
+                          background: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '6px',
+                          padding: '7px 10px',
+                          fontSize: '12.5px',
+                          color: '#0f172a',
+                          outline: 'none'
+                        }}
+                      >
+                        <option value="">Select an Administrator...</option>
+                        {usersList.filter(u => u.is_admin || u.is_root_admin).map(u => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} ({u.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Target Project Selector */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '5px' }}>
+                        Target Project
+                      </label>
+                      <select
+                        value={permTargetProjectId}
+                        onChange={(e) => setPermTargetProjectId(e.target.value)}
+                        required
+                        style={{
+                          width: '100%',
+                          background: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '6px',
+                          padding: '7px 10px',
+                          fontSize: '12.5px',
+                          color: '#0f172a',
+                          outline: 'none'
+                        }}
+                      >
+                        <option value="">Select a Project...</option>
+                        {projectsList.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} (Owner: {p.owner_name})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Permission Checkboxes */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap', paddingTop: '4px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, color: '#334155', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={permCanRead}
+                        onChange={(e) => {
+                          const val = e.target.checked
+                          setPermCanRead(val)
+                          if (!val) {
+                            setPermCanEdit(false)
+                            setPermCanDelete(false)
+                          }
+                        }}
+                      />
+                      <span>READ (View project details)</span>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, color: '#334155', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={permCanEdit}
+                        onChange={(e) => {
+                          const val = e.target.checked
+                          setPermCanEdit(val)
+                          if (val) setPermCanRead(true)
+                        }}
+                      />
+                      <span>EDIT (Update project metadata)</span>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, color: '#334155', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={permCanDelete}
+                        onChange={(e) => {
+                          const val = e.target.checked
+                          setPermCanDelete(val)
+                          if (val) setPermCanRead(true)
+                        }}
+                      />
+                      <span>DELETE (Safely delete project)</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <button
+                      type="submit"
+                      disabled={savingPerm}
+                      style={{
+                        background: '#0f172a',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '7px 16px',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {savingPerm ? 'Saving...' : 'Grant / Update Permissions'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Existing Permissions Table */}
+              <h3 style={{ fontSize: '13.5px', fontWeight: 700, margin: '0 0 10px', color: '#0f172a' }}>
+                Active Delegated Permissions ({permissionsList.length})
+              </h3>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>Administrator</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>Project</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>Privileges</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>Last Updated</th>
                       <th style={{ padding: '11px 16px', fontWeight: 600, textAlign: 'right' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {projectsList.filter(p => !searchQuery || p.name?.toLowerCase().includes(searchQuery.toLowerCase()) || p.client?.toLowerCase().includes(searchQuery.toLowerCase()) || p.owner_email?.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                    {permissionsList.length === 0 ? (
                       <tr>
-                        <td colSpan="7" style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
-                          No projects matching search criteria.
+                        <td colSpan="5" style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
+                          No delegated permissions assigned yet.
                         </td>
                       </tr>
                     ) : (
-                      projectsList.filter(p => !searchQuery || p.name?.toLowerCase().includes(searchQuery.toLowerCase()) || p.client?.toLowerCase().includes(searchQuery.toLowerCase()) || p.owner_email?.toLowerCase().includes(searchQuery.toLowerCase())).map(p => (
-                        <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      permissionsList.map(perm => (
+                        <tr key={perm.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '13px 16px' }}>
-                            <div style={{ fontWeight: 600, color: '#0f172a' }}>{p.name}</div>
-                            <div style={{ fontSize: '11.5px', color: '#64748b' }}>
-                              {p.project_type} {p.client ? `• ${p.client}` : ''}
+                            <div style={{ fontWeight: 600, color: '#0f172a' }}>{perm.admin_name}</div>
+                            <div style={{ fontSize: '11.5px', color: '#64748b' }}>{perm.admin_email}</div>
+                          </td>
+                          <td style={{ padding: '13px 16px' }}>
+                            <div style={{ fontWeight: 600, color: '#334155' }}>{perm.project_name}</div>
+                          </td>
+                          <td style={{ padding: '13px 16px' }}>
+                            <div style={{ display: 'inline-flex', gap: '5px' }}>
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                background: perm.can_read ? '#dbeafe' : '#f1f5f9',
+                                color: perm.can_read ? '#1d4ed8' : '#94a3b8'
+                              }}>
+                                READ
+                              </span>
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                background: perm.can_edit ? '#fef3c7' : '#f1f5f9',
+                                color: perm.can_edit ? '#b45309' : '#94a3b8'
+                              }}>
+                                EDIT
+                              </span>
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                background: perm.can_delete ? '#fee2e2' : '#f1f5f9',
+                                color: perm.can_delete ? '#b91c1c' : '#94a3b8'
+                              }}>
+                                DELETE
+                              </span>
                             </div>
                           </td>
-                          <td style={{ padding: '13px 16px' }}>
-                            <div style={{ fontWeight: 500, color: '#334155' }}>{p.owner_name}</div>
-                            <div style={{ fontSize: '11.5px', color: '#64748b' }}>{p.owner_email}</div>
-                          </td>
-                          <td style={{ padding: '13px 16px' }}>
-                            <span style={{
-                              display: 'inline-block',
-                              padding: '3px 8px',
-                              borderRadius: '6px',
-                              fontSize: '11.5px',
-                              fontWeight: 600,
-                              background: '#f1f5f9',
-                              color: '#334155'
-                            }}>
-                              {p.progression}
-                            </span>
-                          </td>
-                          <td style={{ padding: '13px 16px', fontSize: '12px', color: '#475569' }}>
-                            <div>{p.source_count} sources</div>
-                            <div style={{ color: '#64748b' }}>{p.cards_count} brief cards</div>
-                          </td>
                           <td style={{ padding: '13px 16px', fontSize: '12px', color: '#64748b' }}>
-                            <div>Brief V{p.brief_versions_count}</div>
-                            <div>Program V{p.program_versions_count}</div>
-                          </td>
-                          <td style={{ padding: '13px 16px', fontSize: '12px', color: '#64748b' }}>
-                            {formatDate(p.created_at)}
+                            {formatDate(perm.updated_at || perm.created_at)}
                           </td>
                           <td style={{ padding: '13px 16px', textAlign: 'right' }}>
-                            {p.owner_id === user?.id ? (
-                              <button
-                                onClick={() => navigate(`/projects/${p.id}`)}
-                                style={{
-                                  background: '#f8fafc',
-                                  border: '1px solid #e2e8f0',
-                                  borderRadius: '6px',
-                                  padding: '5px 9px',
-                                  fontSize: '11.5px',
-                                  fontWeight: 600,
-                                  color: '#4f46e5',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                Open →
-                              </button>
-                            ) : (
-                              <span
-                                title="Tenant Isolated: Private to project owner. Admin cannot modify client workspace."
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  fontSize: '11px',
-                                  fontWeight: 600,
-                                  color: '#64748b',
-                                  background: '#f1f5f9',
-                                  padding: '3px 8px',
-                                  borderRadius: '5px'
-                                }}
-                              >
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="11" height="11">
-                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                                </svg>
-                                Isolated
-                              </span>
-                            )}
+                            <button
+                              onClick={() => handleRevokePermission(perm.id)}
+                              style={{
+                                background: '#fef2f2',
+                                border: '1px solid #fecaca',
+                                borderRadius: '6px',
+                                padding: '4px 9px',
+                                fontSize: '11.5px',
+                                fontWeight: 600,
+                                color: '#dc2626',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Revoke
+                            </button>
                           </td>
                         </tr>
                       ))
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* TAB 3C: SECURITY & LOGIN TELEMETRY                              */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {activeTab === 'logins' && (
+            <div style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '24px'
+            }}>
+              <div style={{ marginBottom: '18px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px', color: '#0f172a' }}>
+                  User Login & Security Telemetry
+                </h2>
+                <p style={{ margin: 0, fontSize: '12.5px', color: '#64748b' }}>
+                  Audit log of authentication attempts, trusted IP addresses, and user-agent information observed by the backend proxy.
+                </p>
+              </div>
+
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>Timestamp</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>User / Email</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>Observed IP</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>Location</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>Status</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600 }}>Client User-Agent</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(!loginsData.logins || loginsData.logins.length === 0) ? (
+                      <tr>
+                        <td colSpan="6" style={{ padding: '36px', textAlign: 'center', color: '#94a3b8' }}>
+                          No login events recorded yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      loginsData.logins.map(item => (
+                        <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '12px 16px', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                            {formatDate(item.created_at)}
+                          </td>
+                          <td style={{ padding: '12px 16px', fontWeight: 600, color: '#0f172a' }}>
+                            {item.email}
+                          </td>
+                          <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: '12px', color: '#334155' }}>
+                            {item.ip_address}
+                          </td>
+                          <td style={{ padding: '12px 16px', fontSize: '12px', color: '#475569' }}>
+                            {item.country && item.country !== 'Unknown' ? `${item.country} / ${item.city}` : 'Unknown / Approximate'}
+                          </td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '2px 7px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              background: item.status === 'success' ? '#ecfdf5' : '#fef2f2',
+                              color: item.status === 'success' ? '#059669' : '#dc2626'
+                            }}>
+                              {item.status.toUpperCase()}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 16px', fontSize: '11px', color: '#64748b', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.user_agent}>
+                            {item.user_agent || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* EDIT PROJECT MODAL                                              */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {editingProject && (
+            <div style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.45)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              backdropFilter: 'blur(2px)'
+            }}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                width: '480px',
+                maxWidth: '90vw',
+                padding: '24px',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>
+                    Edit Project
+                  </h3>
+                  <button
+                    onClick={() => setEditingProject(null)}
+                    style={{ background: 'none', border: 'none', fontSize: '18px', color: '#64748b', cursor: 'pointer' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveProjectEdit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                      Project Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                      style={{
+                        width: '100%',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        padding: '7px 10px',
+                        fontSize: '13px',
+                        color: '#0f172a',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                      Project Type *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editFormData.project_type}
+                      onChange={(e) => setEditFormData({ ...editFormData, project_type: e.target.value })}
+                      style={{
+                        width: '100%',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        padding: '7px 10px',
+                        fontSize: '13px',
+                        color: '#0f172a',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                        Client
+                      </label>
+                      <input
+                        type="text"
+                        value={editFormData.client}
+                        onChange={(e) => setEditFormData({ ...editFormData, client: e.target.value })}
+                        style={{
+                          width: '100%',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '6px',
+                          padding: '7px 10px',
+                          fontSize: '13px',
+                          color: '#0f172a',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                        Location
+                      </label>
+                      <input
+                        type="text"
+                        value={editFormData.location}
+                        onChange={(e) => setEditFormData({ ...editFormData, location: e.target.value })}
+                        style={{
+                          width: '100%',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '6px',
+                          padding: '7px 10px',
+                          fontSize: '13px',
+                          color: '#0f172a',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                      Description
+                    </label>
+                    <textarea
+                      rows="3"
+                      value={editFormData.description}
+                      onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                      style={{
+                        width: '100%',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        padding: '7px 10px',
+                        fontSize: '13px',
+                        color: '#0f172a',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        resize: 'vertical'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setEditingProject(null)}
+                      style={{
+                        background: '#f1f5f9',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '7px 14px',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        color: '#475569',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingEdit}
+                      style={{
+                        background: '#0f172a',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '7px 16px',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        color: '#ffffff',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {savingEdit ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* DELETE PROJECT CONFIRMATION MODAL                               */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {deletingProject && (
+            <div style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              backdropFilter: 'blur(2px)'
+            }}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid #fee2e2',
+                width: '460px',
+                maxWidth: '90vw',
+                padding: '24px',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                  <div style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    background: '#fef2f2',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#dc2626'
+                  }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#991b1b' }}>
+                      Delete Project
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                      Permanent deletion of project and associated artifacts
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{
+                  background: '#fff5f5',
+                  border: '1px solid #fed7d7',
+                  borderRadius: '6px',
+                  padding: '12px 14px',
+                  fontSize: '12.5px',
+                  color: '#742a2a',
+                  lineHeight: 1.5,
+                  marginBottom: '16px'
+                }}>
+                  This action <strong>cannot be undone</strong>. It will cancel ongoing AI extractions and permanently delete all sources, Brief cards, Program items, published versions, and MinIO storage files for:
+                  <div style={{ marginTop: '6px', fontWeight: 700, color: '#991b1b' }}>
+                    "{deletingProject.name}"
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '18px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                    Type the project name to confirm:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={deletingProject.name}
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    style={{
+                      width: '100%',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      fontSize: '13px',
+                      color: '#0f172a',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setDeletingProject(null)}
+                    style={{
+                      background: '#f1f5f9',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '7px 14px',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      color: '#475569',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleteConfirmText.trim() !== deletingProject.name.trim() || deletingLoading}
+                    onClick={handleConfirmDelete}
+                    style={{
+                      background: deleteConfirmText.trim() === deletingProject.name.trim() ? '#dc2626' : '#fca5a5',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '7px 16px',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      color: '#ffffff',
+                      cursor: deleteConfirmText.trim() === deletingProject.name.trim() ? 'pointer' : 'not-allowed'
+                    }}
+                  >
+                    {deletingLoading ? 'Deleting...' : 'Permanently Delete Project'}
+                  </button>
+                </div>
               </div>
             </div>
           )}

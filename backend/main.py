@@ -1,12 +1,13 @@
 import uuid
 import logging
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Any
 
 from config import config
 from documents.loader import DocumentLoader
+from db import SessionLocal, UserLoginHistory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -93,17 +94,80 @@ def _user_to_response(user) -> UserResponse:
     )
 
 
+def _extract_trusted_client_ip(request: Request) -> str:
+    # Nginx reverse proxy sets X-Real-IP to $remote_addr
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if parts:
+            return parts[0]
+    return request.client.host if request.client else "Unknown"
+
+
+def _resolve_ip_location(ip: str) -> tuple[str, str]:
+    if ip in ("127.0.0.1", "::1", "localhost"):
+        return ("Localhost", "Internal")
+    if ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("172."):
+        return ("Private Network", "Internal")
+    return ("Unknown", "Unknown")
+
+
 @app.post("/api/auth/google", response_model=AuthResponse)
-def google_login(body: GoogleLoginRequest):
-    """Authenticate with Google ID token."""
+def google_login(body: GoogleLoginRequest, request: Request):
+    """Authenticate with Google ID token and log session telemetry."""
     from auth import verify_google_token, get_or_create_user, create_jwt_token
+
+    client_ip = _extract_trusted_client_ip(request)
+    user_agent = request.headers.get("user-agent", "")[:500]
+    country, city = _resolve_ip_location(client_ip)
 
     google_info = verify_google_token(body.token)
     if not google_info:
+        # Record failed login attempt
+        try:
+            db = SessionLocal()
+            log_record = UserLoginHistory(
+                id=str(uuid.uuid4()),
+                user_id=None,
+                email="unknown@unverified",
+                ip_address=client_ip,
+                user_agent=user_agent,
+                status="failed",
+                country=country,
+                city=city,
+            )
+            db.add(log_record)
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.warning(f"Failed to record failed login audit: {e}")
+
         raise HTTPException(status_code=401, detail="Invalid Google token")
 
     user = get_or_create_user(google_info)
     access_token = create_jwt_token(user.id, user.email)
+
+    # Record successful login event
+    try:
+        db = SessionLocal()
+        log_record = UserLoginHistory(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            email=user.email,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            status="success",
+            country=country,
+            city=city,
+        )
+        db.add(log_record)
+        db.commit()
+        db.close()
+    except Exception as e:
+        logger.warning(f"Failed to record successful login audit: {e}")
 
     return AuthResponse(
         access_token=access_token,

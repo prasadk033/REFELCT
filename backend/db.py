@@ -102,6 +102,7 @@ class Project(Base):
     brief_published_versions = relationship("BriefPublishedVersion", back_populates="project", cascade="all, delete-orphan")
     program_published_versions = relationship("ProgramPublishedVersion", back_populates="project", cascade="all, delete-orphan")
     site_analysis_cache = relationship("SiteAnalysisCache", back_populates="project", cascade="all, delete-orphan")
+    admin_permissions = relationship("AdminProjectPermission", back_populates="project", cascade="all, delete-orphan")
 
 
 class Source(Base):
@@ -364,6 +365,52 @@ class ProgramVersionItem(Base):
     program_version = relationship("ProgramPublishedVersion", back_populates="snapshot_items")
 
 
+# ── Admin & RBAC Models ──────────────────────────────────────────────────────
+
+class AdminProjectPermission(Base):
+    """
+    Granular project-level permissions delegated to an Admin by Super Admin.
+    Allows independent assignment of READ, EDIT, and DELETE rights.
+    """
+    __tablename__ = "admin_project_permissions"
+    __table_args__ = (
+        UniqueConstraint("admin_user_id", "project_id", name="uq_admin_project_permission"),
+    )
+
+    id = Column(String, primary_key=True)  # UUID
+    admin_user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    can_read = Column(Boolean, nullable=False, default=True)
+    can_edit = Column(Boolean, nullable=False, default=False)
+    can_delete = Column(Boolean, nullable=False, default=False)
+    granted_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    admin_user = relationship("User", foreign_keys=[admin_user_id])
+    project = relationship("Project", back_populates="admin_permissions")
+    grantor = relationship("User", foreign_keys=[granted_by])
+
+
+class UserLoginHistory(Base):
+    """
+    Audit record of authentication events, capturing trusted IP, agent, and session status.
+    """
+    __tablename__ = "user_logins"
+
+    id = Column(String, primary_key=True)  # UUID
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    email = Column(String, nullable=False, index=True)
+    ip_address = Column(String, nullable=False)
+    user_agent = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="success")  # success, failed
+    country = Column(String, default="Unknown", nullable=True)
+    city = Column(String, default="Unknown", nullable=True)
+    created_at = Column(DateTime, default=utc_now, index=True)
+
+    user = relationship("User")
+
+
 # ── Utilities ────────────────────────────────────────────────────────────────
 
 def log_activity(db: SessionLocal, user_id: str, event_type: str, title: str, description: str = None, project_id: str = None):
@@ -521,6 +568,16 @@ def init_db():
                 ))
         except Exception as idx_err:
             logger.warning(f"program_published_versions index notice: {idx_err}")
+
+        # ── Admin & RBAC Indexes ──────────────────────────────────────────────
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_project_permission "
+                    "ON admin_project_permissions (admin_user_id, project_id);"
+                ))
+        except Exception as idx_err:
+            logger.warning(f"admin_project_permissions index notice: {idx_err}")
 
         logger.info("Database tables created/verified successfully.")
     except Exception as e:

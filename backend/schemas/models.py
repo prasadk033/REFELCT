@@ -227,3 +227,44 @@ class ActivityLogResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+# --- Admin RBAC & Telemetry ---
+
+class AdminProjectPermissionAssignmentRequest(BaseModel):
+    admin_user_id: str
+    project_id: str
+    can_read: bool = True
+    can_edit: bool = False
+    can_delete: bool = False
+
+class AdminProjectPermissionResponse(BaseModel):
+    id: str
+    admin_user_id: str
+    admin_email: Optional[str] = None
+    admin_name: Optional[str] = None
+    project_id: str
+    project_name: Optional[str] = None
+    can_read: bool
+    can_edit: bool
+    can_delete: bool
+    granted_by: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserLoginRecordResponse(BaseModel):
+    id: str
+    user_id: Optional[str] = None
+    email: str
+    ip_address: str
+    user_agent: Optional[str] = None
+    status: str
+    country: Optional[str] = "Unknown"
+    city: Optional[str] = "Unknown"
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
