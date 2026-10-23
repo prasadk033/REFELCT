@@ -98,17 +98,19 @@ def get_effective_project_permission(admin: User, project: Project, db: Session)
     3. Delegated permissions lookup for other projects
     4. Default Deny
     """
-    # 1. Super Admin global override
-    if is_root_admin(admin.email):
+    is_root = is_root_admin(admin.email)
+
+    # 1. Super Admin global platform rights: READ and DELETE, but strictly NO EDIT
+    if is_root:
         return {
             "can_read": True,
-            "can_edit": True,
+            "can_edit": False,  # Super Admin cannot edit project data per policy
             "can_delete": True,
-            "is_owner": admin.id == project.user_id,
+            "is_owner": project.user_id == admin.id,
             "is_super_admin": True,
         }
 
-    # 2. Project Owner Invariant
+    # 2. Project Owner Invariant (Owner always has full control over their own project)
     if project.user_id == admin.id:
         return {
             "can_read": True,
@@ -278,7 +280,7 @@ def list_admin_users(
                 "picture": u.picture,
                 "is_admin": is_admin_flag,
                 "is_root_admin": is_root,
-                "role": "Super Admin" if is_root else ("Admin" if is_admin_flag else "User"),
+                "role": "Super Admin" if is_root else ("Tech Admin" if is_admin_flag else "User"),
                 "projects_count": proj_count,
                 "jobs_count": job_count,
                 "is_generating": has_running_job,
@@ -297,13 +299,13 @@ def list_admin_users(
 def update_user_role(
     user_id: str,
     payload: Dict[str, Any] = Body(...),
-    admin: User = Depends(require_admin),
+    super_admin: User = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ):
     """
-    Assign or revoke admin role for a user.
-    Only authorized admins may perform this action.
-    The root admin (prasad@datai2i.com) cannot be demoted.
+    Assign or revoke Tech Admin role for a user.
+    Restricted strictly to the Super Admin.
+    The root admin (prasad.k@datai2i.com) cannot be demoted.
     """
     target_user = db.query(User).filter(User.id == user_id).first()
     if not target_user:
@@ -321,23 +323,120 @@ def update_user_role(
     db.refresh(target_user)
 
     # Log audit event
-    action_str = "promoted to Admin" if new_is_admin else "demoted to User"
+    action_str = "promoted to Tech Admin" if new_is_admin else "demoted to User"
     log_activity(
         db=db,
-        user_id=admin.id,
+        user_id=super_admin.id,
         event_type="admin_role_change",
-        title="Admin Role Changed",
-        description=f"User {target_user.email} was {action_str} by {admin.email}."
+        title="Tech Admin Role Changed",
+        description=f"User {target_user.email} was {action_str} by Super Admin {super_admin.email}."
     )
 
-    logger.info(f"Admin {admin.email} changed role of user {target_user.email} to is_admin={new_is_admin}")
+    logger.info(f"Super Admin {super_admin.email} changed role of user {target_user.email} to is_admin={new_is_admin}")
 
     return {
         "id": target_user.id,
         "email": target_user.email,
         "is_admin": target_user.is_admin,
-        "role": "Admin" if target_user.is_admin else "User",
+        "role": "Tech Admin" if target_user.is_admin else "User",
         "message": f"User role updated to {action_str} successfully."
+    }
+
+
+@router.delete("/users/{user_id}")
+def delete_admin_user(
+    user_id: str,
+    super_admin: User = Depends(require_super_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Permanently delete a user from the database and clean up all associated projects,
+    artifacts, storage files, and logs.
+    Restricted strictly to Super Admin.
+    Root administrator cannot be deleted.
+    """
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Target user not found")
+
+    if is_root_admin(target_user.email):
+        raise HTTPException(status_code=400, detail="Root administrator cannot be deleted.")
+
+    if target_user.id == super_admin.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account.")
+
+    user_email = target_user.email
+    user_name = target_user.name or "User"
+
+    # 1. Clean up all projects owned by this user
+    from documents.loader import cancel_extraction
+    user_projects = db.query(Project).filter(Project.user_id == user_id).all()
+    for p in user_projects:
+        db.query(Brief).filter(Brief.project_id == p.id).update(
+            {"previous_version_id": None}, synchronize_session=False
+        )
+        db.query(SiteAnalysisCache).filter(SiteAnalysisCache.project_id == p.id).delete(
+            synchronize_session=False
+        )
+        sources = db.query(Source).filter(Source.project_id == p.id).all()
+        for s in sources:
+            abs_p = None
+            if s.storage_path:
+                try:
+                    abs_p = file_store.get_absolute_path(s.storage_path)
+                except Exception as err:
+                    logger.warning(f"Could not get path: {err}")
+            try:
+                cancel_extraction(source_id=s.id, file_path=abs_p)
+            except Exception as err:
+                logger.warning(f"Error canceling extraction: {err}")
+            if s.storage_path:
+                try:
+                    file_store.delete_file(s.storage_path)
+                except Exception as err:
+                    logger.warning(f"Failed to delete file: {err}")
+        db.query(AdminProjectPermission).filter(AdminProjectPermission.project_id == p.id).delete(
+            synchronize_session=False
+        )
+
+    # 2. Clean up permissions where this user was the admin
+    db.query(AdminProjectPermission).filter(AdminProjectPermission.admin_user_id == user_id).delete(
+        synchronize_session=False
+    )
+
+    # 3. Clean up processing jobs
+    db.query(ProcessingJob).filter(ProcessingJob.user_id == user_id).delete(
+        synchronize_session=False
+    )
+
+    # 4. Clean up user login records
+    db.query(UserLoginHistory).filter(UserLoginHistory.user_id == user_id).delete(
+        synchronize_session=False
+    )
+
+    # 5. Clean up activity logs
+    db.query(ActivityLog).filter(ActivityLog.user_id == user_id).delete(
+        synchronize_session=False
+    )
+
+    # 6. Delete the user
+    db.delete(target_user)
+    db.commit()
+
+    # 7. Log audit event
+    log_activity(
+        db=db,
+        user_id=super_admin.id,
+        event_type="admin_user_deleted",
+        title="User Deleted by Super Admin",
+        description=f"User {user_name} ({user_email}, ID: {user_id}) was permanently deleted from the database by {super_admin.email}."
+    )
+
+    logger.info(f"Super Admin {super_admin.email} permanently deleted user {user_email}")
+    return {
+        "id": user_id,
+        "email": user_email,
+        "message": f"User {user_email} and all associated data have been permanently deleted from the database."
     }
 
 
@@ -397,11 +496,13 @@ def assign_admin_permission(
     Restricted strictly to the Super Admin.
     Enforces invariant: EDIT or DELETE requires READ=True.
     """
-    # 1. Verify target user exists and is an Admin
+    # 1. Verify target user exists and is a Tech Admin (Super Admin cannot receive delegated grants)
     target_user = db.query(User).filter(User.id == payload.admin_user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="Target user not found")
-    if not getattr(target_user, "is_admin", False) and not is_root_admin(target_user.email):
+    if is_root_admin(target_user.email):
+        raise HTTPException(status_code=400, detail="Cannot assign delegated permissions to Super Admin. Super Admin already possesses platform-level privileges.")
+    if not getattr(target_user, "is_admin", False):
         raise HTTPException(status_code=400, detail="Cannot assign project permissions to a non-administrative user")
 
     # 2. Verify target project exists

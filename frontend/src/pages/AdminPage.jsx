@@ -13,6 +13,7 @@ import {
   getAdminProjectDetails,
   updateAdminProject,
   deleteAdminProject,
+  deleteAdminUser,
   getAdminPermissions,
   assignAdminPermission,
   revokeAdminPermission,
@@ -62,6 +63,11 @@ export default function AdminPage() {
   const [deletingProject, setDeletingProject] = useState(null)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [deletingLoading, setDeletingLoading] = useState(false)
+
+  // Delete User Modal (Super Admin Only)
+  const [deletingUser, setDeletingUser] = useState(null)
+  const [deleteUserConfirmEmail, setDeleteUserConfirmEmail] = useState('')
+  const [deletingUserLoading, setDeletingUserLoading] = useState(false)
 
   // Permission Assignment Form State (Super Admin)
   const [permTargetAdminId, setPermTargetAdminId] = useState('')
@@ -143,13 +149,13 @@ export default function AdminPage() {
     }
   }, [activeTab, autoRefreshQueue, loadSectionData])
 
-  // Handle Role Promotion/Demotion
+  // Handle Role Promotion/Demotion (Super Admin Only)
   async function handleToggleAdminRole(targetUser) {
     if (!targetUser) return
     const nextRole = !targetUser.is_admin
     const confirmMsg = nextRole
-      ? `Promote ${targetUser.email} to Admin?\nThey will have full access to view admin metrics and manage settings.`
-      : `Revoke Admin privileges from ${targetUser.email}?`
+      ? `Promote ${targetUser.email} to Tech Admin?\nThey will have access to administrative dashboards (system health, live queue, logins, and audit logs).`
+      : `Revoke Tech Admin privileges from ${targetUser.email}?`
 
     if (!window.confirm(confirmMsg)) return
 
@@ -166,6 +172,30 @@ export default function AdminPage() {
       setError(err.message || 'Failed to update user role.')
     } finally {
       setRoleUpdatingUserId(null)
+    }
+  }
+
+  // Handle User Deletion (Super Admin Only)
+  function handleOpenDeleteUserModal(u) {
+    setDeletingUser(u)
+    setDeleteUserConfirmEmail('')
+  }
+
+  async function handleConfirmDeleteUser() {
+    if (!deletingUser) return
+    if (deleteUserConfirmEmail.trim().toLowerCase() !== deletingUser.email.trim().toLowerCase()) return
+    setDeletingUserLoading(true)
+    setError(null)
+    try {
+      const res = await deleteAdminUser(deletingUser.id)
+      setSuccessNotice(res.message || 'User and all associated data permanently deleted from database.')
+      setTimeout(() => setSuccessNotice(null), 4000)
+      setDeletingUser(null)
+      loadSectionData(true)
+    } catch (err) {
+      setError(err.message || 'Failed to delete user from database.')
+    } finally {
+      setDeletingUserLoading(false)
     }
   }
 
@@ -1042,7 +1072,9 @@ export default function AdminPage() {
                       <th style={{ padding: '11px 16px', fontWeight: 600 }}>Projects</th>
                       <th style={{ padding: '11px 16px', fontWeight: 600 }}>Status</th>
                       <th style={{ padding: '11px 16px', fontWeight: 600 }}>Last Activity</th>
-                      <th style={{ padding: '11px 16px', fontWeight: 600, textAlign: 'right' }}>Admin Access</th>
+                      <th style={{ padding: '11px 16px', fontWeight: 600, textAlign: 'right' }}>
+                        {isSuperAdmin ? 'Administrator Actions' : 'Role Status'}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1151,30 +1183,54 @@ export default function AdminPage() {
                               {formatDate(u.last_activity)}
                             </td>
 
-                            {/* Admin Action Toggle */}
+                            {/* Admin Action Toggle / User Deletion (Super Admin Only) */}
                             <td style={{ padding: '13px 16px', textAlign: 'right' }}>
                               {u.is_root_admin ? (
                                 <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
-                                  Root Admin
+                                  Super Admin (Root)
                                 </span>
+                              ) : isSuperAdmin ? (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                  <button
+                                    onClick={() => handleToggleAdminRole(u)}
+                                    disabled={isUpdating}
+                                    style={{
+                                      background: u.is_admin ? '#fff7ed' : '#f0fdf4',
+                                      border: `1px solid ${u.is_admin ? '#fed7aa' : '#bbf7d0'}`,
+                                      color: u.is_admin ? '#c2410c' : '#16a34a',
+                                      borderRadius: '6px',
+                                      padding: '5px 10px',
+                                      fontSize: '11.5px',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.1s ease'
+                                    }}
+                                  >
+                                    {isUpdating ? 'Updating...' : u.is_admin ? 'Revoke Tech Admin' : 'Make Tech Admin'}
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleOpenDeleteUserModal(u)}
+                                    title="Permanently delete user from database"
+                                    style={{
+                                      background: '#fef2f2',
+                                      border: '1px solid #fecaca',
+                                      color: '#dc2626',
+                                      borderRadius: '6px',
+                                      padding: '5px 10px',
+                                      fontSize: '11.5px',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.1s ease'
+                                    }}
+                                  >
+                                    Delete User
+                                  </button>
+                                </div>
                               ) : (
-                                <button
-                                  onClick={() => handleToggleAdminRole(u)}
-                                  disabled={isUpdating}
-                                  style={{
-                                    background: u.is_admin ? '#fef2f2' : '#f0fdf4',
-                                    border: `1px solid ${u.is_admin ? '#fecaca' : '#bbf7d0'}`,
-                                    color: u.is_admin ? '#dc2626' : '#16a34a',
-                                    borderRadius: '6px',
-                                    padding: '5px 10px',
-                                    fontSize: '11.5px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.1s ease'
-                                  }}
-                                >
-                                  {isUpdating ? 'Updating...' : u.is_admin ? 'Revoke Admin' : 'Make Admin'}
-                                </button>
+                                <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                                  {u.is_admin ? 'Tech Admin' : 'User'}
+                                </span>
                               )}
                             </td>
                           </tr>
@@ -1440,8 +1496,8 @@ export default function AdminPage() {
                                   </button>
                                 ) : null}
 
-                                {/* EDIT ACTION */}
-                                {perms.can_edit ? (
+                                {/* EDIT ACTION (Tech Admins with delegated edit rights only; Super Admin has no edit per policy) */}
+                                {perms.can_edit && !isSuperAdmin ? (
                                   <button
                                     onClick={() => handleOpenEditModal(p)}
                                     title="Edit Project Metadata"
@@ -1551,7 +1607,7 @@ export default function AdminPage() {
                     {/* Admin User Selector */}
                     <div>
                       <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '5px' }}>
-                        Administrator
+                        Tech Administrator
                       </label>
                       <select
                         value={permTargetAdminId}
@@ -1568,13 +1624,18 @@ export default function AdminPage() {
                           outline: 'none'
                         }}
                       >
-                        <option value="">Select an Administrator...</option>
-                        {usersList.filter(u => u.is_admin || u.is_root_admin).map(u => (
+                        <option value="">Select a Tech Admin...</option>
+                        {usersList.filter(u => u.is_admin && !u.is_root_admin && (u.email || '').toLowerCase() !== 'prasad.k@datai2i.com' && (u.email || '').toLowerCase() !== 'prasad@datai2i.com').map(u => (
                           <option key={u.id} value={u.id}>
                             {u.name} ({u.email})
                           </option>
                         ))}
                       </select>
+                      {usersList.filter(u => u.is_admin && !u.is_root_admin && (u.email || '').toLowerCase() !== 'prasad.k@datai2i.com' && (u.email || '').toLowerCase() !== 'prasad@datai2i.com').length === 0 && (
+                        <div style={{ fontSize: '11px', color: '#b45309', marginTop: '4px' }}>
+                          No Tech Admins found. Promote a user in the Users tab first.
+                        </div>
+                      )}
                     </div>
 
                     {/* Target Project Selector */}
@@ -2151,6 +2212,137 @@ export default function AdminPage() {
                     }}
                   >
                     {deletingLoading ? 'Deleting...' : 'Permanently Delete Project'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Delete User Confirmation Modal (Super Admin Only) ── */}
+          {deletingUser && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(15, 23, 42, 0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              padding: '20px'
+            }}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid #fee2e2',
+                width: '480px',
+                maxWidth: '90vw',
+                padding: '24px',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '8px',
+                    background: '#fef2f2',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#dc2626'
+                  }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="22" height="22">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#991b1b' }}>
+                      Delete User from Database
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                      Permanent deletion of account, projects, artifacts and telemetry
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{
+                  background: '#fff5f5',
+                  border: '1px solid #fed7d7',
+                  borderRadius: '6px',
+                  padding: '12px 14px',
+                  fontSize: '12.5px',
+                  color: '#742a2a',
+                  lineHeight: 1.5,
+                  marginBottom: '16px'
+                }}>
+                  This action <strong>cannot be undone</strong>. It will cancel ongoing AI extractions and permanently delete from the database:
+                  <div style={{ marginTop: '6px', fontWeight: 700, color: '#991b1b' }}>
+                    {deletingUser.name} ({deletingUser.email})
+                  </div>
+                  <div style={{ marginTop: '4px', fontSize: '11.5px', color: '#b91c1c' }}>
+                    {deletingUser.projects_count} project(s), Brief cards, Program items, storage files, and logs will be permanently erased.
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '18px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                    Type the user email to confirm:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={deletingUser.email}
+                    value={deleteUserConfirmEmail}
+                    onChange={(e) => setDeleteUserConfirmEmail(e.target.value)}
+                    style={{
+                      width: '100%',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      fontSize: '13px',
+                      color: '#0f172a',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setDeletingUser(null)}
+                    style={{
+                      background: '#f1f5f9',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '7px 14px',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      color: '#475569',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleteUserConfirmEmail.trim().toLowerCase() !== deletingUser.email.trim().toLowerCase() || deletingUserLoading}
+                    onClick={handleConfirmDeleteUser}
+                    style={{
+                      background: deleteUserConfirmEmail.trim().toLowerCase() === deletingUser.email.trim().toLowerCase() ? '#dc2626' : '#fca5a5',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '7px 16px',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      color: '#ffffff',
+                      cursor: deleteUserConfirmEmail.trim().toLowerCase() === deletingUser.email.trim().toLowerCase() ? 'pointer' : 'not-allowed'
+                    }}
+                  >
+                    {deletingUserLoading ? 'Deleting...' : 'Permanently Delete User'}
                   </button>
                 </div>
               </div>

@@ -419,6 +419,12 @@ export async function updateAdminUserRole(userId, isAdmin) {
   });
 }
 
+export async function deleteAdminUser(userId) {
+  return apiFetch(`/api/admin/users/${userId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function getAdminProjects(params = {}) {
   const query = new URLSearchParams();
   if (params.search) query.append('search', params.search);
