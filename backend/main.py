@@ -107,11 +107,34 @@ def _extract_trusted_client_ip(request: Request) -> str:
     return request.client.host if request.client else "Unknown"
 
 
+_GEO_CACHE: dict[str, tuple[str, str]] = {}
+
+
 def _resolve_ip_location(ip: str) -> tuple[str, str]:
-    if ip in ("127.0.0.1", "::1", "localhost"):
+    """Resolve IP address to (country, city) with in-memory caching."""
+    if not ip or ip in ("127.0.0.1", "::1", "localhost", "Unknown"):
         return ("Localhost", "Internal")
     if ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("172."):
         return ("Private Network", "Internal")
+
+    if ip in _GEO_CACHE:
+        return _GEO_CACHE[ip]
+
+    try:
+        import httpx
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.get(f"http://ip-api.com/json/{ip}?fields=status,country,city")
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") == "success":
+                    country = data.get("country") or "Unknown"
+                    city = data.get("city") or "Unknown"
+                    _GEO_CACHE[ip] = (country, city)
+                    return (country, city)
+    except Exception as e:
+        logger.debug(f"IP geo lookup failed for {ip}: {e}")
+
+    _GEO_CACHE[ip] = ("Unknown", "Unknown")
     return ("Unknown", "Unknown")
 
 

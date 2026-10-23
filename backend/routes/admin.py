@@ -633,10 +633,11 @@ def list_admin_projects(
         # 2. Text Search
         if search and search.strip():
             s = f"%{search.strip().lower()}%"
-            # Join user to search owner name/email
+            # Join user to search owner name/email, client, and location
             query = query.outerjoin(User, Project.user_id == User.id).filter(
                 (func.lower(Project.name).like(s)) |
                 (func.lower(Project.client).like(s)) |
+                (func.lower(Project.location).like(s)) |
                 (func.lower(Project.id).like(s)) |
                 (func.lower(User.name).like(s)) |
                 (func.lower(User.email).like(s))

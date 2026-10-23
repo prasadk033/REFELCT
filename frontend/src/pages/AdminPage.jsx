@@ -1427,8 +1427,14 @@ export default function AdminPage() {
                           <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                             <td style={{ padding: '13px 16px' }}>
                               <div style={{ fontWeight: 600, color: '#0f172a' }}>{p.name}</div>
-                              <div style={{ fontSize: '11.5px', color: '#64748b' }}>
-                                {p.project_type} {p.client ? `• ${p.client}` : ''}
+                              <div style={{ fontSize: '11.5px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px', flexWrap: 'wrap' }}>
+                                <span>{p.project_type}</span>
+                                {p.client && p.client !== '—' && <span>• {p.client}</span>}
+                                {p.location && p.location !== '—' && (
+                                  <span style={{ color: '#0369a1', fontWeight: 500 }}>
+                                    • 📍 {p.location}
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td style={{ padding: '13px 16px' }}>
@@ -1880,7 +1886,11 @@ export default function AdminPage() {
                             {item.ip_address}
                           </td>
                           <td style={{ padding: '12px 16px', fontSize: '12px', color: '#475569' }}>
-                            {item.country && item.country !== 'Unknown' ? `${item.country} / ${item.city}` : 'Unknown / Approximate'}
+                            {item.country && item.country !== 'Unknown' && item.country !== 'Internal'
+                              ? `${item.city && item.city !== 'Unknown' ? item.city + ', ' : ''}${item.country}`
+                              : (item.country === 'Localhost' || item.country === 'Private Network' || item.city === 'Internal')
+                              ? `${item.country || 'Private Network'} (${item.city || 'Internal'})`
+                              : 'Unknown / Approximate'}
                           </td>
                           <td style={{ padding: '12px 16px' }}>
                             <span style={{
