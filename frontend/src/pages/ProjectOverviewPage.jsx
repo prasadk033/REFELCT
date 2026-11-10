@@ -76,6 +76,10 @@ export default function ProjectOverviewPage() {
   const [fileTypeError, setFileTypeError] = useState(null)
 
   function openUploadModal(category = 'document') {
+    if (extracting || analyzing) {
+      showToast('⚠️ Please wait for active extraction to finish before adding new sources.')
+      return
+    }
     setUploadCategory(category)
     setSelectedFile(null)
     setUploading(false)
@@ -130,6 +134,7 @@ export default function ProjectOverviewPage() {
 
   // Document Extraction Progress Modal
   const [extractModalOpen, setExtractModalOpen] = useState(false)
+  const [hideFloatingPill, setHideFloatingPill] = useState(false)
   const [extractDocName, setExtractDocName] = useState('Document')
   const [extractDocsCompleted, setExtractDocsCompleted] = useState(0)
   const [extractDocCount, setExtractDocCount] = useState(1)
@@ -189,6 +194,7 @@ export default function ProjectOverviewPage() {
           setExtracting(true)
           setExtractModalOpen(false)
           setShowExtractModal(false)
+          setHideFloatingPill(false)
           if (typeof statusRes.cards_generated === 'number') setExtractDocsCompleted(statusRes.cards_generated)
           if (typeof statusRes.questions_count === 'number' && statusRes.questions_count > 0) setExtractDocCount(statusRes.questions_count)
           if (statusRes.current_step) setExtractServerStep(statusRes.current_step)
@@ -534,6 +540,7 @@ export default function ProjectOverviewPage() {
 
     setAnalyzing(true)
     setShowAnalysisModal(true)
+    setHideFloatingPill(false)
     setAnalysisError(null)
     setAnalyzingSeconds(0)
     setAnalysisStep('Initiating multi-agent analysis...')
@@ -749,6 +756,7 @@ export default function ProjectOverviewPage() {
       setExtractElapsedSeconds(0)
       setExtractModalOpen(true)
       setShowExtractModal(true)
+      setHideFloatingPill(false)
       setExtracting(true)
 
       try {
@@ -1022,14 +1030,15 @@ export default function ProjectOverviewPage() {
             </div>
 
             {/* Action Row */}
-            <div className="pov-analyse-action-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', ...(analyzing || extractModalOpen ? { opacity: 0.65, pointerEvents: 'none' } : {}) }}>
+            <div className="pov-analyse-action-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', ...(analyzing || extracting || extractModalOpen ? { opacity: 0.65, pointerEvents: 'none' } : {}) }}>
 
               {sources.length === 0 ? (
                 /* 1. No documents yet: Add Source CTA */
                 <button
                   className="pov-btn-analyse"
                   onClick={() => openUploadModal('document')}
-                  disabled={uploading}
+                  disabled={uploading || analyzing || extracting}
+                  style={(uploading || analyzing || extracting) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
                 >
                   <span className="pov-sparkle">+</span>
                   <span>Add Project Source</span>
@@ -1218,25 +1227,31 @@ export default function ProjectOverviewPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      if (extracting || analyzing) {
+                        showToast('⚠️ Please wait for active extraction to finish before adding a location.')
+                        return
+                      }
                       setSiteLocationInput('')
                       setShowSiteLocationModal(true)
                     }}
+                    disabled={uploading || analyzing || extracting}
                     style={{
-                      background: '#ffffff',
+                      background: (uploading || analyzing || extracting) ? '#f8fafc' : '#ffffff',
                       border: '1px solid #cbd5e1',
                       borderRadius: '7px',
                       padding: '6px 12px',
-                      color: '#0f172a',
-                      cursor: 'pointer',
+                      color: (uploading || analyzing || extracting) ? '#94a3b8' : '#0f172a',
+                      cursor: (uploading || analyzing || extracting) ? 'not-allowed' : 'pointer',
                       fontSize: '12px',
                       fontWeight: 600,
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '6px',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                      opacity: (uploading || analyzing || extracting) ? 0.6 : 1,
                       transition: 'all 0.15s ease'
                     }}
-                    title="Add project site location"
+                    title={extracting ? "Extraction in progress" : "Add project site location"}
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.2" width="14" height="14">
                       <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
@@ -1249,7 +1264,8 @@ export default function ProjectOverviewPage() {
               <button
                 className="pov-btn-add-doc"
                 onClick={() => openUploadModal('document')}
-                disabled={uploading || analyzing}
+                disabled={uploading || analyzing || extracting}
+                style={(uploading || analyzing || extracting) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="13" height="13">
                   <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -1262,7 +1278,12 @@ export default function ProjectOverviewPage() {
           {sources.length === 0 ? (
             <div className="pov-empty-sources">
               <p>No documents or images uploaded to this project yet.</p>
-              <button className="pov-btn-add-doc" onClick={() => openUploadModal('document')}>
+              <button
+                className="pov-btn-add-doc"
+                onClick={() => openUploadModal('document')}
+                disabled={uploading || analyzing || extracting}
+                style={(uploading || analyzing || extracting) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
+              >
                 + Add Project Source
               </button>
             </div>
@@ -1336,13 +1357,7 @@ export default function ProjectOverviewPage() {
                     border: '1px dashed #cbd5e1',
                     borderRadius: '10px',
                     overflow: 'hidden',
-                    transition: 'all 0.25s',
-                    ...((extractModalOpen && !showExtractModal) || (analyzing && !showAnalysisModal) ? {
-                      opacity: 0.55,
-                      filter: 'blur(0.5px)',
-                      pointerEvents: 'none',
-                      userSelect: 'none'
-                    } : {})
+                    transition: 'all 0.25s'
                   }}
                 >
 
@@ -1446,6 +1461,7 @@ export default function ProjectOverviewPage() {
                         const isApproved = (s.approval_status === 'approved' || s.processing_status === 'approved') && hasValidExtraction
                         const isExtracted = s.processing_status === 'extracted' && hasValidExtraction
                         const isFailed = s.processing_status === 'failed'
+                        const isThisDocActive = (extracting && (s.processing_status === 'extracting' || rowExtractingId === s.id || (extractDocName && extractDocName.includes(s.file_name))))
 
                         return (
                           <tr key={s.id}>
@@ -1462,8 +1478,7 @@ export default function ProjectOverviewPage() {
                             </td>
                             <td className="td-ver" style={{ verticalAlign: 'middle' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                {/* When batch extraction is running in background, ALL rows show blue background state */}
-                                {(extracting && !showExtractModal) ? (
+                                {isThisDocActive ? (
                                   <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                                     <span className="bui-spinner-inline" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderColor: '#bfdbfe', borderTopColor: '#2563eb', display: 'inline-block' }} />
                                     Running in Background
@@ -1496,7 +1511,7 @@ export default function ProjectOverviewPage() {
                                 )}
 
                                 {/* Extracted Data quick-view button: only show when extracted text is ready */}
-                                {!(extracting && !showExtractModal) && rowExtractingId !== s.id && hasValidExtraction && (
+                                {!isThisDocActive && rowExtractingId !== s.id && hasValidExtraction && (
                                   <button
                                     type="button"
                                     className="bui-btn bui-btn-outline"
@@ -1523,31 +1538,22 @@ export default function ProjectOverviewPage() {
                               </div>
                             </td>
                             <td style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                              {/* Disable all row actions while batch extraction is running in background */}
-                              {!(extracting && !showExtractModal) && rowExtractingId !== s.id && (
-                                <>
-                                  {hasValidExtraction && (
-                                    <button
-                                      type="button"
-                                      className="bui-btn bui-btn-outline"
-                                      style={{ padding: '3px 10px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1', fontWeight: 600 }}
-                                      onClick={() => setViewingSource(s)}
-                                      title="Inspect extracted text & observations"
-                                    >
-                                      📄 View
-                                    </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    className="bui-btn bui-btn-outline"
-                                    style={{ padding: '3px 8px', fontSize: '11px', color: '#ef4444', borderColor: '#cbd5e1' }}
-                                    onClick={() => handleDeleteSource(s.id, s.file_name)}
-                                    title="Delete document"
-                                  >
-                                    🗑
-                                  </button>
-                                </>
-                              )}
+                              <button
+                                type="button"
+                                className="bui-btn bui-btn-outline"
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '11px',
+                                  color: (extracting || isThisDocActive || rowExtractingId === s.id) ? '#cbd5e1' : '#ef4444',
+                                  borderColor: (extracting || isThisDocActive || rowExtractingId === s.id) ? '#f1f5f9' : '#cbd5e1',
+                                  cursor: (extracting || isThisDocActive || rowExtractingId === s.id) ? 'not-allowed' : 'pointer'
+                                }}
+                                onClick={() => handleDeleteSource(s.id, s.file_name)}
+                                disabled={extracting || isThisDocActive || rowExtractingId === s.id}
+                                title="Delete document"
+                              >
+                                🗑
+                              </button>
                             </td>
                           </tr>
                         )
@@ -1650,17 +1656,15 @@ export default function ProjectOverviewPage() {
                               <button
                                 type="button"
                                 className="bui-btn bui-btn-outline"
-                                style={{ padding: '3px 8px', fontSize: '11px', color: '#0f172a', borderColor: '#cbd5e1' }}
-                                onClick={() => setViewingSource(s)}
-                                title="Inspect extracted text & observations"
-                              >
-                                📄 View Data
-                              </button>
-                              <button
-                                type="button"
-                                className="bui-btn bui-btn-outline"
-                                style={{ padding: '3px 8px', fontSize: '11px', color: '#ef4444', borderColor: '#cbd5e1' }}
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '11px',
+                                  color: (extracting || analyzing) ? '#cbd5e1' : '#ef4444',
+                                  borderColor: (extracting || analyzing) ? '#f1f5f9' : '#cbd5e1',
+                                  cursor: (extracting || analyzing) ? 'not-allowed' : 'pointer'
+                                }}
                                 onClick={() => handleDeleteSource(s.id, s.file_name)}
+                                disabled={extracting || analyzing}
                                 title="Delete document"
                               >
                                 🗑
@@ -2104,13 +2108,16 @@ export default function ProjectOverviewPage() {
             elapsedSeconds={analyzingSeconds}
             serverStep={analysisStep}
             projectName={project?.name || 'Project'}
-            onRunInBackground={() => setShowAnalysisModal(false)}
+            onRunInBackground={() => {
+              setShowAnalysisModal(false)
+              setHideFloatingPill(false)
+            }}
             onCancel={handleCancelAnalysis}
           />
         )}
 
         {/* DYNAMIC EXTRACTION IN-PROGRESS MODAL */}
-        {extractModalOpen && showExtractModal && (
+        {(extracting || extractModalOpen) && showExtractModal && (
           <ExtractingProgressModal
             documentName={extractDocName}
             docsCompleted={extractDocsCompleted}
@@ -2121,6 +2128,7 @@ export default function ProjectOverviewPage() {
             elapsedSeconds={extractElapsedSeconds}
             onRunInBackground={() => {
               setShowExtractModal(false)
+              setHideFloatingPill(false)
               showToast('⚙ Extraction running in background. You can navigate freely.')
             }}
             onCancel={handleCancelExtract}
@@ -2128,7 +2136,7 @@ export default function ProjectOverviewPage() {
         )}
 
         {/* NON-BLOCKING BACKGROUND RUNNING INDICATOR */}
-        {((extracting && !showExtractModal) || (analyzing && !showAnalysisModal)) && (
+        {((extracting && !showExtractModal) || (analyzing && !showAnalysisModal)) && !hideFloatingPill && (
           <div style={{
             position: 'fixed',
             bottom: '24px',
@@ -2155,17 +2163,26 @@ export default function ProjectOverviewPage() {
               </div>
             </div>
             <button
-              onClick={() => extracting ? setShowExtractModal(true) : setShowAnalysisModal(true)}
-              style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
+              type="button"
+              onClick={() => {
+                if (extracting) {
+                  setExtractModalOpen(true)
+                  setShowExtractModal(true)
+                } else {
+                  setShowAnalysisModal(true)
+                }
+              }}
+              style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '5px 12px', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
             >
               View
             </button>
             <button
-              onClick={extracting ? handleCancelExtract : handleCancelAnalysis}
-              style={{ background: 'transparent', color: '#ef4444', border: 'none', padding: '4px 6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
-              title="Cancel task"
+              type="button"
+              onClick={() => setHideFloatingPill(true)}
+              style={{ background: 'transparent', color: '#64748b', border: 'none', padding: '5px 8px', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
+              title="Dismiss indicator"
             >
-              Cancel
+              Close
             </button>
           </div>
         )}

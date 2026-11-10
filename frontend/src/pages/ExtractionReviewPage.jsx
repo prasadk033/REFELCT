@@ -452,25 +452,26 @@ export default function ExtractionReviewPage() {
 
           {pendingSources.length > 0 ? (
             (() => {
+              const isAnyExtracting = reparsing || pendingSources.some(s => s.processing_status === 'extracting')
               const hasUnextracted = pendingSources.some(s => !s.extracted_text || !s.extracted_text.trim())
               return (
                 <button
                   className="extract-btn-approve-all"
                   onClick={handleApproveAll}
-                  disabled={actionLoading || allApproved || hasUnextracted}
+                  disabled={actionLoading || allApproved || hasUnextracted || isAnyExtracting}
                   style={{
                     padding: '6px 14px',
                     fontSize: '12px',
-                    background: hasUnextracted ? '#94a3b8' : '#059669',
+                    background: (hasUnextracted || isAnyExtracting) ? '#94a3b8' : '#059669',
                     color: '#fff',
                     border: 'none',
                     borderRadius: '6px',
                     fontWeight: 600,
-                    cursor: (actionLoading || allApproved || hasUnextracted) ? 'not-allowed' : 'pointer'
+                    cursor: (actionLoading || allApproved || hasUnextracted || isAnyExtracting) ? 'not-allowed' : 'pointer'
                   }}
-                  title={hasUnextracted ? "All sources must be extracted before you can approve all" : "Approve all extracted sources"}
+                  title={isAnyExtracting ? "Extraction is currently running" : hasUnextracted ? "All sources must be extracted before you can approve all" : "Approve all extracted sources"}
                 >
-                  {hasUnextracted ? `Approve All (${pendingSources.length} - Extract First)` : `Approve All (${pendingSources.length})`}
+                  {isAnyExtracting ? 'Extracting in Progress...' : hasUnextracted ? `Approve All (${pendingSources.length} - Extract First)` : `Approve All (${pendingSources.length})`}
                 </button>
               )
             })()
@@ -671,7 +672,7 @@ export default function ExtractionReviewPage() {
                       <button
                         className="extract-btn-action-save"
                         onClick={handleSaveContent}
-                        disabled={actionLoading}
+                        disabled={actionLoading || reparsing || selectedSource?.processing_status === 'extracting'}
                       >
                         💾 Save Edits
                       </button>
@@ -680,18 +681,19 @@ export default function ExtractionReviewPage() {
                     {(() => {
                       const hasExtractedText = Boolean(selectedSource.extracted_text && selectedSource.extracted_text.trim())
                       const isVersioned = selectedSource.version != null
+                      const isExtracting = reparsing || selectedSource?.processing_status === 'extracting'
                       return (
                         <button
                           className={`extract-btn-action-approve ${selectedSource.approval_status === 'approved' ? 'approved' : ''}`}
                           onClick={handleApproveSingle}
-                          disabled={actionLoading || !hasExtractedText || isVersioned}
+                          disabled={actionLoading || !hasExtractedText || isVersioned || isExtracting}
                           style={{
-                            cursor: (!hasExtractedText || isVersioned) ? 'not-allowed' : 'pointer',
-                            opacity: (!hasExtractedText || isVersioned) ? 0.6 : 1
+                            cursor: (!hasExtractedText || isVersioned || isExtracting) ? 'not-allowed' : 'pointer',
+                            opacity: (!hasExtractedText || isVersioned || isExtracting) ? 0.6 : 1
                           }}
-                          title={isVersioned ? "Cannot modify an approved document that is already part of a synthesized version" : !hasExtractedText ? "Cannot approve source before data has been extracted" : ""}
+                          title={isVersioned ? "Cannot modify an approved document that is already part of a synthesized version" : isExtracting ? "Extraction is currently running" : !hasExtractedText ? "Cannot approve source before data has been extracted" : ""}
                         >
-                          {selectedSource.approval_status === 'approved' ? '✓ Approved' : hasExtractedText ? 'Approve Source' : 'Needs Extraction'}
+                          {selectedSource.approval_status === 'approved' ? '✓ Approved' : isExtracting ? 'Extracting...' : hasExtractedText ? 'Approve Source' : 'Needs Extraction'}
                         </button>
                       )
                     })()}
