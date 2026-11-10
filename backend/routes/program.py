@@ -152,21 +152,52 @@ def _get_generation_status(project_id: str) -> Dict[str, Any]:
     if not status_data:
         status_data = _generation_status.get(project_id, {"status": "idle"})
 
-    # Auto-expire ghost tasks (e.g. if container was recreated/killed with code 137)
+    # Auto-expire ghost tasks (e.g. if container was recreated/killed with code 137, lock expired, or AI is down)
     if status_data.get("status") == "generating":
         started_at = status_data.get("started_at", 0)
-        # Normal map-reduce generation takes 60-120s. If > 420s (7 min), it is an orphaned ghost task
-        if started_at and (time.time() - started_at > 420):
+        now = time.time()
+        elapsed = now - started_at if started_at else 0
+
+        # Check if the distributed lock is still active
+        has_lock = False
+        if r:
+            try:
+                has_lock = bool(r.get(f"lock:program_gen:{project_id}"))
+            except Exception:
+                pass
+        else:
+            has_lock = (project_id in _active_locks and _active_locks[project_id] > now)
+
+        should_expire = False
+        expire_reason = ""
+
+        if elapsed > 240:
+            should_expire = True
+            expire_reason = "Generation timed out. Please click Generate Program to start fresh."
+        elif elapsed > 60 and not has_lock:
+            should_expire = True
+            expire_reason = "Previous generation was interrupted when the backend container restarted. Please click Generate Program to start fresh."
+        elif elapsed > 20:
+            try:
+                from llm.qwen_health import is_qwen_healthy
+                if not is_qwen_healthy():
+                    should_expire = True
+                    expire_reason = "AI services are currently unavailable. Please ensure the AI service is running and try again."
+            except Exception:
+                pass
+
+        if should_expire:
             logger.warning(
-                f"Program generation for project {project_id} exceeded 420s or container was restarted "
-                f"(started {int(time.time() - started_at)}s ago). Auto-resetting stale ghost status."
+                f"Program generation for project {project_id} expired ({int(elapsed)}s elapsed, has_lock={has_lock}). "
+                f"Reason: {expire_reason}"
             )
             status_data = {
                 "status": "failed",
-                "error": "Previous generation was interrupted when the backend container restarted. Please click Generate Program to start fresh.",
-                "failed_at": time.time(),
+                "error": expire_reason,
+                "failed_at": now,
             }
             _set_generation_status(project_id, status_data)
+            _release_generation_lock(project_id)
 
     return status_data
 
