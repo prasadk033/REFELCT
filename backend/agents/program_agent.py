@@ -242,16 +242,19 @@ class ProgramAgent:
 
         return "\n".join(lines)
 
-    def _format_source_documents(self, documents: Optional[List[Dict[str, Any]]]) -> str:
-        """Format uploaded source documents and extracted content snippets for LLM input."""
+    def _format_source_documents(self, documents: Optional[List[Dict[str, Any]]], max_total_chars: int = 12000) -> str:
+        """Format uploaded source documents and extracted content snippets for LLM input with global budget protection."""
         if not documents:
             return ""
         lines = ["SOURCE DOCUMENTS & EXTRACTED CONTENT:"]
+        per_doc_limit = max(1200, max_total_chars // max(len(documents), 1))
         for doc in documents:
             fname = doc.get("file_name", "Document")
             ftype = (doc.get("file_type") or "").upper()
             desc = doc.get("description", "")
-            snippet = doc.get("content_snippet", "")
+            snippet = (doc.get("content_snippet") or "").strip()
+            if len(snippet) > per_doc_limit:
+                snippet = snippet[:per_doc_limit] + "... [budgeted]"
             doc_str = f"- File: {fname} ({ftype})"
             if desc:
                 doc_str += f" | Note: {desc}"
@@ -259,6 +262,15 @@ class ProgramAgent:
                 doc_str += f"\n  Extracted Content: {snippet}"
             lines.append(doc_str)
         return "\n".join(lines)
+
+    def _get_safe_max_tokens(self, prompt: str, target_tokens: int = 4096, max_context: int = 16384) -> int:
+        """
+        Calculate safe max_tokens so (prompt_tokens + max_tokens) <= max_context (16,384).
+        Leaves a 512-token safety buffer to prevent ContextWindowExceededError.
+        """
+        est_prompt_tokens = int(len(prompt) / 3.2) + 64
+        available = max_context - est_prompt_tokens - 512
+        return max(1024, min(target_tokens, available))
 
     def _format_published_brief_context(self, pub_context: Optional[Dict[str, Any]]) -> str:
         """Format historical published brief snapshot context."""
@@ -766,14 +778,27 @@ class ProgramAgent:
 
             full_prompt = PROGRAM_SYSTEM_PROMPT + "\n\n" + chunk_user_prompt
 
+            chunk_max_tokens = self._get_safe_max_tokens(full_prompt, target_tokens=4096)
+
             t_start = time.time()
             try:
-                result = self.llm.run(prompt=full_prompt, max_tokens=8192)
+                result = self.llm.run(prompt=full_prompt, max_tokens=chunk_max_tokens)
                 raw_response = result["replies"][0]
                 meta = result.get("meta", [{}])[0]
             except Exception as e:
-                logger.error(f"ProgramAgent chunk {chunk_idx + 1} LLM call failed: {e}")
-                raise RuntimeError(f"Chunked generation failed at chunk {chunk_idx + 1}: {e}") from e
+                err_str = str(e)
+                if "ContextWindowExceededError" in err_str or "maximum context length" in err_str:
+                    logger.warning(
+                        f"ProgramAgent chunk {chunk_idx + 1} exceeded context with max_tokens={chunk_max_tokens}. "
+                        f"Retrying defensively with reduced max_tokens."
+                    )
+                    retry_tokens = max(1024, chunk_max_tokens // 2)
+                    result = self.llm.run(prompt=full_prompt, max_tokens=retry_tokens)
+                    raw_response = result["replies"][0]
+                    meta = result.get("meta", [{}])[0]
+                else:
+                    logger.error(f"ProgramAgent chunk {chunk_idx + 1} LLM call failed: {e}")
+                    raise RuntimeError(f"Chunked generation failed at chunk {chunk_idx + 1}: {e}") from e
 
             t_elapsed = round(time.time() - t_start, 1)
             finish_reason = meta.get("finish_reason", "stop")
@@ -934,14 +959,24 @@ class ProgramAgent:
 
         full_prompt = PROGRAM_SYSTEM_PROMPT + "\n\n" + user_prompt
 
+        sp_max_tokens = self._get_safe_max_tokens(full_prompt, target_tokens=4096)
+
         t_start = time.time()
         try:
-            result = self.llm.run(prompt=full_prompt, max_tokens=8192)
+            result = self.llm.run(prompt=full_prompt, max_tokens=sp_max_tokens)
             raw_response = result["replies"][0]
             meta = result.get("meta", [{}])[0]
         except Exception as e:
-            logger.error(f"ProgramAgent LLM call failed: {e}")
-            raise RuntimeError(f"Program generation failed: LLM request error — {e}") from e
+            err_str = str(e)
+            if "ContextWindowExceededError" in err_str or "maximum context length" in err_str:
+                logger.warning("ProgramAgent single-pass exceeded context. Retrying with reduced max_tokens.")
+                retry_tokens = max(1024, sp_max_tokens // 2)
+                result = self.llm.run(prompt=full_prompt, max_tokens=retry_tokens)
+                raw_response = result["replies"][0]
+                meta = result.get("meta", [{}])[0]
+            else:
+                logger.error(f"ProgramAgent LLM call failed: {e}")
+                raise RuntimeError(f"Program generation failed: LLM request error — {e}") from e
 
         t_elapsed = round(time.time() - t_start, 1)
         finish_reason = meta.get("finish_reason", "stop")

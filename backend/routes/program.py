@@ -102,6 +102,23 @@ def _release_generation_lock(project_id: str):
             logger.debug(f"Redis lock release error: {e}")
 
 
+def _sanitize_program_error(err: Exception) -> str:
+    """Format technical exceptions into clear, professional, user-friendly messages."""
+    err_str = str(err)
+    if "ContextWindowExceededError" in err_str or "maximum context length" in err_str:
+        return "The project has extensive source documents and Brief cards that exceeded single-pass capacity. The system has adjusted processing limits—please try generating again."
+    if "timeout" in err_str.lower() or "timed out" in err_str.lower():
+        return "AI synthesis timed out while processing documents. Please try generating again."
+    if "rate limit" in err_str.lower() or "overloaded" in err_str.lower():
+        return "The AI service is temporarily busy. Please wait a moment and try again."
+    for marker in ["litellm.", "OpenAIException", "BadRequestError", "Traceback", "parameter="]:
+        if marker in err_str:
+            return "An unexpected error occurred during AI Program synthesis. Please try generating again."
+    if err_str.startswith("RuntimeError: "):
+        err_str = err_str[len("RuntimeError: "):]
+    return err_str[:250]
+
+
 def _set_generation_status(project_id: str, status_data: Dict[str, Any]):
     """Set generation status across processes via Redis with in-memory fallback."""
     _generation_status[project_id] = status_data
@@ -1023,10 +1040,14 @@ def _run_program_generation(
         # 2. Fetch uploaded source documents & extracted content
         source_models = db.query(Source).filter(Source.project_id == project_id).all()
         source_docs = []
+        # Global source budget: 12,000 characters total across all documents combined (~3,000 tokens)
+        # to guarantee the prompt never crowds out the model's 16,384 token context window
+        total_source_models = len(source_models)
+        per_doc_limit = max(1500, 12000 // total_source_models) if total_source_models > 0 else 8000
         for s in source_models:
             snippet = (s.extracted_text or s.ocr_text or "").strip()
-            if len(snippet) > 8000:
-                snippet = snippet[:8000] + "... [budgeted for context]"
+            if len(snippet) > per_doc_limit:
+                snippet = snippet[:per_doc_limit] + "... [budgeted for context]"
             source_docs.append({
                 "id": s.id,
                 "file_name": s.file_name,
@@ -1235,7 +1256,7 @@ def _run_program_generation(
         logger.error(f"Program generation failed for project {project_id}: {e}", exc_info=True)
         _set_generation_status(project_id, {
             "status": "failed",
-            "error": str(e),
+            "error": _sanitize_program_error(e),
             "failed_at": time.time(),
         })
         db.rollback()

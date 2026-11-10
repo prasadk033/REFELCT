@@ -620,9 +620,30 @@ export default function ProgramPage() {
 
         {/* Error Alert */}
         {error && (
-          <div className="prog-alert prog-alert-error">
-            <span>{error}</span>
-            <button className="prog-alert-close" onClick={() => setError(null)}>✕</button>
+          <div className="prog-alert prog-alert-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+              <span style={{ fontSize: '16px' }}>⚠️</span>
+              <span>
+                {(() => {
+                  const s = String(error)
+                  if (s.includes('ContextWindowExceededError') || s.includes('maximum context length') || s.includes('litellm') || s.includes('OpenAIException') || s.includes('BadRequestError')) {
+                    return "The project documents and cards exceeded processing capacity. Context limits have been adjusted; please retry generation from the Brief."
+                  }
+                  return s
+                })()}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                className="prog-btn prog-btn-sm"
+                onClick={() => navigate(`/projects/${projectId}/brief`)}
+                style={{ padding: '4px 10px', fontSize: '12px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                Go to Brief
+              </button>
+              <button type="button" className="prog-alert-close" onClick={() => setError(null)}>✕</button>
+            </div>
           </div>
         )}
 
