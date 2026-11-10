@@ -1025,8 +1025,8 @@ def _run_program_generation(
         source_docs = []
         for s in source_models:
             snippet = (s.extracted_text or s.ocr_text or "").strip()
-            if len(snippet) > 3000:
-                snippet = snippet[:3000] + "... [budgeted for context]"
+            if len(snippet) > 8000:
+                snippet = snippet[:8000] + "... [budgeted for context]"
             source_docs.append({
                 "id": s.id,
                 "file_name": s.file_name,

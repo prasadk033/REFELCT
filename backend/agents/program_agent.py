@@ -747,7 +747,7 @@ class ProgramAgent:
             full_prompt = PROGRAM_SYSTEM_PROMPT + "\n\n" + chunk_prompt
 
             try:
-                result = self.llm.run(prompt=full_prompt, max_tokens=4096)
+                result = self.llm.run(prompt=full_prompt, max_tokens=8192)
                 raw_response = result["replies"][0]
             except Exception as e:
                 logger.error(f"ProgramAgent chunk {chunk_idx + 1} LLM call failed: {e}")
@@ -876,7 +876,7 @@ class ProgramAgent:
         full_prompt = PROGRAM_SYSTEM_PROMPT + "\n\n" + user_prompt
 
         try:
-            result = self.llm.run(prompt=full_prompt, max_tokens=4096)
+            result = self.llm.run(prompt=full_prompt, max_tokens=8192)
             raw_response = result["replies"][0]
             meta = result.get("meta", [{}])[0]
         except Exception as e:
