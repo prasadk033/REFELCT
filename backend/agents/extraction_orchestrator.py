@@ -96,9 +96,10 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
             return
 
         # Target only sources that need extraction (excluding virtual sources handled in Phase 0)
+        # If source_ids is explicitly provided (e.g. from Reparse), or status is extracting/uploaded/failed, include it
         docs_to_extract = [
             s for s in pending_sources
-            if (not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed"))
+            if (bool(source_ids) or not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed", "extracting"))
             and s.file_type != "virtual/osm"
         ]
 
