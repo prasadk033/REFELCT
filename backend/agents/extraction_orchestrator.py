@@ -99,7 +99,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
         # If source_ids is explicitly provided (e.g. from Reparse), or status is extracting/uploaded/failed, include it
         docs_to_extract = [
             s for s in pending_sources
-            if (bool(source_ids) or not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed", "extracting"))
+            if (bool(source_ids) or not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed", "extracting", "paused"))
             and s.file_type != "virtual/osm"
         ]
 
@@ -167,14 +167,15 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
             qwen_health = check_qwen_health()
             if not qwen_health.get("healthy"):
                 ai_service_issue = True
-                logger.warning(f"Qwen AI service unavailable. Halting vision extraction for {len(vision_docs)} document(s).")
+                logger.warning(f"Qwen AI service unavailable. Pausing vision extraction for {len(vision_docs)} document(s).")
                 for source in vision_docs:
-                    source.processing_status = "failed"
+                    source.processing_status = "paused"
                     source.processing_error = AI_UNAVAILABLE_MESSAGE
+                    source.approval_status = "pending_review"
                     failed_docs.append(source.file_name)
                     _update_job(
-                        db, job_id, "extracting",
-                        step=f"{source.file_name} halted: AI services unavailable ({completed_count} / {total_count} Documents Completed)",
+                        db, job_id, "paused",
+                        step=f"{source.file_name} paused: AI services unavailable ({completed_count} / {total_count} Documents Completed)",
                         cards_generated=completed_count,
                         questions_count=total_count
                     )
@@ -200,12 +201,13 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     except AIServiceError as ai_err:
                         ai_service_issue = True
                         failed_docs.append(source.file_name)
-                        logger.warning(f"AI Service error for {source.file_name}: {ai_err}. Halting remaining Qwen work.")
-                        # STOP QWEN-DEPENDENT WORK: Halt any remaining vision documents immediately
+                        logger.warning(f"AI Service error for {source.file_name}: {ai_err}. Pausing remaining Qwen vision work.")
+                        # STOP QWEN-DEPENDENT WORK: Pause any remaining vision documents cleanly
                         remaining = vision_docs[idx + 1:]
                         for rem_source in remaining:
-                            rem_source.processing_status = "failed"
-                            rem_source.processing_error = AI_UNAVAILABLE_MESSAGE
+                            rem_source.processing_status = "paused"
+                            rem_source.processing_error = "Paused waiting for AI service reconnection."
+                            rem_source.approval_status = "pending_review"
                             failed_docs.append(rem_source.file_name)
                         break
                     except Exception as e:
@@ -214,11 +216,12 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                         err_str = str(e).lower()
                         if any(k in err_str for k in ("timeout", "timed out", "connect", "connection", "litellm", "503", "unreachable", "refused")):
                             ai_service_issue = True
-                            # STOP QWEN-DEPENDENT WORK: Halt remaining vision documents
+                            # STOP QWEN-DEPENDENT WORK: Pause remaining vision documents cleanly
                             remaining = vision_docs[idx + 1:]
                             for rem_source in remaining:
-                                rem_source.processing_status = "failed"
-                                rem_source.processing_error = AI_UNAVAILABLE_MESSAGE
+                                rem_source.processing_status = "paused"
+                                rem_source.processing_error = "Paused waiting for AI service reconnection."
+                                rem_source.approval_status = "pending_review"
                                 failed_docs.append(rem_source.file_name)
                             break
                         _update_job(
@@ -258,18 +261,22 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
 
         if failed_docs and completed_count == 0:
             error_msg = AI_UNAVAILABLE_MESSAGE if ai_service_issue else f"Extraction failed for: {', '.join(failed_docs)}"
+            job_status = "paused" if ai_service_issue else "failed"
+            step_msg = f"Extraction Paused (0 / {total_count} Documents Completed)" if ai_service_issue else f"Extraction Failed (0 / {total_count} Documents Completed)"
             _update_job(
-                db, job_id, "failed",
-                step=f"Extraction Failed (0 / {total_count} Documents Completed)",
+                db, job_id, job_status,
+                step=step_msg,
                 error=error_msg,
                 cards_generated=0,
                 questions_count=total_count
             )
         elif failed_docs:
             error_msg = AI_UNAVAILABLE_MESSAGE if ai_service_issue else f"Failed documents: {', '.join(failed_docs)}"
+            job_status = "paused" if ai_service_issue else "partial"
+            step_msg = f"Extraction Paused ({completed_count} / {total_count} Documents Completed)" if ai_service_issue else f"Extraction Incomplete ({completed_count} / {total_count} Documents Completed)"
             _update_job(
-                db, job_id, "partial",
-                step=f"Extraction Incomplete ({completed_count} / {total_count} Documents Completed)",
+                db, job_id, job_status,
+                step=step_msg,
                 error=error_msg,
                 cards_generated=completed_count,
                 questions_count=total_count

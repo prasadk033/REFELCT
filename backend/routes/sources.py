@@ -308,7 +308,7 @@ def _check_active_extraction(db: Session, project_id: str):
     from datetime import datetime, timezone, timedelta
     from db import ProcessingJob
     
-    stale_threshold = datetime.now(timezone.utc) - timedelta(minutes=30)
+    stale_threshold = datetime.now(timezone.utc) - timedelta(minutes=3)
     
     active_jobs = (
         db.query(ProcessingJob)
@@ -323,10 +323,10 @@ def _check_active_extraction(db: Session, project_id: str):
         if job_updated and job_updated.tzinfo is None:
             job_updated = job_updated.replace(tzinfo=timezone.utc)
             
-        if job_updated and job_updated < stale_threshold:
-            logger.warning(f"Marking stale extraction job {aj.id} as failed (last updated {aj.updated_at})")
-            aj.status = "failed"
-            aj.error = "Extraction task timed out"
+        if not job_updated or job_updated < stale_threshold:
+            logger.warning(f"Auto-resolving stale extraction job {aj.id} as paused (last updated {aj.updated_at})")
+            aj.status = "paused"
+            aj.error = "Extraction paused due to timeout/restart"
             db.commit()
         else:
             raise HTTPException(
@@ -371,10 +371,10 @@ def extract_all_sources(
         .all()
     )
 
-    # Filter to sources that actually need extraction
+    # Filter to sources that actually need extraction (unextracted, empty text, failed, or paused from interruption)
     sources_to_extract = [
         s for s in pending_sources
-        if not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed")
+        if not s.extracted_text or not s.extracted_text.strip() or s.processing_status in ("uploaded", "failed", "paused")
     ]
     
     if skip_site:

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, updateProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, cancelSourceExtraction, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion, acknowledgeJobNotification } from '../api.js'
+import { getProject, updateProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, cancelSourceExtraction, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion, acknowledgeJobNotification, checkAiHealth } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
 import ExtractingProgressModal from '../components/ExtractingProgressModal.jsx'
@@ -140,6 +140,30 @@ export default function ProjectOverviewPage() {
   const extractTimerRef = useRef(null)
 
   const pollIntervalRef = useRef(null)
+  const [isAiHealthy, setIsAiHealthy] = useState(true)
+
+  useEffect(() => {
+    let healthInterval = null
+    async function checkHealth() {
+      try {
+        const res = await checkAiHealth()
+        const healthy = res?.healthy !== false && !res?.slow
+        setIsAiHealthy(prev => {
+          if (!prev && healthy) {
+            showToast('🟢 AI Services Restored! You can now resume batch extraction.')
+          }
+          return healthy
+        })
+      } catch (e) {
+        setIsAiHealthy(false)
+      }
+    }
+    checkHealth()
+    healthInterval = setInterval(checkHealth, 15000)
+    return () => {
+      if (healthInterval) clearInterval(healthInterval)
+    }
+  }, [])
 
   useEffect(() => {
     if (projectId) {
@@ -679,9 +703,9 @@ export default function ProjectOverviewPage() {
   }
 
   async function handleExtractAllPending() {
-    // Only target sources in the pending batch that actually need extraction (unextracted, empty text, or failed)
+    // Only target sources in the pending batch that actually need extraction (unextracted, empty text, failed, or paused)
     const unextractedDocs = (pendingBatchSources.length > 0 ? pendingBatchSources : sources).filter(
-      s => (s.version === null || s.version === undefined) && (!s.extracted_text || !s.extracted_text.trim() || s.processing_status === 'failed' || s.processing_status === 'uploaded')
+      s => (s.version === null || s.version === undefined) && (!s.extracted_text || !s.extracted_text.trim() || ['failed', 'uploaded', 'paused'].includes(s.processing_status))
     )
 
     // If all pending sources are already extracted, navigate directly to review without triggering another extraction
@@ -801,7 +825,9 @@ export default function ProjectOverviewPage() {
   const authoritativeTargetVersion = completedVersions.length === 0 ? 0 : completedVersions[0] + 1
 
   // Check pending status
-  const pendingNeedsExtraction = pendingBatchSources.some(s => s.processing_status === 'uploaded' || !s.extracted_text || !s.extracted_text.trim())
+  const hasPausedSources = pendingBatchSources.some(s => s.processing_status === 'paused')
+  const pendingUnextractedDocs = pendingBatchSources.filter(s => ['uploaded', 'failed', 'paused'].includes(s.processing_status) || !s.extracted_text || !s.extracted_text.trim())
+  const pendingNeedsExtraction = pendingUnextractedDocs.length > 0
   const pendingNeedsReview = pendingBatchSources.length > 0 && !pendingNeedsExtraction && pendingBatchSources.some(s => s.approval_status !== 'approved')
   const hasApprovedPendingReadyForBrief = pendingBatchSources.length > 0 && !pendingNeedsExtraction && pendingBatchSources.every(s => s.approval_status === 'approved' && s.extracted_text && s.extracted_text.trim())
   const isAllBriefed = sources.length > 0 && pendingBatchSources.length === 0 && totalCards > 0
@@ -1009,15 +1035,25 @@ export default function ProjectOverviewPage() {
                   <span>Add Project Source</span>
                 </button>
               ) : pendingNeedsExtraction ? (
-                /* 2. Newly uploaded documents requiring extraction */
+                /* 2. Newly uploaded or paused documents requiring extraction */
                 <button
                   className="pov-btn-analyse"
                   onClick={handleExtractAllPending}
-                  disabled={extracting || analyzing}
+                  disabled={extracting || analyzing || (!isAiHealthy && hasPausedSources)}
+                  style={{
+                    background: hasPausedSources ? '#065f46' : undefined,
+                    cursor: (extracting || analyzing || (!isAiHealthy && hasPausedSources)) ? 'not-allowed' : 'pointer',
+                    opacity: (!isAiHealthy && hasPausedSources) ? 0.7 : 1
+                  }}
+                  title={!isAiHealthy && hasPausedSources ? "AI services are temporarily unavailable. Will re-enable automatically when restored." : "Extract all unextracted documents in batch"}
                 >
-                  <span className="pov-sparkle">📄</span>
+                  <span className="pov-sparkle">{hasPausedSources ? '▶' : '📄'}</span>
                   <span>
-                    {extracting ? 'Extracting Data...' : 'Extract Data & Review'}
+                    {extracting
+                      ? 'Extracting Data...'
+                      : hasPausedSources
+                        ? `Resume Batch Extraction (${pendingUnextractedDocs.length})`
+                        : 'Extract Data & Review'}
                   </span>
                 </button>
               ) : pendingNeedsReview ? (
@@ -1233,6 +1269,64 @@ export default function ProjectOverviewPage() {
           ) : (
             <div className="pov-sources-version-groups" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
+              {/* RECOVERY & RESUME BANNER FOR PAUSED BATCH EXTRACTIONS */}
+              {hasPausedSources && !extracting && (
+                <div style={{
+                  background: isAiHealthy === false ? '#fffbeb' : '#ecfdf5',
+                  border: `1px solid ${isAiHealthy === false ? '#fef08a' : '#a7f3d0'}`,
+                  borderRadius: '10px',
+                  padding: '12px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '18px' }}>
+                      {isAiHealthy === false ? '⏳' : '🟢'}
+                    </span>
+                    <div>
+                      <strong style={{ fontSize: '13px', color: isAiHealthy === false ? '#92400e' : '#065f46', display: 'block' }}>
+                        {isAiHealthy === false
+                          ? 'AI Services Temporarily Offline — Batch Extraction Paused'
+                          : 'AI Services Restored & Online!'}
+                      </strong>
+                      <span style={{ fontSize: '11.5px', color: isAiHealthy === false ? '#b45309' : '#047857' }}>
+                        {isAiHealthy === false
+                          ? 'Extraction paused. All extracted documents and checkpoints are safely saved. Waiting for AI service to reconnect...'
+                          : 'All services are operational. You can resume extraction for remaining documents from exact checkpoints with 1-click.'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="bui-btn"
+                    onClick={handleExtractAllPending}
+                    disabled={isAiHealthy === false}
+                    style={{
+                      background: isAiHealthy === false ? '#cbd5e1' : '#059669',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '7px 16px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: isAiHealthy === false ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      boxShadow: isAiHealthy === false ? 'none' : '0 2px 4px rgba(5, 150, 105, 0.2)'
+                    }}
+                  >
+                    <span>▶</span>
+                    <span>Resume Batch Extraction ({pendingUnextractedDocs.length} Remaining)</span>
+                  </button>
+                </div>
+              )}
+
               {/* 1. Render Pending Extraction Group at Top (New In-flight Documents) */}
               {pendingBatchSources.length > 0 && (
                 <div
@@ -1293,25 +1387,26 @@ export default function ProjectOverviewPage() {
                           type="button"
                           className="bui-btn"
                           onClick={handleExtractAllPending}
-                          disabled={extracting || analyzing}
+                          disabled={extracting || analyzing || (!isAiHealthy && hasPausedSources)}
                           style={{
-                            background: '#000000',
+                            background: hasPausedSources ? '#065f46' : '#000000',
                             color: '#ffffff',
                             padding: '5px 14px',
                             borderRadius: '6px',
                             fontSize: '11.5px',
                             fontWeight: 700,
                             border: 'none',
-                            cursor: (extracting || analyzing) ? 'not-allowed' : 'pointer',
+                            cursor: (extracting || analyzing || (!isAiHealthy && hasPausedSources)) ? 'not-allowed' : 'pointer',
+                            opacity: (!isAiHealthy && hasPausedSources) ? 0.7 : 1,
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '5px',
                             boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
                           }}
-                          title="Extract all unextracted documents belonging to this version"
+                          title={!isAiHealthy && hasPausedSources ? "Waiting for AI service to reconnect..." : "Extract all unextracted/paused documents in batch"}
                         >
-                          <span>📄</span>
-                          <span>EXTRACT & REVIEW</span>
+                          <span>{hasPausedSources ? '▶' : '📄'}</span>
+                          <span>{hasPausedSources ? `RESUME BATCH EXTRACTION (${pendingUnextractedDocs.length})` : 'EXTRACT & REVIEW'}</span>
                         </button>
                       ) : (
                         <button

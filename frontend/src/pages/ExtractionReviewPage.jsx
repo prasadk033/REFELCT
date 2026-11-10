@@ -10,7 +10,8 @@ import {
   analyzeBrief,
   getBriefStatus,
   listCards,
-  checkAiHealth
+  checkAiHealth,
+  extractSources
 } from '../api.js'
 import TopHeader from '../components/TopHeader.jsx'
 import AiHealthBanner from '../components/AiHealthBanner.jsx'
@@ -233,6 +234,24 @@ export default function ExtractionReviewPage() {
     }
   }
 
+  async function handleResumeAllPending() {
+    try {
+      setActionLoading(true)
+      showToast('Starting batch extraction for remaining documents...')
+      await extractSources(projectId)
+      loadData()
+    } catch (err) {
+      if (err.status === 503 || err.message?.includes('AI services')) {
+        setAiFallbackErrorMsg("AI services are temporarily offline. Waiting for service to reconnect.")
+        setAiFallbackModalOpen(true)
+      } else {
+        showToast('Batch extraction notice: ' + err.message)
+      }
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   async function handleReparseSingle() {
     if (!selectedSource) return
     try {
@@ -405,6 +424,32 @@ export default function ExtractionReviewPage() {
           <span className="extract-approved-count" style={{ fontSize: '13px', fontWeight: 600, color: '#64748b' }}>
             {displaySources.filter(s => (s.approval_status === 'approved' || s.processing_status === 'approved') && Boolean(s.extracted_text && s.extracted_text.trim())).length} of {displaySources.length} Sources Approved
           </span>
+          {pendingSources.some(s => s.processing_status === 'paused' || s.processing_status === 'uploaded' || !s.extracted_text) && (
+            <button
+              type="button"
+              className="bui-btn"
+              onClick={handleResumeAllPending}
+              disabled={actionLoading || reparsing}
+              style={{
+                background: '#065f46',
+                color: '#ffffff',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: (actionLoading || reparsing) ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+              title="Resume extraction for all remaining unextracted or paused documents with a single click"
+            >
+              <span>▶</span>
+              <span>Resume Batch Extraction ({pendingSources.filter(s => s.processing_status === 'paused' || s.processing_status === 'uploaded' || !s.extracted_text).length})</span>
+            </button>
+          )}
+
           {pendingSources.length > 0 ? (
             (() => {
               const hasUnextracted = pendingSources.some(s => !s.extracted_text || !s.extracted_text.trim())
