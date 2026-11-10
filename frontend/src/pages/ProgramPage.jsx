@@ -57,6 +57,20 @@ export default function ProgramPage() {
   const [showPublishSuccessModal, setShowPublishSuccessModal] = useState(null) // { version_number, item_count }
   const [showUnpublishedDraftModal, setShowUnpublishedDraftModal] = useState(false)
   const [generatingCounts, setGeneratingCounts] = useState({ cards: 0, sources: 0 })
+  const pollingRef = useRef(null)
+
+  function cleanupPolling() {
+    if (pollingRef.current) {
+      if (pollingRef.current.timerInterval) clearInterval(pollingRef.current.timerInterval)
+      if (pollingRef.current.stepInterval) clearInterval(pollingRef.current.stepInterval)
+      if (pollingRef.current.pollInterval) clearInterval(pollingRef.current.pollInterval)
+      pollingRef.current = null
+    }
+  }
+
+  useEffect(() => {
+    return () => cleanupPolling()
+  }, [])
 
   // Modal & Drawer State
   const [showAddModal, setShowAddModal] = useState(false)
@@ -125,6 +139,18 @@ export default function ProgramPage() {
       setItems(itemsData || [])
       setQuestions(qData || [])
       setPublishedVersions(pubVersions || [])
+
+      // Auto-resume generation tracking if generation is currently in progress on backend
+      const genStatus = sumData?.generation_status?.status
+      if (genStatus === 'generating' && !pollingRef.current) {
+        startPollingForGeneration(
+          sumData.generation_status.active_cards_count,
+          sumData.generation_status.sources_count,
+          sumData.generation_status.started_at
+        )
+      } else if (genStatus === 'failed' && sumData?.generation_status?.error && !error) {
+        setError(sumData.generation_status.error)
+      }
     } catch (err) {
       setError(err.message || 'Failed to load program data')
     } finally {
@@ -198,6 +224,78 @@ export default function ProgramPage() {
     handleStartGeneration()
   }
 
+  // Polling loop for in-flight generation
+  function startPollingForGeneration(cardsCount = 0, sourcesCount = 0, startedAt = null) {
+    cleanupPolling()
+    const initialCards = cardsCount || summary?.active_cards_count || 0
+    const initialSources = sourcesCount || summary?.sources_count || 0
+    setGeneratingCounts({ cards: initialCards, sources: initialSources })
+    setIsGenerating(true)
+    setShowGenModal(true)
+
+    const initialElapsed = startedAt ? Math.max(0, Math.floor(Date.now() / 1000 - startedAt)) : 0
+    setGenElapsedSeconds(initialElapsed)
+    setGenerationStep(
+      initialCards > 0
+        ? `Reviewing ${initialCards} active workspace cards and ${initialSources} sources...`
+        : 'Reviewing active workspace cards and sources...'
+    )
+
+    const timerInterval = setInterval(() => {
+      setGenElapsedSeconds(s => s + 1)
+    }, 1000)
+
+    const steps = [
+      'Reviewing active workspace cards and sources...',
+      'Synthesizing spatial requirements and dimensions...',
+      'Formulating functional criteria and considerations...',
+      'Identifying clarification questions...',
+      'Structuring Program items and requirements...'
+    ]
+    let stepIdx = 0
+    const stepInterval = setInterval(() => {
+      stepIdx = (stepIdx + 1) % steps.length
+      setGenerationStep(steps[stepIdx])
+    }, 2500)
+
+    const pollStart = Date.now()
+    const pollInterval = setInterval(async () => {
+      try {
+        const [updatedSum, updatedItems, updatedQ] = await Promise.all([
+          getProgramSummary(projectId),
+          listProgramItems(projectId),
+          listProgramQuestions(projectId),
+        ])
+
+        const genStatus = updatedSum?.generation_status?.status
+
+        if (genStatus === 'completed') {
+          cleanupPolling()
+          setSummary(updatedSum)
+          setItems(updatedItems || [])
+          setQuestions(updatedQ || [])
+          setIsGenerating(false)
+          setSelectedView('working')
+          showToastMsg(`✓ Program synthesized successfully! ${updatedItems?.length || 0} items created.`)
+        } else if (genStatus === 'failed') {
+          cleanupPolling()
+          setIsGenerating(false)
+          const rawErr = updatedSum?.generation_status?.error || 'Generation encountered an error'
+          setError(`Program synthesis failed: ${rawErr}`)
+          showToastMsg('✕ Program synthesis failed')
+        } else if (Date.now() - pollStart > 360000) {
+          cleanupPolling()
+          setIsGenerating(false)
+          showToastMsg('Program synthesis is running in the background. Your items will appear shortly.')
+        }
+      } catch (e) {
+        // ignore transient errors during poll
+      }
+    }, 2000)
+
+    pollingRef.current = { timerInterval, stepInterval, pollInterval }
+  }
+
   // Generation Trigger & Polling
   async function handleStartGeneration(briefVersionId = null) {
     if (selectedView !== 'working') {
@@ -206,25 +304,7 @@ export default function ProgramPage() {
     }
     const initialCards = summary?.active_cards_count || 0
     const initialSources = summary?.sources_count || 0
-    setGeneratingCounts({ cards: initialCards, sources: initialSources })
-    setIsGenerating(true)
-    setShowGenModal(true)
-    setGenElapsedSeconds(0)
-    setGenerationStep(
-      initialCards > 0
-        ? `Reviewing ${initialCards} active workspace cards and ${initialSources} sources...`
-        : 'Reviewing active workspace cards and sources...'
-    )
-
-    let timerInterval = null
-    let stepInterval = null
-    let pollInterval = null
-
-    function cleanup() {
-      if (timerInterval) clearInterval(timerInterval)
-      if (stepInterval) clearInterval(stepInterval)
-      if (pollInterval) clearInterval(pollInterval)
-    }
+    startPollingForGeneration(initialCards, initialSources, Math.floor(Date.now() / 1000))
 
     try {
       const genRes = await generateProgram(projectId, briefVersionId)
@@ -235,63 +315,8 @@ export default function ProgramPage() {
         })
       }
       showToastMsg('Program synthesis started...')
-
-      // Increment elapsed seconds timer
-      timerInterval = setInterval(() => {
-        setGenElapsedSeconds(s => s + 1)
-      }, 1000)
-
-      // Friendly casual steps (no technical model names)
-      const steps = [
-        'Reviewing active workspace cards and sources...',
-        'Synthesizing spatial requirements and dimensions...',
-        'Formulating functional criteria and considerations...',
-        'Identifying clarification questions...',
-        'Structuring Program items and requirements...'
-      ]
-      let stepIdx = 0
-      stepInterval = setInterval(() => {
-        stepIdx = (stepIdx + 1) % steps.length
-        setGenerationStep(steps[stepIdx])
-      }, 2500)
-
-      // Poll summary & items (up to 180s)
-      const pollStart = Date.now()
-      pollInterval = setInterval(async () => {
-        try {
-          const [updatedSum, updatedItems, updatedQ] = await Promise.all([
-            getProgramSummary(projectId),
-            listProgramItems(projectId),
-            listProgramQuestions(projectId),
-          ])
-
-          const genStatus = updatedSum?.generation_status?.status
-
-          if (genStatus === 'completed') {
-            cleanup()
-            setSummary(updatedSum)
-            setItems(updatedItems || [])
-            setQuestions(updatedQ || [])
-            setIsGenerating(false)
-            setSelectedView('working')
-            showToastMsg(`✓ Program synthesized successfully! ${updatedItems?.length || 0} items created.`)
-          } else if (genStatus === 'failed') {
-            cleanup()
-            setIsGenerating(false)
-            const rawErr = updatedSum?.generation_status?.error || 'Generation encountered an error'
-            setError(`Program synthesis failed: ${rawErr}`)
-            showToastMsg('✕ Program synthesis failed')
-          } else if (Date.now() - pollStart > 360000) {
-            cleanup()
-            setIsGenerating(false)
-            showToastMsg('Program synthesis is running in the background. Your items will appear shortly.')
-          }
-        } catch (e) {
-          // ignore transient errors during poll
-        }
-      }, 2000)
     } catch (err) {
-      cleanup()
+      cleanupPolling()
       setIsGenerating(false)
       setError(err.message || 'Failed to start program generation')
     }
