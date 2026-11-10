@@ -9,7 +9,8 @@ import {
   approveAllSources,
   analyzeBrief,
   getBriefStatus,
-  listCards
+  listCards,
+  checkAiHealth
 } from '../api.js'
 import TopHeader from '../components/TopHeader.jsx'
 import AiHealthBanner from '../components/AiHealthBanner.jsx'
@@ -50,10 +51,56 @@ export default function ExtractionReviewPage() {
   const [extractEstSeconds, setExtractEstSeconds] = useState(10)
   const [extractElapsedSeconds, setExtractElapsedSeconds] = useState(0)
   const extractTimerRef = useRef(null)
+  const [isWaitingForAi, setIsWaitingForAi] = useState(false)
+  const waitAiIntervalRef = useRef(null)
 
   function showToast(msg) {
     setToastMsg(msg)
     setTimeout(() => setToastMsg(null), 3000)
+  }
+
+  function handleWaitForAiAndResume() {
+    setIsWaitingForAi(true)
+    showToast('Checking AI service availability...')
+
+    checkAiHealth().then(res => {
+      if (res?.healthy) {
+        setIsWaitingForAi(false)
+        setAiFallbackModalOpen(false)
+        showToast('🟢 AI Service online! Resuming extraction from checkpoint...')
+        handleReparseSingle()
+      } else {
+        if (waitAiIntervalRef.current) clearInterval(waitAiIntervalRef.current)
+        waitAiIntervalRef.current = setInterval(async () => {
+          try {
+            const h = await checkAiHealth()
+            if (h?.healthy) {
+              clearInterval(waitAiIntervalRef.current)
+              waitAiIntervalRef.current = null
+              setIsWaitingForAi(false)
+              setAiFallbackModalOpen(false)
+              showToast('🟢 AI Service reconnected! Resuming extraction from checkpoint...')
+              handleReparseSingle()
+            }
+          } catch (e) {}
+        }, 5000)
+      }
+    }).catch(() => {
+      if (waitAiIntervalRef.current) clearInterval(waitAiIntervalRef.current)
+      waitAiIntervalRef.current = setInterval(async () => {
+        try {
+          const h = await checkAiHealth()
+          if (h?.healthy) {
+            clearInterval(waitAiIntervalRef.current)
+            waitAiIntervalRef.current = null
+            setIsWaitingForAi(false)
+            setAiFallbackModalOpen(false)
+            showToast('🟢 AI Service reconnected! Resuming extraction from checkpoint...')
+            handleReparseSingle()
+          }
+        } catch (e) {}
+      }, 5000)
+    })
   }
 
   function formatFileSize(bytes) {
@@ -95,6 +142,7 @@ export default function ExtractionReviewPage() {
     loadData()
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+      if (waitAiIntervalRef.current) clearInterval(waitAiIntervalRef.current)
     }
   }, [projectId])
 
@@ -116,9 +164,20 @@ export default function ExtractionReviewPage() {
               if (extractModalOpen) setExtractModalOpen(false)
               // find selected to update text
               const updatedSelected = updatedSources.find(s => s.id === selectedSourceId)
-              if (updatedSelected && updatedSelected.extracted_text) {
-                setEditingText(updatedSelected.extracted_text)
-                setIsSaved(true)
+              if (updatedSelected) {
+                if (updatedSelected.extracted_text) {
+                  setEditingText(updatedSelected.extracted_text)
+                  setIsSaved(true)
+                }
+                if (updatedSelected.processing_status === 'paused' || updatedSelected.processing_status === 'failed') {
+                  const hasPartial = Boolean(updatedSelected.extracted_text && updatedSelected.extracted_text.trim())
+                  setAiFallbackErrorMsg(
+                    hasPartial
+                      ? `AI service was interrupted. Extraction was paused and all progress (${updatedSelected.extracted_text.length.toLocaleString()} characters) is safely saved.`
+                      : (updatedSelected.processing_error || "AI service is temporarily unavailable. Please try again later.")
+                  )
+                  setAiFallbackModalOpen(true)
+                }
               }
             }
           }
@@ -555,7 +614,11 @@ export default function ExtractionReviewPage() {
                         disabled={actionLoading || reparsing || selectedSource?.processing_status === 'extracting'}
                         title="Re-extract raw text from file"
                       >
-                        {reparsing || selectedSource?.processing_status === 'extracting' ? '↻ Extracting...' : '↻ Reparse'}
+                        {reparsing || selectedSource?.processing_status === 'extracting'
+                          ? '↻ Extracting...'
+                          : selectedSource?.processing_status === 'paused' || Boolean(selectedSource?.extracted_text?.trim())
+                            ? '▶ Continue Extraction'
+                            : '↻ Reparse'}
                       </button>
                     )}
                     
@@ -592,7 +655,15 @@ export default function ExtractionReviewPage() {
 
                 <div className="extract-meta-bar">
                   <span className="extract-meta-pill">
-                    Status: <strong>{selectedSource.approval_status === 'approved' || selectedSource.processing_status === 'approved' ? '✓ Approved' : selectedSource.processing_status === 'extracting' ? '↻ Extracting' : '○ Ready for Review'}</strong>
+                    Status: <strong>
+                      {selectedSource.approval_status === 'approved' || selectedSource.processing_status === 'approved'
+                        ? '✓ Approved'
+                        : selectedSource.processing_status === 'extracting'
+                          ? '↻ Extracting'
+                          : selectedSource.processing_status === 'paused'
+                            ? '⏸ Paused (Progress Saved)'
+                            : '○ Ready for Review'}
+                    </strong>
                   </span>
                   <span className="extract-meta-pill">
                     Type: <strong>{(selectedSource.file_type || 'PDF').toUpperCase()}</strong>
@@ -777,41 +848,97 @@ export default function ExtractionReviewPage() {
         </div>
       )}
 
-      {/* AI SERVICES TEMPORARILY LOW FALLBACK MODAL */}
+      {/* AI SERVICE TEMPORARILY INTERRUPTED / PAUSED MODAL */}
       {aiFallbackModalOpen && (
-        <div className="bui-modal-overlay" onClick={() => setAiFallbackModalOpen(false)} style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1100 }}>
-          <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px', width: '90%', background: '#ffffff', borderRadius: '12px', padding: '24px 28px', color: '#0f172a', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#fef3c7', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '24px' }}>
+        <div className="bui-modal-overlay" onClick={() => { if (!isWaitingForAi) setAiFallbackModalOpen(false) }} style={{ background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(5px)', zIndex: 1100 }}>
+          <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px', width: '90%', background: '#ffffff', borderRadius: '14px', padding: '28px 30px', color: '#0f172a', textAlign: 'center', boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#fef3c7', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', fontSize: '26px' }}>
               ⚠️
             </div>
-            <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
-              AI Service Notice
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+              AI Service Temporarily Interrupted
             </h3>
             <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.55, marginBottom: '22px' }}>
-              {aiFallbackErrorMsg || "It might take some time, AI services are temporarily low."}
+              {selectedSource?.extracted_text?.trim()
+                ? `Extraction paused. All progress (${selectedSource.extracted_text.length.toLocaleString()} characters) is safely saved. How would you like to proceed?`
+                : (aiFallbackErrorMsg || "The AI inference service is temporarily unreachable.")}
             </p>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              <button
-                type="button"
-                className="bui-btn bui-btn-outline"
-                style={{ padding: '8px 18px', fontSize: '12.5px', color: '#64748b', borderColor: '#cbd5e1' }}
-                onClick={() => {
-                  setAiFallbackModalOpen(false)
-                  loadData()
-                }}
-              >
-                Dismiss
-              </button>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {/* Option 1: Wait for AI & Resume from Checkpoint */}
               <button
                 type="button"
                 className="bui-btn"
-                style={{ background: '#2563eb', color: '#ffffff', padding: '8px 20px', borderRadius: '6px', fontWeight: 600, border: 'none', cursor: 'pointer', fontSize: '12.5px' }}
+                style={{
+                  background: isWaitingForAi ? '#f1f5f9' : '#0f172a',
+                  color: isWaitingForAi ? '#64748b' : '#ffffff',
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  cursor: isWaitingForAi ? 'not-allowed' : 'pointer',
+                  border: isWaitingForAi ? '1px solid #cbd5e1' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+                disabled={isWaitingForAi}
+                onClick={handleWaitForAiAndResume}
+              >
+                {isWaitingForAi ? (
+                  <>
+                    <span className="bui-spinner-inline" style={{ width: '13px', height: '13px', borderWidth: '2px', borderColor: '#64748b', borderTopColor: 'transparent' }} />
+                    Waiting for AI service to reconnect...
+                  </>
+                ) : (
+                  '▶ Wait for AI & Resume from Checkpoint'
+                )}
+              </button>
+
+              {/* Option 2: Move with Present Extracted Data */}
+              {Boolean(selectedSource?.extracted_text?.trim()) && (
+                <button
+                  type="button"
+                  className="bui-btn bui-btn-outline"
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: '#059669',
+                    borderColor: '#a7f3d0',
+                    background: '#ecfdf5',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                  onClick={async () => {
+                    setAiFallbackModalOpen(false)
+                    setIsWaitingForAi(false)
+                    await handleApproveSingle()
+                  }}
+                >
+                  ✓ Move with Present Extracted Data ({selectedSource.extracted_text.length.toLocaleString()} chars)
+                </button>
+              )}
+
+              <button
+                type="button"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: '12px',
+                  marginTop: '4px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
                 onClick={() => {
                   setAiFallbackModalOpen(false)
-                  handleReparseSingle()
+                  setIsWaitingForAi(false)
+                  loadData().catch(() => {})
                 }}
               >
-                Try Again
+                Dismiss & Review in Editor
               </button>
             </div>
           </div>

@@ -1386,6 +1386,10 @@ export default function ProjectOverviewPage() {
                                   <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
                                     ✓ Extracted
                                   </span>
+                                ) : s.processing_status === 'paused' || (isFailed && hasValidExtraction) ? (
+                                  <span style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
+                                    ⏸ Paused (Progress Saved)
+                                  </span>
                                 ) : isFailed ? (
                                   <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
                                     ✕ Extraction Failed

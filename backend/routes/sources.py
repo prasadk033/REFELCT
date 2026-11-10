@@ -248,6 +248,44 @@ def list_sources(
                 s.processing_status = "failed"
             needs_commit = True
 
+        # Healing: Stale/orphaned 'extracting' sources (e.g. worker restarted, killed, or AI timeout)
+        if s.processing_status == "extracting":
+            from db import ProcessingJob
+            from datetime import timedelta
+            stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=3)
+            active_job = (
+                db.query(ProcessingJob)
+                .filter(
+                    ProcessingJob.project_id == project_id,
+                    ProcessingJob.status.in_(["pending", "extracting"])
+                )
+                .order_by(ProcessingJob.updated_at.desc())
+                .first()
+            )
+            is_stale = False
+            if not active_job:
+                is_stale = True
+            elif active_job.updated_at:
+                j_time = active_job.updated_at
+                if j_time.tzinfo is None:
+                    j_time = j_time.replace(tzinfo=timezone.utc)
+                if j_time < stale_cutoff:
+                    is_stale = True
+
+            if is_stale:
+                if s.extracted_text and s.extracted_text.strip():
+                    logger.info(f"Auto-recovering stranded extracting source '{s.file_name}' to 'paused' ({len(s.extracted_text)} chars saved).")
+                    s.processing_status = "paused"
+                    s.processing_error = "Extraction paused due to service timeout/interruption. Progress preserved."
+                else:
+                    logger.info(f"Auto-recovering stranded extracting source '{s.file_name}' to 'failed' (no text).")
+                    s.processing_status = "failed"
+                    s.processing_error = "Extraction interrupted before text could be saved."
+                s.approval_status = "pending_review"
+                if active_job and active_job.status in ("pending", "extracting"):
+                    active_job.status = "paused" if s.extracted_text else "failed"
+                needs_commit = True
+
     if needs_commit:
         try:
             db.commit()
@@ -416,16 +454,14 @@ def reparse_single_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    # If this source strictly requires Qwen Vision, verify health upfront
-    is_vision = source.file_type == 'image' or bool(source.contains_images)
-    if is_vision:
-        from llm.qwen_health import check_qwen_health, AI_UNAVAILABLE_MESSAGE
-        q_health = check_qwen_health()
-        if not q_health.get("healthy"):
-            raise HTTPException(
-                status_code=503,
-                detail=AI_UNAVAILABLE_MESSAGE
-            )
+    # Verify AI service health upfront before enqueuing extraction
+    from llm.qwen_health import check_qwen_health, AI_UNAVAILABLE_MESSAGE
+    q_health = check_qwen_health()
+    if not q_health.get("healthy"):
+        raise HTTPException(
+            status_code=503,
+            detail=AI_UNAVAILABLE_MESSAGE
+        )
 
     source.processing_status = "extracting"
     source.approval_status = "pending"

@@ -349,14 +349,24 @@ def _extract_source_text_background(
     except AIServiceError as ai_err:
         from llm.qwen_health import AI_UNAVAILABLE_MESSAGE
         logger.error(f"AI service error during extraction for source {source.id} ({source.file_name}): {ai_err}")
-        source.processing_status = "failed"
-        source.processing_error = AI_UNAVAILABLE_MESSAGE
+        if source.extracted_text and source.extracted_text.strip():
+            source.processing_status = "paused"
+            source.processing_error = "Extraction paused due to AI service interruption. Checkpoint preserved."
+        else:
+            source.processing_status = "failed"
+            source.processing_error = AI_UNAVAILABLE_MESSAGE
+        source.approval_status = "pending_review"
         db.commit()
         raise ai_err
     except Exception as e:
         logger.error(f"Extraction failed for source {source.id} ({source.file_name}): {e}")
-        source.processing_status = "failed"
-        source.processing_error = str(e)
+        if source.extracted_text and source.extracted_text.strip():
+            source.processing_status = "paused"
+            source.processing_error = f"Extraction paused: {str(e)[:200]}"
+        else:
+            source.processing_status = "failed"
+            source.processing_error = str(e)
+        source.approval_status = "pending_review"
         db.commit()
         raise e
 
