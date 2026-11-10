@@ -863,44 +863,61 @@ export default function BriefPage() {
                   <span>Add Card</span>
                 </button>
 
-                {publishedBriefVersions.length > 0 && !hasUnpublishedChanges ? (
-                  <button
-                    className="prog-btn prog-btn-outline"
-                    onClick={() => navigate(`/projects/${activeProjectId}/program`)}
-                    style={{ background: '#f0fdf4', borderColor: '#86efac', color: '#166534', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
-                    title={`Brief V${latestPublishedVersionNumber} is published and up to date. Click to proceed to Program.`}
-                  >
-                    <span>✓ Brief V{latestPublishedVersionNumber} Published</span>
-                    <span style={{ fontSize: '11px', color: '#15803d' }}>→ Program</span>
-                  </button>
-                ) : (
-                  <button
-                    className="prog-btn prog-btn-primary"
-                    onClick={handlePublishBrief}
-                    disabled={isPublishingBrief || eligibleWorkingCardsCount === 0}
-                    title={
-                      eligibleWorkingCardsCount === 0
-                        ? 'No cards available to publish'
-                        : isInitialPublish
-                          ? 'Publish Brief as Version 1'
-                          : `Publish updated working draft as Brief V${(latestPublishedVersionNumber || 1) + 1}`
-                    }
-                  >
-                    {isPublishingBrief
-                      ? 'Publishing...'
+                {/* Generate Program Button directly on Brief UI */}
+                <button
+                  className="prog-btn prog-btn-secondary"
+                  onClick={() => navigate(`/projects/${activeProjectId}/program?generate=true`)}
+                  disabled={isPublishingBrief || (eligibleWorkingCardsCount === 0 && (!sources || sources.length === 0))}
+                  title="Generate or update the Architectural Program from current Brief cards and documents"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                  </svg>
+                  <span>Generate Program</span>
+                </button>
+
+                {/* Publish Brief Button */}
+                <button
+                  className="prog-btn prog-btn-primary"
+                  onClick={handlePublishBrief}
+                  disabled={isPublishingBrief || eligibleWorkingCardsCount === 0}
+                  title={
+                    eligibleWorkingCardsCount === 0
+                      ? 'No accepted cards available to publish'
                       : isInitialPublish
-                        ? 'Publish Brief'
-                        : `Publish Brief (V${(latestPublishedVersionNumber || 1) + 1})`}
-                  </button>
-                )}
+                        ? 'Publish Brief as Version 1'
+                        : `Publish updated working draft as Brief V${(latestPublishedVersionNumber || 1) + 1}`
+                  }
+                  style={{ fontWeight: 700 }}
+                >
+                  {isPublishingBrief
+                    ? 'Publishing...'
+                    : isInitialPublish
+                      ? 'Publish Brief'
+                      : `Publish Brief (V${(latestPublishedVersionNumber || 1) + 1})`}
+                </button>
               </>
             ) : (
-              <button
-                className="prog-btn prog-btn-primary"
-                onClick={() => navigate(`/projects/${activeProjectId}/program?generate=true&sourceBriefVersionId=${selectedBriefVersionId}`)}
-              >
-                <span>Generate Program (from V{publishedBriefData?.version_number || ''}) →</span>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  className="prog-btn prog-btn-outline"
+                  onClick={() => handleSelectBriefVersion('working')}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <span>← Current Draft</span>
+                </button>
+                <button
+                  className="prog-btn prog-btn-primary"
+                  onClick={() => navigate(`/projects/${activeProjectId}/program?generate=true`)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                  </svg>
+                  <span>Generate Program →</span>
+                </button>
+              </div>
             )}
           </div>
         </header>
@@ -1769,7 +1786,7 @@ export default function BriefPage() {
                                   <button
                                     className="bui-btn bui-btn-outline"
                                     style={{ fontSize: '11px', padding: '4px 8px' }}
-                                    onClick={() => setEditingCard(card)}
+                                    onClick={(e) => { e.stopPropagation(); setEditingCard(card); }}
                                     title="Edit Card"
                                   >
                                     ✎ Edit
@@ -1777,7 +1794,7 @@ export default function BriefPage() {
                                   <button
                                     className="bui-btn bui-btn-outline"
                                     style={{ fontSize: '11px', padding: '4px 8px', color: '#ef4444' }}
-                                    onClick={() => handleStatusChange(card.id, 'rejected')}
+                                    onClick={(e) => { e.stopPropagation(); handleStatusChange(card.id, 'rejected'); }}
                                     title="Reject Card"
                                   >
                                     ✕
@@ -1791,7 +1808,7 @@ export default function BriefPage() {
                                   <button
                                     className="bui-btn bui-btn-outline"
                                     style={{ fontSize: '11px', padding: '4px 8px', color: '#4ade80' }}
-                                    onClick={() => handleStatusChange(card.id, 'accepted')}
+                                    onClick={(e) => { e.stopPropagation(); handleStatusChange(card.id, 'accepted'); }}
                                     title="Restore and Accept"
                                   >
                                     ↺ Restore
@@ -1799,7 +1816,7 @@ export default function BriefPage() {
                                   <button
                                     className="bui-btn bui-btn-outline"
                                     style={{ fontSize: '11px', padding: '4px 8px', color: '#ef4444' }}
-                                    onClick={() => handleDeleteCard(card.id)}
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteCard(card.id); }}
                                     title="Delete Card"
                                   >
                                     🗑
@@ -1810,7 +1827,7 @@ export default function BriefPage() {
                                   <button
                                     className="bui-btn bui-btn-outline"
                                     style={{ fontSize: '11px', padding: '4px 8px', color: '#4ade80', borderColor: '#166534' }}
-                                    onClick={() => handleStatusChange(card.id, 'accepted')}
+                                    onClick={(e) => { e.stopPropagation(); handleStatusChange(card.id, 'accepted'); }}
                                     title="Accept into Project Knowledge"
                                   >
                                     ✓ Accept
@@ -1818,7 +1835,7 @@ export default function BriefPage() {
                                   <button
                                     className="bui-btn bui-btn-outline"
                                     style={{ fontSize: '11px', padding: '4px 8px' }}
-                                    onClick={() => setEditingCard(card)}
+                                    onClick={(e) => { e.stopPropagation(); setEditingCard(card); }}
                                     title="Edit Card"
                                   >
                                     ✎ Edit
@@ -1826,7 +1843,7 @@ export default function BriefPage() {
                                   <button
                                     className="bui-btn bui-btn-outline"
                                     style={{ fontSize: '11px', padding: '4px 8px', color: '#ef4444' }}
-                                    onClick={() => handleStatusChange(card.id, 'rejected')}
+                                    onClick={(e) => { e.stopPropagation(); handleStatusChange(card.id, 'rejected'); }}
                                     title="Reject Card"
                                   >
                                     ✕
@@ -1952,7 +1969,7 @@ export default function BriefPage() {
                     </span>
                     {(selectedCard.is_unified || selectedCard.status === 'accepted') && (
                       <span style={{ background: '#052e16', color: '#4ade80', fontSize: '10.5px', fontWeight: 700, padding: '2px 7px', borderRadius: '10px', border: '1px solid #166534' }}>
-                        ✓ Unified Active Card
+                        ✓ Accepted (In Unified Cards)
                       </span>
                     )}
                   </div>
@@ -2055,7 +2072,7 @@ export default function BriefPage() {
                         </button>
                       ) : (
                         <span style={{ fontSize: '12px', color: '#059669', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#ecfdf5', padding: '5px 12px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
-                          ✓ Active Unified Card
+                          ✓ Accepted (In Unified Cards)
                         </span>
                       )}
                     </div>
