@@ -42,6 +42,7 @@ from routes.cards import cleanup_rejected_cards
 logger = logging.getLogger(__name__)
 
 # Generation lock & status tracking
+SERVER_BOOT_TIME = time.time()
 _generation_status: Dict[str, Dict[str, Any]] = {}
 _active_locks: Dict[str, float] = {}
 _redis_client_pool = None
@@ -64,7 +65,7 @@ def _get_redis_client():
         return None
 
 
-def _acquire_generation_lock(project_id: str, ttl_seconds: int = 180) -> bool:
+def _acquire_generation_lock(project_id: str, ttl_seconds: int = 600) -> bool:
     """
     Acquire distributed lock for program generation via Redis,
     falling back to in-memory active_locks tracking if Redis is unreachable.
@@ -152,32 +153,29 @@ def _get_generation_status(project_id: str) -> Dict[str, Any]:
     if not status_data:
         status_data = _generation_status.get(project_id, {"status": "idle"})
 
-    # Auto-expire ghost tasks (e.g. if container was recreated/killed with code 137, lock expired, or AI is down)
+    # Auto-expire ghost tasks (e.g. if container was recreated/killed with code 137, or timeout > 600s)
     if status_data.get("status") == "generating":
         started_at = status_data.get("started_at", 0)
         now = time.time()
         elapsed = now - started_at if started_at else 0
 
-        # Check if the distributed lock is still active
-        has_lock = False
-        if r:
-            try:
-                has_lock = bool(r.get(f"lock:program_gen:{project_id}"))
-            except Exception:
-                pass
-        else:
-            has_lock = (project_id in _active_locks and _active_locks[project_id] > now)
-
         should_expire = False
         expire_reason = ""
 
-        if elapsed > 240:
-            should_expire = True
-            expire_reason = "Generation timed out. Please click Generate Program to start fresh."
-        elif elapsed > 60 and not has_lock:
+        # 1. Container restart detection:
+        # If the task was started BEFORE this current container process booted up,
+        # its background thread was abruptly killed when Docker recreated/restarted the container.
+        if started_at and started_at < (SERVER_BOOT_TIME - 5.0):
             should_expire = True
             expire_reason = "Previous generation was interrupted when the backend container restarted. Please click Generate Program to start fresh."
-        elif elapsed > 20:
+
+        # 2. Hard timeout: Map-reduce with multiple chunks takes at most 5-7 minutes.
+        elif elapsed > 600:
+            should_expire = True
+            expire_reason = "Generation timed out after 10 minutes. Please click Generate Program to start fresh."
+
+        # 3. AI Service is completely down (after giving 45s grace period)
+        elif elapsed > 45:
             try:
                 from llm.qwen_health import is_qwen_healthy
                 if not is_qwen_healthy():
@@ -188,7 +186,7 @@ def _get_generation_status(project_id: str) -> Dict[str, Any]:
 
         if should_expire:
             logger.warning(
-                f"Program generation for project {project_id} expired ({int(elapsed)}s elapsed, has_lock={has_lock}). "
+                f"Program generation for project {project_id} expired ({int(elapsed)}s elapsed). "
                 f"Reason: {expire_reason}"
             )
             status_data = {
@@ -1355,7 +1353,7 @@ def generate_program(
             raise HTTPException(status_code=500, detail=f"Failed to publish existing Program draft: {str(e)}")
 
     # Guard against concurrent duplicate generation runs
-    if not _acquire_generation_lock(project_id, ttl_seconds=180):
+    if not _acquire_generation_lock(project_id, ttl_seconds=600):
         raise HTTPException(
             status_code=409,
             detail="Program generation is already in progress for this project. Please wait for the current run to finish."
