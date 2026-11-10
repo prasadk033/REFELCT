@@ -1057,6 +1057,31 @@ def _run_program_generation(
                 previous_items = [si.snapshot_data for si in prev_snapshot_items if si.snapshot_data]
                 previous_version_num = prev_prog_version.version_number
 
+        # If no published version snapshot found, check for existing working program items
+        if not previous_items:
+            existing_working = db.query(ProgramItem).filter(
+                ProgramItem.project_id == project_id
+            ).order_by(ProgramItem.created_at.asc()).all()
+            if existing_working:
+                previous_items = [
+                    {
+                        "program_item_code": it.program_item_code,
+                        "name": it.name,
+                        "type": it.type,
+                        "requirement": it.requirement,
+                        "function": it.function,
+                        "quantity": it.quantity,
+                        "capacity": it.capacity,
+                        "area": it.area,
+                        "unit": it.unit,
+                        "key_considerations": it.key_considerations or [],
+                        "notes": it.notes,
+                        "status": it.status,
+                    }
+                    for it in existing_working
+                ]
+                previous_version_num = "Draft"
+
         project_context = format_project_context(
             project_name=project.name,
             project_type=project.project_type,

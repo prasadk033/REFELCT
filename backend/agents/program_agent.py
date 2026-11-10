@@ -178,7 +178,7 @@ BRIEF CARDS (Current Workspace):
 
 Generate the structured Program JSON output now. Return ONLY valid JSON."""
 
-PREVIOUS_PROGRAM_SECTION_TEMPLATE = """PREVIOUS PROGRAM CONTEXT (Program V{version}):
+PREVIOUS_PROGRAM_SECTION_TEMPLATE = """PREVIOUS PROGRAM CONTEXT ({version_label}):
 The following is the existing Program from a previous generation. Use it as context to:
 - Preserve items that are still valid under the new Brief
 - Identify items that may need updating based on new Brief information
@@ -277,7 +277,7 @@ class ProgramAgent:
             lines.append(f"• [{cid}] ({ctype}) {title}: {content[:180]}")
         return "\n".join(lines)
 
-    def _format_previous_program(self, items: List[Dict[str, Any]], version: int) -> str:
+    def _format_previous_program(self, items: List[Dict[str, Any]], version: Any) -> str:
         """Format previous program items for context injection."""
         lines = []
         for item in items:
@@ -298,8 +298,9 @@ class ProgramAgent:
                 line += f" | Considerations: {', '.join(considerations[:3])}"
             lines.append(line)
 
+        version_label = f"Program V{version}" if isinstance(version, int) else (f"Program {version}" if version else "Existing Program Draft")
         return PREVIOUS_PROGRAM_SECTION_TEMPLATE.format(
-            version=version,
+            version_label=version_label,
             previous_items_text="\n".join(lines) if lines else "No previous items."
         )
 
