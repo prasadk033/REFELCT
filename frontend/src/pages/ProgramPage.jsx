@@ -943,6 +943,32 @@ export default function ProgramPage() {
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                {genElapsedSeconds > 180 && (
+                  <button
+                    type="button"
+                    className="prog-btn prog-btn-outline"
+                    onClick={async () => {
+                      cleanupPolling()
+                      setIsGenerating(false)
+                      setShowGenModal(false)
+                      try {
+                        await fetch(`/api/projects/${projectId}/program/status/reset`, { credentials: 'include', method: 'POST' })
+                      } catch (e) {}
+                      showToastMsg('Generation dismissed')
+                      loadData()
+                    }}
+                    style={{
+                      padding: '8px 18px',
+                      borderRadius: '8px',
+                      fontSize: '12.5px',
+                      color: '#ef4444',
+                      borderColor: '#fca5a5',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Reset & Dismiss
+                  </button>
+                )}
                 <button
                   type="button"
                   className="prog-btn prog-btn-outline"

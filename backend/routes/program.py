@@ -133,7 +133,10 @@ def _set_generation_status(project_id: str, status_data: Dict[str, Any]):
 
 
 def _get_generation_status(project_id: str) -> Dict[str, Any]:
-    """Get generation status across processes via Redis with in-memory fallback."""
+    """Get generation status across processes via Redis with in-memory fallback.
+    Automatically expires ghost tasks if a container was restarted or timed out.
+    """
+    status_data = None
     r = _get_redis_client()
     if r:
         try:
@@ -143,10 +146,29 @@ def _get_generation_status(project_id: str) -> Dict[str, Any]:
             if raw:
                 if isinstance(raw, bytes):
                     raw = raw.decode("utf-8")
-                return json.loads(raw)
+                status_data = json.loads(raw)
         except Exception:
             pass
-    return _generation_status.get(project_id, {"status": "idle"})
+    if not status_data:
+        status_data = _generation_status.get(project_id, {"status": "idle"})
+
+    # Auto-expire ghost tasks (e.g. if container was recreated/killed with code 137)
+    if status_data.get("status") == "generating":
+        started_at = status_data.get("started_at", 0)
+        # Normal map-reduce generation takes 60-120s. If > 420s (7 min), it is an orphaned ghost task
+        if started_at and (time.time() - started_at > 420):
+            logger.warning(
+                f"Program generation for project {project_id} exceeded 420s or container was restarted "
+                f"(started {int(time.time() - started_at)}s ago). Auto-resetting stale ghost status."
+            )
+            status_data = {
+                "status": "failed",
+                "error": "Previous generation was interrupted when the backend container restarted. Please click Generate Program to start fresh.",
+                "failed_at": time.time(),
+            }
+            _set_generation_status(project_id, status_data)
+
+    return status_data
 
 
 router = APIRouter(tags=["program"])
@@ -1371,6 +1393,21 @@ def generate_program(
         "published_existing_version": published_prev_version_number,
         "previous_program_version": prev_prog_version.version_number if prev_prog_version else None,
     }
+
+
+@router.post("/api/projects/{project_id}/program/status/reset")
+def reset_program_generation_status(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Manually reset/dismiss any stuck or interrupted Program generation status.
+    """
+    _get_user_project(db, project_id, user.id)
+    _release_generation_lock(project_id)
+    _set_generation_status(project_id, {"status": "idle"})
+    return {"status": "ok", "message": "Program generation status reset successfully."}
 
 
 # ── Brief Version Management ──────────────────────────────────────────────────
