@@ -56,6 +56,7 @@ export default function ProgramPage() {
   const [isPublishing, setIsPublishing] = useState(false)
   const [showPublishSuccessModal, setShowPublishSuccessModal] = useState(null) // { version_number, item_count }
   const [showUnpublishedDraftModal, setShowUnpublishedDraftModal] = useState(false)
+  const [generatingCounts, setGeneratingCounts] = useState({ cards: 0, sources: 0 })
 
   // Modal & Drawer State
   const [showAddModal, setShowAddModal] = useState(false)
@@ -203,10 +204,17 @@ export default function ProgramPage() {
       setError('Program generation only updates the working draft. Switch to Working Draft first.')
       return
     }
+    const initialCards = summary?.active_cards_count || 0
+    const initialSources = summary?.sources_count || 0
+    setGeneratingCounts({ cards: initialCards, sources: initialSources })
     setIsGenerating(true)
     setShowGenModal(true)
     setGenElapsedSeconds(0)
-    setGenerationStep('Reviewing active workspace cards and sources...')
+    setGenerationStep(
+      initialCards > 0
+        ? `Reviewing ${initialCards} active workspace cards and ${initialSources} sources...`
+        : 'Reviewing active workspace cards and sources...'
+    )
 
     let timerInterval = null
     let stepInterval = null
@@ -219,7 +227,13 @@ export default function ProgramPage() {
     }
 
     try {
-      await generateProgram(projectId, briefVersionId)
+      const genRes = await generateProgram(projectId, briefVersionId)
+      if (genRes?.active_cards_count !== undefined) {
+        setGeneratingCounts({
+          cards: genRes.active_cards_count,
+          sources: genRes.sources_count || 0,
+        })
+      }
       showToastMsg('Program synthesis started...')
 
       // Increment elapsed seconds timer
@@ -643,8 +657,8 @@ export default function ProgramPage() {
             <div className="prog-subtitle-row">
               {isWorkingView ? (
                 <span>
-                  {summary?.source_brief_version
-                    ? `Based on published Brief V${summary.source_brief_version.version_number} (${summary.source_brief_version.card_count} cards)`
+                  {summary?.active_cards_count !== undefined
+                    ? `Active workspace: ${summary.active_cards_count} Brief cards (accepted & pending)${summary.sources_count ? ` · ${summary.sources_count} source documents` : ''}`
                     : summary?.can_generate
                     ? 'Available project data ready for Program generation.'
                     : 'Upload documents or add Brief cards to generate the Program.'}
@@ -816,13 +830,35 @@ export default function ProgramPage() {
                 style={{
                   fontSize: '13px',
                   color: '#64748b',
-                  marginBottom: '24px',
+                  marginBottom: '16px',
                   lineHeight: 1.5,
                 }}
               >
-                Translating approved Brief requirements into spaces, functions, and criteria for{' '}
+                Synthesizing spaces, functions, and criteria for{' '}
                 <strong style={{ color: '#0f172a' }}>{project?.name || 'this project'}</strong>
               </p>
+
+              {/* Active Workspace Cards & Sources Badge */}
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '12px',
+                  margin: '0 auto 20px auto',
+                  padding: '8px 18px',
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '999px',
+                  fontSize: '13px',
+                  color: '#1e40af',
+                  fontWeight: 600,
+                }}
+              >
+                <span>📋 <strong>{generatingCounts.cards || summary?.active_cards_count || 0}</strong> Active Brief Cards</span>
+                <span style={{ color: '#93c5fd' }}>•</span>
+                <span>📄 <strong>{generatingCounts.sources || summary?.sources_count || 0}</strong> Source Documents</span>
+              </div>
 
               {/* Progress Step Banner */}
               <div

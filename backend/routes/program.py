@@ -368,16 +368,16 @@ def get_program_summary(
 
     has_working_program = total > 0
 
-    has_active_cards = db.query(Card).filter(
+    active_cards_count = db.query(Card).filter(
         Card.project_id == project_id,
         Card.status != "rejected"
-    ).first() is not None
+    ).count()
 
-    has_sources = db.query(Source).filter(
+    sources_count = db.query(Source).filter(
         Source.project_id == project_id
-    ).first() is not None
+    ).count()
 
-    can_generate = has_active_cards or has_sources
+    can_generate = active_cards_count > 0 or sources_count > 0
 
     return {
         "mode": "working",
@@ -387,6 +387,8 @@ def get_program_summary(
         "has_unpublished_changes": has_changes,
         "has_working_program": has_working_program,
         "can_generate": can_generate,
+        "active_cards_count": active_cards_count,
+        "sources_count": sources_count,
         "total_items": total,
         "spaces": spaces,
         "requirements": requirements,
@@ -1170,6 +1172,8 @@ def _run_program_generation(
             "error": None,
             "item_count": len(result["program_items"]),
             "question_count": len(result["ai_questions"]),
+            "active_cards_count": len(brief_cards),
+            "sources_count": len(source_docs),
             "coverage_audit": coverage_audit,
             "completed_at": time.time(),
         })
@@ -1276,7 +1280,9 @@ def generate_program(
     _set_generation_status(project_id, {
         "status": "generating",
         "error": None,
-        "step": "Analyzing all available active project information...",
+        "active_cards_count": len(active_cards),
+        "sources_count": len(sources),
+        "step": f"Analyzing {len(active_cards)} active Brief cards and {len(sources)} source documents...",
         "started_at": time.time(),
     })
 
@@ -1289,9 +1295,10 @@ def generate_program(
 
     return {
         "status": "generating",
-        "message": "Program generation started. Refresh in a moment to see the results.",
+        "message": f"Program generation started from {len(active_cards)} active Brief cards and {len(sources)} source documents.",
         "cleaned_rejected_cards": cleaned_rejected_count,
         "active_cards_count": len(active_cards),
+        "sources_count": len(sources),
         "published_existing_version": published_prev_version_number,
         "previous_program_version": prev_prog_version.version_number if prev_prog_version else None,
     }

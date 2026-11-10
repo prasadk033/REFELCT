@@ -2624,7 +2624,7 @@ export default function BriefPage() {
                 {showBriefPublishSuccessModal.card_count} Brief Cards are now part of the published project knowledge.
               </p>
               <div style={{ margin: '20px 0', padding: '16px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13.5px', color: '#1e293b', lineHeight: 1.5 }}>
-                Would you like to generate the Program from Brief V{showBriefPublishSuccessModal.version_number} now?
+                Would you like to generate the Program using the current project Brief cards and documents now?
               </div>
               <div className="prog-pub-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                 <button
@@ -2642,9 +2642,8 @@ export default function BriefPage() {
                   type="button"
                   className="prog-btn prog-btn-primary"
                   onClick={() => {
-                    const verId = showBriefPublishSuccessModal.id
                     setShowBriefPublishSuccessModal(null)
-                    navigate(`/projects/${activeProjectId}/program?generate=true&sourceBriefVersionId=${verId}`)
+                    navigate(`/projects/${activeProjectId}/program?generate=true`)
                   }}
                 >
                   Generate Program
