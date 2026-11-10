@@ -1090,6 +1090,29 @@ def _run_program_generation(
             description=project.description,
         )
 
+        accepted_cards_count = sum(1 for c in active_cards_models if c.status == "accepted")
+        pending_cards_count = sum(1 for c in active_cards_models if c.status != "accepted")
+        total_cards_count = len(brief_cards)
+        total_sources = len(source_docs)
+        total_raw_chars = sum(len(s["content_snippet"]) for s in source_docs)
+        sources_summary = [f"{s['file_name']} ({len(s['content_snippet'])} chars)" for s in source_docs]
+
+        prev_items_count = len(previous_items) if previous_items else 0
+        prev_desc = f"Program V{previous_version_num}" if isinstance(previous_version_num, int) else (f"Existing Program {previous_version_num}" if previous_version_num else "None")
+
+        banner = (
+            f"\n[REFLECT] ======================================================================\n"
+            f"[REFLECT] 🚀 PROGRAM GENERATION INITIATED\n"
+            f"[REFLECT] Project: '{project.name}' (ID: {project_id})\n"
+            f"[REFLECT] • Brief Cards Input: {total_cards_count} total ({accepted_cards_count} accepted, {pending_cards_count} pending/unaccepted)\n"
+            f"[REFLECT] • Raw Source Documents: {total_sources} document(s) ({total_raw_chars} total characters)\n"
+            f"[REFLECT]   Files: {', '.join(sources_summary) if sources_summary else 'None'}\n"
+            f"[REFLECT] • Preserved Prior Context: {prev_items_count} items from {prev_desc}\n"
+            f"[REFLECT] ======================================================================"
+        )
+        print(banner)
+        logger.info(banner)
+
         agent = ProgramAgent()
         result = agent.generate_program(
             project_context=project_context,
