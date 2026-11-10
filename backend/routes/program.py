@@ -30,13 +30,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, text, or_
 
 from db import (
-    get_db, Project, Card, Brief, User,
+    get_db, Project, Card, Brief, User, Source,
     ProgramItem, ProgramQuestion,
     BriefPublishedVersion, BriefVersionCard,
     ProgramPublishedVersion, ProgramVersionItem,
     log_activity, utc_now
 )
 from auth.dependencies import get_current_user
+from routes.cards import cleanup_rejected_cards
 
 logger = logging.getLogger(__name__)
 
@@ -225,16 +226,15 @@ def _assign_program_codes(db: Session, project_id: str):
 
 def _check_brief_unpublished_changes(db: Session, project_id: str):
     """
-    Check if working unified cards differ from the latest published Brief version.
-    Returns (has_changes: bool, working_count: int, latest_version: Optional[BriefPublishedVersion])
+    Check if working accepted Brief cards differ from the latest published Brief version.
+    Returns (has_changes: bool, accepted_count: int, latest_version: Optional[BriefPublishedVersion])
     """
-    working_cards = db.query(Card).filter(
+    accepted_cards = db.query(Card).filter(
         Card.project_id == project_id,
-        or_(Card.is_unified == True, Card.status == "accepted"),
-        Card.status != "rejected",
+        Card.status == "accepted",
     ).all()
-    working_count = len(working_cards)
-    if working_count == 0:
+    accepted_count = len(accepted_cards)
+    if accepted_count == 0:
         return False, 0, None
 
     latest = db.query(BriefPublishedVersion).filter(
@@ -242,17 +242,17 @@ def _check_brief_unpublished_changes(db: Session, project_id: str):
     ).order_by(BriefPublishedVersion.version_number.desc()).first()
 
     if not latest:
-        return True, working_count, None
+        return True, accepted_count, None
 
-    if latest.card_count != working_count:
-        return True, working_count, latest
+    if latest.card_count != accepted_count:
+        return True, accepted_count, latest
 
     snapshot_map = {sc.card_id: (sc.snapshot_data or {}) for sc in latest.snapshot_cards if sc.card_id}
-    working_ids = {c.id for c in working_cards}
-    if set(snapshot_map.keys()) != working_ids:
-        return True, working_count, latest
+    accepted_ids = {c.id for c in accepted_cards}
+    if set(snapshot_map.keys()) != accepted_ids:
+        return True, accepted_count, latest
 
-    for c in working_cards:
+    for c in accepted_cards:
         snap = snapshot_map.get(c.id, {})
         if (
             snap.get("title") != c.title or
@@ -260,9 +260,9 @@ def _check_brief_unpublished_changes(db: Session, project_id: str):
             snap.get("status") != c.status or
             snap.get("card_type") != c.card_type
         ):
-            return True, working_count, latest
+            return True, accepted_count, latest
 
-    return False, working_count, latest
+    return False, accepted_count, latest
 
 
 def _check_program_unpublished_changes(db: Session, project_id: str):
@@ -367,7 +367,17 @@ def get_program_summary(
         }
 
     has_working_program = total > 0
-    can_generate = latest_brief_version is not None
+
+    has_active_cards = db.query(Card).filter(
+        Card.project_id == project_id,
+        Card.status != "rejected"
+    ).first() is not None
+
+    has_sources = db.query(Source).filter(
+        Source.project_id == project_id
+    ).first() is not None
+
+    can_generate = has_active_cards or has_sources
 
     return {
         "mode": "working",
@@ -770,14 +780,23 @@ def get_brief_sources_for_item(
     if working_item:
         _get_user_project(db, working_item.project_id, user.id)
         source_card_ids = working_item.source_brief_card_ids or []
-        source_brief_version_id = working_item.source_brief_version_id
-        if not source_brief_version_id:
-            # Fallback to latest published Brief version for this project so working items resolve against immutable snapshots
-            latest_pub = db.query(BriefPublishedVersion).filter(
-                BriefPublishedVersion.project_id == working_item.project_id
-            ).order_by(BriefPublishedVersion.version_number.desc()).first()
-            if latest_pub:
-                source_brief_version_id = latest_pub.id
+        if not source_card_ids:
+            return []
+        cards = db.query(Card).filter(Card.id.in_(source_card_ids)).all()
+        return [
+            {
+                "id": card.id,
+                "card_type": card.card_type,
+                "title": card.title,
+                "content": card.content,
+                "evidence": card.evidence,
+                "source_document": card.source_document,
+                "section": card.section,
+                "status": card.status,
+                "is_snapshot": False,
+            }
+            for card in cards
+        ]
     else:
         # 2. Try finding in published snapshot (ProgramVersionItem)
         vitem = db.query(ProgramVersionItem).filter(
@@ -867,23 +886,108 @@ def get_brief_sources_for_item(
     return results
 
 
+# ── Program Publishing Core Logic ─────────────────────────────────────────────
+
+def _execute_publish_program(db: Session, project_id: str, user_id: str) -> ProgramPublishedVersion:
+    """
+    Publish the current working Program as an immutable snapshot.
+    Validates the draft, assigns the next version atomically, and snapshots all items and questions.
+    """
+    has_changes, working_count, latest_prog_version = _check_program_unpublished_changes(db, project_id)
+    if working_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No Program Items to publish. Generate a Program first."
+        )
+
+    if not has_changes and latest_prog_version:
+        raise HTTPException(
+            status_code=409,
+            detail=f"The current working Program is identical to published V{latest_prog_version.version_number}. No new changes to publish."
+        )
+
+    working_items = db.query(ProgramItem).filter(
+        ProgramItem.project_id == project_id
+    ).order_by(ProgramItem.program_item_code, ProgramItem.created_at).all()
+
+    working_questions = db.query(ProgramQuestion).filter(
+        ProgramQuestion.project_id == project_id
+    ).order_by(ProgramQuestion.created_at).all()
+    snapshot_questions = [_question_to_dict(q) for q in working_questions]
+
+    # Determine next version atomically
+    latest_locked = db.query(ProgramPublishedVersion).filter(
+        ProgramPublishedVersion.project_id == project_id
+    ).with_for_update().order_by(ProgramPublishedVersion.version_number.desc()).first()
+
+    next_version_number = (latest_locked.version_number + 1) if latest_locked else 1
+
+    latest_brief_version = db.query(BriefPublishedVersion).filter(
+        BriefPublishedVersion.project_id == project_id
+    ).order_by(BriefPublishedVersion.version_number.desc()).first()
+
+    prog_pub_version = ProgramPublishedVersion(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        version_number=next_version_number,
+        source_brief_version_id=latest_brief_version.id if latest_brief_version else None,
+        previous_program_version_id=latest_locked.id if latest_locked else None,
+        item_count=len(working_items),
+        snapshot_questions=snapshot_questions,
+        published_at=utc_now(),
+        published_by=user_id,
+    )
+    db.add(prog_pub_version)
+    db.flush()
+
+    for item in working_items:
+        snapshot = _program_item_to_dict(item)
+        vi = ProgramVersionItem(
+            id=str(uuid.uuid4()),
+            program_version_id=prog_pub_version.id,
+            program_item_id=item.id,
+            snapshot_data=snapshot,
+        )
+        db.add(vi)
+
+    db.commit()
+
+    log_activity(
+        db=db,
+        user_id=user_id,
+        event_type="program_published",
+        title=f"Program V{next_version_number} published",
+        description=f"Published {len(working_items)} Program Items as V{next_version_number}",
+        project_id=project_id,
+    )
+
+    logger.info(
+        f"Published Program V{next_version_number} for project {project_id} "
+        f"({len(working_items)} items)"
+    )
+
+    return prog_pub_version
+
+
 # ── Program Generation ────────────────────────────────────────────────────────
 
 def _run_program_generation(
     project_id: str,
     user_id: str,
-    brief_version_id: str,
-    previous_program_version_id: Optional[str],
+    previous_program_version_id: Optional[str] = None,
 ):
-    """Background task: generate program items from a published Brief version."""
-    from db import SessionLocal, Project, BriefPublishedVersion, BriefVersionCard, ProgramPublishedVersion, ProgramItem, ProgramQuestion
+    """Background task: generate program items from current project data."""
+    from db import (
+        SessionLocal, Project,
+        ProgramPublishedVersion, ProgramItem, ProgramQuestion, Card, Source
+    )
     from agents.program_agent import ProgramAgent
     from agents.brief_agent import format_project_context
 
     _set_generation_status(project_id, {
         "status": "generating",
         "error": None,
-        "step": "Synthesizing spatial and functional criteria...",
+        "step": "Synthesizing spatial and functional criteria from active workspace cards and sources...",
         "started_at": time.time(),
     })
 
@@ -895,25 +999,51 @@ def _run_program_generation(
             _generation_status[project_id] = {"status": "failed", "error": "Project not found"}
             return
 
-        brief_version = db.query(BriefPublishedVersion).filter(
-            BriefPublishedVersion.id == brief_version_id
-        ).first()
-        if not brief_version:
-            logger.error(f"Program generation: brief version {brief_version_id} not found")
-            _generation_status[project_id] = {"status": "failed", "error": "Brief version not found"}
+        # 1. Fetch active Brief Cards (accepted and pending)
+        active_cards_models = db.query(Card).filter(
+            Card.project_id == project_id,
+            Card.status != "rejected"
+        ).order_by(Card.created_at.asc()).all()
+
+        brief_cards = []
+        for c in active_cards_models:
+            brief_cards.append({
+                "id": c.id,
+                "card_type": c.card_type,
+                "title": c.title,
+                "content": c.content,
+                "evidence": c.evidence,
+                "section": c.section,
+                "status": c.status,
+                "source_document": c.source_document,
+            })
+
+        # 2. Fetch uploaded source documents & extracted content
+        source_models = db.query(Source).filter(Source.project_id == project_id).all()
+        source_docs = []
+        for s in source_models:
+            snippet = (s.extracted_text or s.ocr_text or "").strip()
+            if len(snippet) > 3000:
+                snippet = snippet[:3000] + "... [budgeted for context]"
+            source_docs.append({
+                "id": s.id,
+                "file_name": s.file_name,
+                "file_type": s.file_type,
+                "description": s.description or "",
+                "content_snippet": snippet,
+                "status": s.approval_status or s.processing_status,
+            })
+
+        if not brief_cards and not source_docs:
+            logger.error(f"Program generation: no active cards or documents available for project {project_id}")
+            _set_generation_status(project_id, {
+                "status": "failed",
+                "error": "No project documents or Brief cards available.",
+                "failed_at": time.time(),
+            })
             return
 
-        # Get snapshot cards from the published brief version (sorted deterministically)
-        snapshot_cards = db.query(BriefVersionCard).filter(
-            BriefVersionCard.brief_version_id == brief_version_id
-        ).order_by(BriefVersionCard.id.asc()).all()
-
-        brief_cards = [sc.snapshot_data for sc in snapshot_cards if sc.snapshot_data]
-        if not brief_cards:
-            logger.error(f"Program generation: no cards in brief version {brief_version_id}")
-            return
-
-        # Get previous program items for context (if updating)
+        # 3. Get previous program items for context (if updating)
         previous_items = None
         previous_version_num = None
         if previous_program_version_id:
@@ -939,9 +1069,10 @@ def _run_program_generation(
             brief_cards=brief_cards,
             previous_program_items=previous_items,
             previous_program_version=previous_version_num,
+            source_documents=source_docs,
         )
 
-        # Clear existing working program items and questions
+        # Clear existing working program items and questions (preserves all published versions)
         db.query(ProgramQuestion).filter(ProgramQuestion.project_id == project_id).delete()
         db.query(ProgramItem).filter(ProgramItem.project_id == project_id).delete()
         db.commit()
@@ -965,7 +1096,7 @@ def _run_program_generation(
                 notes=item_data.get("notes"),
                 status=item_data["status"],
                 source_brief_card_ids=item_data.get("source_brief_card_ids") or [],
-                source_brief_version_id=brief_version.id,
+                source_brief_version_id=None,
                 created_by="AI",
             )
             db.add(item)
@@ -1002,7 +1133,6 @@ def _run_program_generation(
 
         # Insert AI Questions
         for q_data in result["ai_questions"]:
-            # Try to find a matching program item
             item_ref_name = q_data.get("program_item_reference")
             matched_item_id = None
             if item_ref_name:
@@ -1024,12 +1154,13 @@ def _run_program_generation(
 
         db.commit()
 
+        source_info_str = f"{len(brief_cards)} cards, {len(source_docs)} source docs"
         log_activity(
             db=db,
             user_id=user_id,
             event_type="program_generated",
             title="Program generated",
-            description=f"Generated {len(result['program_items'])} program items from Brief V{brief_version.version_number}",
+            description=f"Generated {len(result['program_items'])} program items from active project data ({source_info_str})",
             project_id=project_id,
         )
 
@@ -1045,8 +1176,7 @@ def _run_program_generation(
 
         logger.info(
             f"Program generation complete for project {project_id}: "
-            f"{len(result['program_items'])} items, {len(result['ai_questions'])} questions, "
-            f"coverage: {coverage_audit.get('accounted_percentage', 100)}%."
+            f"{len(result['program_items'])} items, {len(result['ai_questions'])} questions."
         )
 
     except Exception as e:
@@ -1071,10 +1201,32 @@ def generate_program(
     db: Session = Depends(get_db),
 ):
     """
-    Generate Program from the latest published Brief version.
-    Requires at least one published Brief version to exist.
+    Generate Program from current active project knowledge:
+    - All remaining active Brief Cards (accepted and pending)
+    - All uploaded source documents and raw extractions
+    - Current project metadata
+    Historical published Brief versions are never merged or independently loaded.
+    If publish_existing=True is requested, current Program draft is published first.
     """
     _get_user_project(db, project_id, user.id)
+
+    # 1. Clean up rejected cards permanently from active workspace
+    cleaned_rejected_count = cleanup_rejected_cards(db, project_id, user.id)
+    db.commit()
+
+    # 2. Check for unpublished program draft if publish_existing requested
+    publish_existing = bool((body or {}).get("publish_existing", False))
+    published_prev_version_number = None
+    if publish_existing:
+        try:
+            pub_res = _execute_publish_program(db, project_id, user.id)
+            published_prev_version_number = pub_res.version_number
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to publish existing Program draft: {str(e)}")
 
     # Guard against concurrent duplicate generation runs
     if not _acquire_generation_lock(project_id, ttl_seconds=180):
@@ -1093,26 +1245,22 @@ def generate_program(
             detail="AI services are temporarily unavailable. Please try again later."
         )
 
-    # Get the latest published brief version
-    brief_version_id = (body or {}).get("brief_version_id")
-    if brief_version_id:
-        brief_version = db.query(BriefPublishedVersion).filter(
-            BriefPublishedVersion.id == brief_version_id,
-            BriefPublishedVersion.project_id == project_id,
-        ).first()
-    else:
-        brief_version = db.query(BriefPublishedVersion).filter(
-            BriefPublishedVersion.project_id == project_id
-        ).order_by(BriefPublishedVersion.version_number.desc()).first()
+    # 3. Check available inputs (current active cards or sources)
+    active_cards = db.query(Card).filter(
+        Card.project_id == project_id,
+        Card.status != "rejected"
+    ).all()
 
-    if not brief_version:
+    sources = db.query(Source).filter(Source.project_id == project_id).all()
+
+    if not active_cards and not sources:
         _release_generation_lock(project_id)
         raise HTTPException(
             status_code=400,
-            detail="No published Brief version found. You must publish the Brief before generating the Program."
+            detail="No project information available for Program generation. Please upload documents or add Brief cards first."
         )
 
-    # Get the latest published program version for context
+    # Get the latest published program version for iterative update context
     prev_prog_version = db.query(ProgramPublishedVersion).filter(
         ProgramPublishedVersion.project_id == project_id
     ).order_by(ProgramPublishedVersion.version_number.desc()).first()
@@ -1120,15 +1268,15 @@ def generate_program(
     prev_prog_version_id = prev_prog_version.id if prev_prog_version else None
 
     logger.info(
-        f"Starting program generation for project {project_id} "
-        f"from Brief V{brief_version.version_number} "
-        f"(prev program: {'V' + str(prev_prog_version.version_number) if prev_prog_version else 'None'})"
+        f"Starting program generation for project {project_id}: "
+        f"{len(active_cards)} active cards, {len(sources)} sources, "
+        f"prev program: {'V' + str(prev_prog_version.version_number) if prev_prog_version else 'None'}"
     )
 
     _set_generation_status(project_id, {
         "status": "generating",
         "error": None,
-        "step": "Analyzing published Brief...",
+        "step": "Analyzing all available active project information...",
         "started_at": time.time(),
     })
 
@@ -1136,14 +1284,15 @@ def generate_program(
         _run_program_generation,
         project_id,
         user.id,
-        brief_version.id,
         prev_prog_version_id,
     )
 
     return {
         "status": "generating",
         "message": "Program generation started. Refresh in a moment to see the results.",
-        "source_brief_version": brief_version.version_number,
+        "cleaned_rejected_cards": cleaned_rejected_count,
+        "active_cards_count": len(active_cards),
+        "published_existing_version": published_prev_version_number,
         "previous_program_version": prev_prog_version.version_number if prev_prog_version else None,
     }
 
@@ -1162,7 +1311,11 @@ def get_brief_version_status(
     and latest published version info.
     """
     _get_user_project(db, project_id, user.id)
-    has_changes, working_count, latest = _check_brief_unpublished_changes(db, project_id)
+    has_changes, accepted_count, latest = _check_brief_unpublished_changes(db, project_id)
+    total_active = db.query(Card).filter(
+        Card.project_id == project_id,
+        Card.status != "rejected"
+    ).count()
 
     return {
         "mode": "working",
@@ -1170,7 +1323,8 @@ def get_brief_version_status(
         "status": "unpublished",
         "editable": True,
         "has_unpublished_changes": has_changes,
-        "working_card_count": working_count,
+        "working_card_count": total_active,
+        "accepted_card_count": accepted_count,
         "latest_published_version": latest.version_number if latest else None,
         "latest_published_version_id": latest.id if latest else None,
         "latest_published_card_count": latest.card_count if latest else None,
@@ -1248,59 +1402,65 @@ def publish_brief(
     Rules:
     - Backend determines the version number (no frontend input accepted).
     - Transaction-safe: uses SELECT FOR UPDATE to prevent duplicate versions.
-    - Snapshots all unified cards at publish time.
+    - Permanently cleans up all rejected cards from the active workspace.
+    - Snapshots ONLY accepted cards at publish time.
+    - Retains all remaining active cards (accepted and pending) in the active workspace.
     - Returns 409 if there are no changes since the last published version.
     """
     _get_user_project(db, project_id, user.id)
 
-    # Check for unpublished changes
-    has_changes, working_count, latest_version = _check_brief_unpublished_changes(db, project_id)
-    if working_count == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="No unified Brief Cards to publish. Accept cards in the Brief workspace first."
-        )
+    # 1. Clean up rejected cards permanently from active workspace
+    cleaned_rejected_count = cleanup_rejected_cards(db, project_id, user.id)
 
-    if not has_changes and latest_version:
-        raise HTTPException(
-            status_code=409,
-            detail=f"The current working Brief is identical to published V{latest_version.version_number}. No new changes to publish."
-        )
-
-    # Get all active unified brief cards (the current working dataset)
-    working_cards = db.query(Card).filter(
+    # 2. Get all accepted cards (ONLY accepted cards go into the published snapshot)
+    accepted_cards = db.query(Card).filter(
         Card.project_id == project_id,
-        or_(Card.is_unified == True, Card.status == "accepted"),
-        Card.status != "rejected",
+        Card.status == "accepted",
     ).all()
 
-    # Ensure all included cards are explicitly unified
-    for card in working_cards:
+    if len(accepted_cards) == 0:
+        db.commit()  # Commit the cleanup of rejected cards if any occurred
+        raise HTTPException(
+            status_code=400,
+            detail="No accepted Brief Cards to publish. Please accept at least one card in the Brief workspace first."
+        )
+
+    # 3. Check for unpublished changes against latest published version
+    has_changes, accepted_count, latest_version = _check_brief_unpublished_changes(db, project_id)
+    if not has_changes and latest_version:
+        db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail=f"The current accepted Brief Cards are identical to published V{latest_version.version_number}. No new changes to publish."
+        )
+
+    # Ensure all accepted cards are marked is_unified
+    for card in accepted_cards:
         if not card.is_unified:
             card.is_unified = True
 
-    # Determine next version number atomically
+    # 4. Determine next version number atomically
     latest_locked = db.query(BriefPublishedVersion).filter(
         BriefPublishedVersion.project_id == project_id
     ).with_for_update().order_by(BriefPublishedVersion.version_number.desc()).first()
 
     next_version_number = (latest_locked.version_number + 1) if latest_locked else 1
 
-    # Create the published version snapshot (transactional)
+    # 5. Create the published version snapshot (transactional)
     try:
         brief_pub_version = BriefPublishedVersion(
             id=str(uuid.uuid4()),
             project_id=project_id,
             version_number=next_version_number,
-            card_count=len(working_cards),
+            card_count=len(accepted_cards),
             published_at=utc_now(),
             published_by=user.id,
         )
         db.add(brief_pub_version)
-        db.flush()  # Get the ID before snapshot cards
+        db.flush()
 
-        # Snapshot each unified card
-        for card in working_cards:
+        # Snapshot ONLY accepted cards
+        for card in accepted_cards:
             snapshot = {
                 "id": card.id,
                 "card_type": card.card_type,
@@ -1329,24 +1489,40 @@ def publish_brief(
 
         db.commit()
 
+        remaining_active_count = db.query(Card).filter(
+            Card.project_id == project_id
+        ).count()
+
         log_activity(
             db=db,
             user_id=user.id,
             event_type="brief_published",
             title=f"Brief V{next_version_number} published",
-            description=f"Published {len(working_cards)} Brief Cards as V{next_version_number}",
+            description=f"Published {len(accepted_cards)} accepted Brief Cards as V{next_version_number} (retained {remaining_active_count} active cards)",
             project_id=project_id,
         )
 
-        logger.info(f"Published Brief V{next_version_number} for project {project_id} ({len(working_cards)} cards)")
+        logger.info(
+            f"Published Brief V{next_version_number} for project {project_id} "
+            f"({len(accepted_cards)} accepted cards snapshotted, "
+            f"{remaining_active_count} cards remaining active, "
+            f"{cleaned_rejected_count} rejected cards cleaned)"
+        )
 
         return {
             "id": brief_pub_version.id,
             "version_number": next_version_number,
-            "card_count": len(working_cards),
+            "card_count": len(accepted_cards),
+            "cleaned_rejected_count": cleaned_rejected_count,
+            "remaining_active_count": remaining_active_count,
             "published_at": brief_pub_version.published_at.isoformat(),
             "message": f"Brief V{next_version_number} published successfully.",
         }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to publish brief for project {project_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to publish Brief: {str(e)}")
 
     except Exception as e:
         db.rollback()
@@ -1433,97 +1609,24 @@ def publish_program(
 
     Rules:
     - Backend determines version number.
-    - Snapshots all current working program items.
-    - Records the source Brief version and previous program version.
+    - Snapshots all current working program items and questions.
     - Transaction-safe.
     """
     _get_user_project(db, project_id, user.id)
-
-    has_changes, working_count, latest_prog_version = _check_program_unpublished_changes(db, project_id)
-    if working_count == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="No Program Items to publish. Generate a Program first."
-        )
-
-    if not has_changes and latest_prog_version:
-        raise HTTPException(
-            status_code=409,
-            detail=f"The current working Program is identical to published V{latest_prog_version.version_number}. No new changes to publish."
-        )
-
-    working_items = db.query(ProgramItem).filter(
-        ProgramItem.project_id == project_id
-    ).order_by(ProgramItem.program_item_code, ProgramItem.created_at).all()
-
-    working_questions = db.query(ProgramQuestion).filter(
-        ProgramQuestion.project_id == project_id
-    ).order_by(ProgramQuestion.created_at).all()
-    snapshot_questions = [_question_to_dict(q) for q in working_questions]
-
-    # Determine next version atomically
-    latest_locked = db.query(ProgramPublishedVersion).filter(
-        ProgramPublishedVersion.project_id == project_id
-    ).with_for_update().order_by(ProgramPublishedVersion.version_number.desc()).first()
-
-    next_version_number = (latest_locked.version_number + 1) if latest_locked else 1
-
-    # Get the latest published brief version to record as authoritative source
-    latest_brief_version = db.query(BriefPublishedVersion).filter(
-        BriefPublishedVersion.project_id == project_id
-    ).order_by(BriefPublishedVersion.version_number.desc()).first()
-
     try:
-        prog_pub_version = ProgramPublishedVersion(
-            id=str(uuid.uuid4()),
-            project_id=project_id,
-            version_number=next_version_number,
-            source_brief_version_id=latest_brief_version.id if latest_brief_version else None,
-            previous_program_version_id=latest_locked.id if latest_locked else None,
-            item_count=len(working_items),
-            snapshot_questions=snapshot_questions,
-            published_at=utc_now(),
-            published_by=user.id,
-        )
-        db.add(prog_pub_version)
-        db.flush()
-
-        for item in working_items:
-            snapshot = _program_item_to_dict(item)
-            vi = ProgramVersionItem(
-                id=str(uuid.uuid4()),
-                program_version_id=prog_pub_version.id,
-                program_item_id=item.id,
-                snapshot_data=snapshot,
-            )
-            db.add(vi)
-
-        db.commit()
-
-        log_activity(
-            db=db,
-            user_id=user.id,
-            event_type="program_published",
-            title=f"Program V{next_version_number} published",
-            description=f"Published {len(working_items)} Program Items as V{next_version_number}",
-            project_id=project_id,
-        )
-
-        logger.info(
-            f"Published Program V{next_version_number} for project {project_id} "
-            f"({len(working_items)} items, source brief: "
-            f"{'V' + str(latest_brief_version.version_number) if latest_brief_version else 'None'})"
-        )
-
+        prog_pub_version = _execute_publish_program(db, project_id, user.id)
+        latest_brief = prog_pub_version.source_brief_version
         return {
             "id": prog_pub_version.id,
-            "version_number": next_version_number,
-            "item_count": len(working_items),
-            "source_brief_version_number": latest_brief_version.version_number if latest_brief_version else None,
+            "version_number": prog_pub_version.version_number,
+            "item_count": prog_pub_version.item_count,
+            "source_brief_version_number": latest_brief.version_number if latest_brief else None,
             "published_at": prog_pub_version.published_at.isoformat(),
-            "message": f"Program V{next_version_number} published successfully.",
+            "message": f"Program V{prog_pub_version.version_number} published successfully.",
         }
-
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to publish program for project {project_id}: {e}", exc_info=True)

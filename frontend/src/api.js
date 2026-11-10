@@ -320,8 +320,10 @@ export async function deleteProgramItem(itemId) {
   return apiFetch(`/api/program/items/${itemId}`, { method: 'DELETE' });
 }
 
-export async function generateProgram(projectId, briefVersionId = null) {
-  const body = briefVersionId ? { brief_version_id: briefVersionId } : {};
+export async function generateProgram(projectId, options = {}) {
+  const body = (typeof options === 'object' && options !== null)
+    ? options
+    : (options ? { brief_version_id: options } : {});
   return apiFetch(`/api/projects/${projectId}/program/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -169,8 +169,10 @@ Return ONLY valid JSON. No markdown. No explanations outside JSON. Place "non_pr
 PROGRAM_USER_PROMPT_TEMPLATE = """PROJECT CONTEXT:
 {project_context}
 
-BRIEF CARDS (Source Data):
+BRIEF CARDS (Current Workspace):
 {brief_cards_text}
+
+{source_documents_section}
 
 {previous_program_section}
 
@@ -206,6 +208,8 @@ class ProgramAgent:
 
     def _format_brief_cards(self, cards: List[Dict[str, Any]]) -> str:
         """Format Brief Cards into a readable text for LLM input with explicit evidence budgeting."""
+        if not cards:
+            return "No active Brief Cards."
         lines = []
         for i, card in enumerate(cards):
             card_id = card.get("id", f"CARD-{i+1}")
@@ -214,8 +218,10 @@ class ProgramAgent:
             content = card.get("content", "")
             evidence = card.get("evidence", "")
             section = card.get("section", "")
+            status = card.get("status")
+            status_str = f" [Status: {str(status).upper()}]" if status else ""
 
-            line = f"[{card_id}] ({card_type})"
+            line = f"[{card_id}] ({card_type}){status_str}"
             if section:
                 line += f" — Section: {section}"
             line += f"\nTitle: {title}"
@@ -233,6 +239,42 @@ class ProgramAgent:
             lines.append(line)
             lines.append("")
 
+        return "\n".join(lines)
+
+    def _format_source_documents(self, documents: Optional[List[Dict[str, Any]]]) -> str:
+        """Format uploaded source documents and extracted content snippets for LLM input."""
+        if not documents:
+            return ""
+        lines = ["SOURCE DOCUMENTS & EXTRACTED CONTENT:"]
+        for doc in documents:
+            fname = doc.get("file_name", "Document")
+            ftype = (doc.get("file_type") or "").upper()
+            desc = doc.get("description", "")
+            snippet = doc.get("content_snippet", "")
+            doc_str = f"- File: {fname} ({ftype})"
+            if desc:
+                doc_str += f" | Note: {desc}"
+            if snippet:
+                doc_str += f"\n  Extracted Content: {snippet}"
+            lines.append(doc_str)
+        return "\n".join(lines)
+
+    def _format_published_brief_context(self, pub_context: Optional[Dict[str, Any]]) -> str:
+        """Format historical published brief snapshot context."""
+        if not pub_context:
+            return ""
+        v_num = pub_context.get("version_number", 1)
+        cards = pub_context.get("cards", [])
+        lines = [
+            f"PUBLISHED BRIEF SNAPSHOT (Brief V{v_num}):",
+            f"Baseline approved project brief snapshot with {len(cards)} card(s):"
+        ]
+        for c in cards[:25]:
+            cid = c.get("id", "")
+            title = c.get("title", "")
+            ctype = c.get("card_type", "")
+            content = c.get("content", "")
+            lines.append(f"• [{cid}] ({ctype}) {title}: {content[:180]}")
         return "\n".join(lines)
 
     def _format_previous_program(self, items: List[Dict[str, Any]], version: int) -> str:
@@ -666,6 +708,7 @@ class ProgramAgent:
         previous_program_items: Optional[List[Dict[str, Any]]] = None,
         previous_program_version: Optional[int] = None,
         chunk_size: int = 40,
+        source_documents: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Map-reduce synthesis for large brief datasets (>60 cards) to prevent
@@ -682,6 +725,8 @@ class ProgramAgent:
         aggregated_non_relevant = []
         validation_errors = []
 
+        source_docs_text = self._format_source_documents(source_documents)
+
         for chunk_idx in range(num_chunks):
             chunk_cards = brief_cards[chunk_idx * chunk_size : (chunk_idx + 1) * chunk_size]
             logger.info(
@@ -694,7 +739,8 @@ class ProgramAgent:
             chunk_prompt = (
                 f"CHUNK {chunk_idx + 1} OF {num_chunks} SYNTHESIS PASS:\n"
                 f"Analyze this portion of the project brief.\n\n"
-                f"BRIEF CARDS (Source Data):\n{brief_cards_text}\n\n"
+                f"BRIEF CARDS (Active Chunk):\n{brief_cards_text}\n\n"
+                f"{source_docs_text}\n\n"
                 f"Generate structured Program JSON output for this chunk now. Return ONLY valid JSON."
             )
 
@@ -767,15 +813,19 @@ class ProgramAgent:
         brief_cards: List[Dict[str, Any]],
         previous_program_items: Optional[List[Dict[str, Any]]] = None,
         previous_program_version: Optional[int] = None,
+        source_documents: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
-        Generate structured Program Items and AI Questions from Brief Cards.
+        Generate structured Program Items and AI Questions from current workspace Brief Cards,
+        uploaded project source documents, and project context.
+        Per Program Generation Source Rule: historical published Brief versions are never merged.
 
         Args:
             project_context: Project name, type, location, client, description string.
-            brief_cards: List of Brief Card dicts (from working dataset or published version).
+            brief_cards: List of Brief Card dicts from current active workspace (accepted and pending).
             previous_program_items: Optional list of previous Program Item dicts for update context.
             previous_program_version: Version number of the previous program (for display).
+            source_documents: Optional list of uploaded source documents with extracted text snippets.
 
         Returns:
             {
@@ -790,7 +840,10 @@ class ProgramAgent:
             }
         """
         total_cards = len(brief_cards)
-        logger.info(f"ProgramAgent: generating program from {total_cards} brief cards")
+        logger.info(
+            f"ProgramAgent: generating program from {total_cards} active workspace cards and "
+            f"{len(source_documents or [])} source documents"
+        )
 
         # For large Briefs (>60 cards), use robust map-reduce chunking to prevent context overflow
         if total_cards > 60:
@@ -800,9 +853,11 @@ class ProgramAgent:
                 previous_program_items=previous_program_items,
                 previous_program_version=previous_program_version,
                 chunk_size=40,
+                source_documents=source_documents,
             )
 
         brief_cards_text = self._format_brief_cards(brief_cards)
+        source_documents_section = self._format_source_documents(source_documents)
 
         # Build previous program section
         previous_section = ""
@@ -814,6 +869,7 @@ class ProgramAgent:
         user_prompt = PROGRAM_USER_PROMPT_TEMPLATE.format(
             project_context=project_context,
             brief_cards_text=brief_cards_text,
+            source_documents_section=source_documents_section,
             previous_program_section=previous_section,
         )
 

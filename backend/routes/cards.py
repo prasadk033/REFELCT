@@ -442,6 +442,58 @@ def reject_card(
 
 
 
+def cleanup_rejected_cards(db: Session, project_id: str, user_id: str) -> int:
+    """
+    Permanently delete all rejected Brief Cards from the active workspace for a project.
+    Preserves:
+    - Accepted cards
+    - Pending/provisional cards
+    - Historical snapshots in brief_version_cards (where card_id FK becomes NULL on delete, but snapshot_data is preserved)
+    - Source documents in sources table
+    Returns count of cleaned-up cards.
+    """
+    rejected = db.query(Card).filter(
+        Card.project_id == project_id,
+        Card.status == "rejected"
+    ).all()
+
+    if not rejected:
+        return 0
+
+    rejected_ids = {c.id for c in rejected}
+    count = len(rejected)
+
+    # 1. Clean any review references in active cards pointing to rejected cards
+    competing_cards = db.query(Card).filter(
+        Card.project_id == project_id,
+        Card.review_card_id.in_(rejected_ids)
+    ).all()
+    for comp in competing_cards:
+        comp.review_card_id = None
+        if comp.review_status == "under_review":
+            comp.review_status = None
+            comp.is_unified = True
+
+    # 2. Delete rejected cards from active cards table
+    for c in rejected:
+        db.delete(c)
+
+    db.flush()
+
+    from db import log_activity
+    log_activity(
+        db=db,
+        user_id=user_id,
+        event_type="rejected_cards_cleaned",
+        title="Rejected cards removed",
+        description=f"Permanently removed {count} rejected Brief Card(s) from active workspace",
+        project_id=project_id,
+    )
+
+    logger.info(f"Cleaned up {count} rejected cards for project {project_id}")
+    return count
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _verify_project_ownership(db: Session, project_id: str, user_id: str):

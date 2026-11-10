@@ -55,6 +55,7 @@ export default function ProgramPage() {
   const [genElapsedSeconds, setGenElapsedSeconds] = useState(0)
   const [isPublishing, setIsPublishing] = useState(false)
   const [showPublishSuccessModal, setShowPublishSuccessModal] = useState(null) // { version_number, item_count }
+  const [showUnpublishedDraftModal, setShowUnpublishedDraftModal] = useState(false)
 
   // Modal & Drawer State
   const [showAddModal, setShowAddModal] = useState(false)
@@ -103,7 +104,7 @@ export default function ProgramPage() {
       const sourceBriefVersionId = searchParams.get('sourceBriefVersionId')
       // Remove query param to prevent re-triggering
       setSearchParams({}, { replace: true })
-      handleStartGeneration(sourceBriefVersionId)
+      handleGenerateClick(sourceBriefVersionId)
     }
   }, [searchParams, summary])
 
@@ -159,6 +160,43 @@ export default function ProgramPage() {
     }
   }
 
+  // Generation Trigger & Draft Pre-check
+  function handleGenerateClick(briefVersionId = null) {
+    if (selectedView !== 'working') {
+      setError('Program generation only updates the working draft. Switch to Working Draft first.')
+      return
+    }
+    // Check if an unpublished Program draft already exists
+    const hasUnpublishedDraft = items.length > 0 && (summary?.has_unpublished_changes || !summary?.latest_published_version)
+    if (hasUnpublishedDraft) {
+      setShowUnpublishedDraftModal(true)
+      return
+    }
+    handleStartGeneration(briefVersionId)
+  }
+
+  async function handlePublishAndContinue() {
+    setIsPublishing(true)
+    try {
+      const res = await publishProgram(projectId)
+      setShowUnpublishedDraftModal(false)
+      showToastMsg(`✓ Published Program V${res.version_number}. Synthesizing fresh Program...`)
+      const pubVersions = await listPublishedProgramVersions(projectId, 5).catch(() => [])
+      setPublishedVersions(pubVersions || [])
+      await handleStartGeneration()
+    } catch (err) {
+      setError(err.message || 'Failed to publish existing Program')
+      showToastMsg('✕ Failed to publish existing Program')
+    } finally {
+      setIsPublishing(false)
+    }
+  }
+
+  function handleContinueWithoutPublishing() {
+    setShowUnpublishedDraftModal(false)
+    handleStartGeneration()
+  }
+
   // Generation Trigger & Polling
   async function handleStartGeneration(briefVersionId = null) {
     if (selectedView !== 'working') {
@@ -168,7 +206,7 @@ export default function ProgramPage() {
     setIsGenerating(true)
     setShowGenModal(true)
     setGenElapsedSeconds(0)
-    setGenerationStep('Reviewing approved Brief cards...')
+    setGenerationStep('Reviewing active workspace cards and sources...')
 
     let timerInterval = null
     let stepInterval = null
@@ -191,7 +229,7 @@ export default function ProgramPage() {
 
       // Friendly casual steps (no technical model names)
       const steps = [
-        'Reviewing approved Brief cards...',
+        'Reviewing active workspace cards and sources...',
         'Synthesizing spatial requirements and dimensions...',
         'Formulating functional criteria and considerations...',
         'Identifying clarification questions...',
@@ -587,7 +625,7 @@ export default function ProgramPage() {
               <h1 className="prog-title">
                 {isWorkingView
                   ? 'Program (Working Draft)'
-                  : `Program V${publishedVersionData?.version_number || ''}`}
+                  : `Published Program — V${publishedVersionData?.version_number || ''}`}
               </h1>
 
               {isWorkingView ? (
@@ -608,8 +646,8 @@ export default function ProgramPage() {
                   {summary?.source_brief_version
                     ? `Based on published Brief V${summary.source_brief_version.version_number} (${summary.source_brief_version.card_count} cards)`
                     : summary?.can_generate
-                    ? 'Published Brief available for Program generation.'
-                    : 'A Brief must be published before generating the Program.'}
+                    ? 'Available project data ready for Program generation.'
+                    : 'Upload documents or add Brief cards to generate the Program.'}
                 </span>
               ) : (
                 <span>
@@ -655,20 +693,18 @@ export default function ProgramPage() {
                   <span>Add Item</span>
                 </button>
 
-                {/* Only show Generate Program if no items exist yet */}
-                {items.length === 0 && (
-                  <button
-                    className="prog-btn prog-btn-secondary"
-                    onClick={() => handleStartGeneration()}
-                    disabled={isGenerating || !summary?.can_generate}
-                    title={!summary?.can_generate ? 'Publish a Brief first to generate Program' : ''}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                    </svg>
-                    <span>Generate Program</span>
-                  </button>
-                )}
+                {/* Generate Program button */}
+                <button
+                  className="prog-btn prog-btn-secondary"
+                  onClick={() => handleGenerateClick()}
+                  disabled={isGenerating || !summary?.can_generate}
+                  title={!summary?.can_generate ? 'Upload documents or add Brief cards to generate Program' : ''}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                  </svg>
+                  <span>Generate Program</span>
+                </button>
 
                 {/* Publish Program positioned at the top right corner */}
                 <button
@@ -1041,8 +1077,8 @@ export default function ProgramPage() {
                   {items.length === 0
                     ? isWorkingView
                       ? summary?.can_generate
-                        ? 'Click "Generate Program" to create structured spatial and functional requirements from your published Brief.'
-                        : 'To get started, first publish a Brief version in the Brief workspace.'
+                        ? 'Click "Generate Program" to create structured spatial and functional requirements from your project data.'
+                        : 'To get started, upload project documents or create Brief cards in the Brief workspace.'
                       : 'This published version contains no program items.'
                     : 'Try clearing your search query or filters to see all items.'}
                 </p>
@@ -1051,10 +1087,10 @@ export default function ProgramPage() {
                     {summary?.can_generate && (
                       <button
                         className="prog-btn prog-btn-primary"
-                        onClick={() => handleStartGeneration()}
+                        onClick={() => handleGenerateClick()}
                         disabled={isGenerating}
                       >
-                        Generate Program from Brief
+                        Generate Program
                       </button>
                     )}
                     <button
@@ -1664,6 +1700,142 @@ export default function ProgramPage() {
                   onClick={() => setShowPublishSuccessModal(null)}
                 >
                   Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Unpublished Program Exists Modal (Client Specification) ─────────── */}
+        {showUnpublishedDraftModal && (
+          <div
+            className="prog-modal-overlay"
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(5, 7, 12, 0.75)',
+              backdropFilter: 'blur(6px)',
+              zIndex: 2100,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <div
+              className="prog-modal-card"
+              onClick={e => e.stopPropagation()}
+              style={{
+                maxWidth: '520px',
+                width: '90%',
+                background: '#ffffff',
+                borderRadius: '16px',
+                padding: '32px 28px',
+                boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
+                border: '1px solid #e2e8f0',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                <div
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '10px',
+                    background: '#fef3c7',
+                    color: '#d97706',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px',
+                  }}
+                >
+                  ⚠️
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>
+                    Unpublished Program Exists
+                  </h3>
+                  <span style={{ fontSize: '13px', color: '#64748b' }}>
+                    {items.length} working item{items.length === 1 ? '' : 's'} in current draft
+                  </span>
+                </div>
+              </div>
+
+              <p style={{ fontSize: '14px', color: '#334155', lineHeight: '1.6', marginBottom: '24px' }}>
+                Your current Program contains unpublished changes. What would you like to do?
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button
+                  className="prog-btn prog-btn-primary"
+                  onClick={handlePublishAndContinue}
+                  disabled={isPublishing || isGenerating}
+                  style={{
+                    padding: '14px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    textAlign: 'left',
+                    gap: '4px',
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: '14px' }}>
+                    {isPublishing ? 'Publishing...' : 'Publish Existing Program & Continue'}
+                  </span>
+                  <span style={{ fontSize: '12px', opacity: 0.85, lineHeight: '1.4' }}>
+                    Publish the complete current Program as a new immutable version, then generate a fresh Program using the latest available project data.
+                  </span>
+                </button>
+
+                <button
+                  className="prog-btn prog-btn-secondary"
+                  onClick={handleContinueWithoutPublishing}
+                  disabled={isPublishing || isGenerating}
+                  style={{
+                    padding: '14px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    textAlign: 'left',
+                    gap: '4px',
+                    background: '#f8fafc',
+                    color: '#0f172a',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: '14px' }}>
+                    Continue Without Publishing
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.4' }}>
+                    Replace the existing unpublished Program draft with a newly generated Program using the latest available project data. Do not publish the old draft.
+                  </span>
+                </button>
+
+                <button
+                  className="prog-btn prog-btn-outline"
+                  onClick={() => setShowUnpublishedDraftModal(false)}
+                  disabled={isPublishing || isGenerating}
+                  style={{
+                    padding: '10px 16px',
+                    marginTop: '4px',
+                    background: '#ffffff',
+                    color: '#64748b',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                  }}
+                >
+                  Cancel
                 </button>
               </div>
             </div>

@@ -413,12 +413,14 @@ export default function BriefPage() {
         version_number: res.version_number,
         card_count: res.card_count,
       })
-      const [pubList, status] = await Promise.all([
+      const [pubList, status, updatedCards] = await Promise.all([
         listPublishedBriefVersions(activeProjectId, 5),
         getBriefVersionStatus(activeProjectId),
+        listCards(activeProjectId),
       ])
       setPublishedBriefVersions(pubList || [])
       setBriefVersionStatus(status)
+      setCards(updatedCards || [])
     } catch (err) {
       setError(err.message || 'Failed to publish Brief')
     } finally {
@@ -813,7 +815,7 @@ export default function BriefPage() {
               <h1 className="bpage-title">
                 {selectedBriefView === 'working'
                   ? 'Brief (Working Draft)'
-                  : `Brief V${publishedBriefData?.version_number || ''}`}
+                  : `Published Brief — V${publishedBriefData?.version_number || ''}`}
               </h1>
               {selectedBriefView === 'working' ? (
                 <div className="bpage-draft-pill">
