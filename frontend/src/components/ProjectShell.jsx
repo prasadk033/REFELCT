@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 import AiHealthBanner from './AiHealthBanner.jsx'
 import TopHeader from './TopHeader.jsx'
 
-export default function ProjectShell({ children, project }) {
+export default function ProjectShell({ children, project, isTaskRunning = false }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, logout } = useAuth()
@@ -55,10 +55,16 @@ export default function ProjectShell({ children, project }) {
           </button>
 
           <button
-            className={`p-nav-item ${isBrief ? 'active' : ''} ${!project?.card_count ? 'disabled' : ''}`}
-            onClick={() => project?.card_count > 0 && navigate(`/projects/${projectId}/brief`)}
-            title={!project?.card_count ? "Workspace locked until Brief Cards are generated" : ""}
-            style={!project?.card_count ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+            className={`p-nav-item ${isBrief ? 'active' : ''} ${(!project?.card_count || isTaskRunning) ? 'disabled' : ''}`}
+            onClick={() => {
+              if (isTaskRunning) {
+                alert('⚠️ A background task (extraction or analysis) is actively running in this project. Please wait for it to finish or click "Stop & Complete Extraction" before opening Brief.')
+                return
+              }
+              if (project?.card_count > 0) navigate(`/projects/${projectId}/brief`)
+            }}
+            title={isTaskRunning ? "Extraction running in background — wait until completed or stop it" : !project?.card_count ? "Workspace locked until Brief Cards are generated" : ""}
+            style={(!project?.card_count || isTaskRunning) ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
           >
             <span className="p-nav-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">
@@ -73,8 +79,16 @@ export default function ProjectShell({ children, project }) {
 
           {/* Program — active workspace */}
           <button
-            className={`p-nav-item ${isProgram ? 'active' : ''}`}
-            onClick={() => projectId && navigate(`/projects/${projectId}/program`)}
+            className={`p-nav-item ${isProgram ? 'active' : ''} ${isTaskRunning ? 'disabled' : ''}`}
+            onClick={() => {
+              if (isTaskRunning) {
+                alert('⚠️ A background task (extraction or analysis) is actively running in this project. Please wait for it to finish or click "Stop & Complete Extraction" before opening Program.')
+                return
+              }
+              projectId && navigate(`/projects/${projectId}/program`)
+            }}
+            title={isTaskRunning ? "Extraction running in background — wait until completed or stop it" : ""}
+            style={isTaskRunning ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
           >
             <span className="p-nav-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">

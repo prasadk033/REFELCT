@@ -97,6 +97,9 @@ async def upload_source(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Strictly disallow uploading new documents while extraction is actively running
+    _check_active_extraction(db, project_id)
+
     # Validate file type
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -698,7 +701,15 @@ def cancel_sources_extraction(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Cancel all active or pending extractions for a project."""
+    """
+    Stop active extraction and gracefully complete/finalize it.
+    Saves whatever data has been extracted so far, completes the job,
+    and sets processed sources to 'extracted'.
+    """
+    from db import ProcessingJob
+    from tasks.queue import get_redis_connection
+    from documents.loader import cancel_extraction
+
     project = db.query(Project).filter(
         Project.id == project_id,
         Project.user_id == user.id
@@ -706,13 +717,43 @@ def cancel_sources_extraction(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    from documents.loader import cancel_extraction
+    # 1. Signal distributed worker via Redis to halt extraction loops immediately
+    try:
+        r = get_redis_connection()
+        r.set(f"reflect:cancelled:{project_id}", "1", ex=300)
+    except Exception as re:
+        logger.warning(f"Could not set Redis cancellation flag for project {project_id}: {re}")
+
+    # 2. In-memory cancellation registry
     sources = db.query(Source).filter(Source.project_id == project_id).all()
     for s in sources:
         abs_p = file_store.get_absolute_path(s.storage_path) if s.storage_path else None
         cancel_extraction(source_id=s.id, file_path=abs_p)
 
-    return {"message": "All extractions cancelled successfully"}
+    # 3. Finalize any active extraction processing jobs cleanly
+    active_jobs = db.query(ProcessingJob).filter(
+        ProcessingJob.project_id == project_id,
+        ProcessingJob.status.in_(["pending", "extracting"])
+    ).all()
+    for j in active_jobs:
+        j.status = "completed"
+        j.current_step = "Extraction stopped by user — Extracted data saved"
+        j.notification_seen = False
+
+    # 4. Finalize sources: if extracted text exists, keep it as 'extracted' so user can review it
+    for s in sources:
+        if s.version is None and s.processing_status == "extracting":
+            if s.extracted_text and s.extracted_text.strip():
+                s.processing_status = "extracted"
+                s.approval_status = "pending_review"
+                s.processing_error = None
+            else:
+                s.processing_status = "uploaded"
+                s.approval_status = "pending_review"
+
+    db.commit()
+    logger.info(f"[{project_id}] Extraction stopped and completed by user. Extracted progress preserved.")
+    return {"message": "Extraction stopped successfully. Extracted data saved."}
 
 
 @router.post("/{project_id}/sources/{source_id}/reset-version", response_model=SourceResponse)

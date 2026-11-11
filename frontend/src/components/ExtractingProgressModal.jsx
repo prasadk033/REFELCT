@@ -218,18 +218,23 @@ export default function ExtractingProgressModal({
               type="button"
               className="bui-btn"
               style={{
-                padding: '8px 16px',
+                padding: '8px 18px',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: '#ef4444',
-                background: '#ffffff',
-                border: '1px solid #fecaca',
-                borderRadius: '8px'
+                color: '#dc2626',
+                background: '#fff1f2',
+                border: '1px solid #fecdd3',
+                borderRadius: '8px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
               }}
               onClick={onCancel}
-              title="Cancel the extraction task"
+              title="Stop extraction now and finalize whatever data has been extracted so far"
             >
-              ✕ Cancel Task
+              <span>⏹</span>
+              <span>Stop & Complete Extraction</span>
             </button>
           )}
         </div>

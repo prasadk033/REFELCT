@@ -133,8 +133,23 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
         ai_service_issue = False
         from llm.qwen_health import check_qwen_health, AI_UNAVAILABLE_MESSAGE
 
+        def _check_user_cancelled() -> bool:
+            try:
+                from tasks.queue import get_redis_connection
+                r = get_redis_connection()
+                if r.exists(f"reflect:cancelled:{project_id}"):
+                    logger.info(f"[{project_id}] Extraction stopped by user via Redis. Terminating pipeline.")
+                    _update_job(db, job_id, "completed", step="Extraction stopped by user — Extracted data saved", cards_generated=completed_count, questions_count=total_count)
+                    r.delete(f"reflect:cancelled:{project_id}")
+                    return True
+            except Exception:
+                pass
+            return False
+
         # Phase 1: Process text-only documents first (independent of AI service)
         for source in text_only_docs:
+            if _check_user_cancelled():
+                return
             _update_job(
                 db, job_id, "extracting",
                 step=f"Processing {source.file_name}... ({completed_count} / {total_count} Documents Completed)",
@@ -181,6 +196,8 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     )
             else:
                 for idx, source in enumerate(vision_docs):
+                    if _check_user_cancelled():
+                        return
                     _update_job(
                         db, job_id, "extracting",
                         step=f"Processing {source.file_name} — Vision Extraction... ({completed_count} / {total_count} Documents Completed)",
@@ -321,12 +338,30 @@ def _extract_source_text_background(
         try:
             source.extracted_text = current_text
             db.commit()
+
+            # Check if user stopped/cancelled extraction
+            try:
+                from tasks.queue import get_redis_connection
+                r = get_redis_connection()
+                if r.exists(f"reflect:cancelled:{source.project_id}"):
+                    logger.info(f"Cancellation flag detected for project {source.project_id}. Halting on page {page_num}.")
+                    source.processing_status = "extracted"
+                    source.approval_status = "pending_review"
+                    db.commit()
+                    raise RuntimeError("Extraction cancelled by user")
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+
             if job_id:
                 if total_docs > 1:
                     step_str = f"Document {doc_index}/{total_docs} ({source.file_name}) — Page {page_num} of {total_pages} ({page_num} / {total_pages} pages processed)"
                 else:
                     step_str = f"Processing {source.file_name} — Page {page_num} of {total_pages} ({page_num} / {total_pages} pages processed)"
                 _update_job(db, job_id, "extracting", step=step_str)
+        except RuntimeError:
+            raise
         except Exception as cb_err:
             logger.warning(f"Error updating page checkpoint for {source.file_name} page {page_num}: {cb_err}")
 

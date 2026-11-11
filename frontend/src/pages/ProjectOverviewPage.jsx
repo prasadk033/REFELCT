@@ -238,6 +238,10 @@ export default function ProjectOverviewPage() {
   async function handleSaveSiteLocation(e) {
     if (e && e.preventDefault) e.preventDefault()
     if (!siteLocationInput.trim()) return
+    if (extracting || analyzing) {
+      showToast('⚠️ A background task is currently running. Please wait for it to finish before modifying site location.')
+      return
+    }
 
     setSiteLocationLoading(true)
     setError(null)
@@ -273,6 +277,10 @@ export default function ProjectOverviewPage() {
 
   async function handleConfirmUpload() {
     if (!selectedFile) return
+    if (extracting || analyzing) {
+      showToast('⚠️ A background task is currently running. Please wait for it to finish before uploading documents.')
+      return
+    }
     setUploading(true)
     setError(null)
     const ext = selectedFile.name.split('.').pop()?.toLowerCase()
@@ -323,6 +331,11 @@ export default function ProjectOverviewPage() {
   async function handleFileUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    if (extracting || analyzing) {
+      showToast('⚠️ A background task is currently running. Please wait for it to finish before uploading documents.')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
     setUploading(true)
     try {
       const ext = file.name.split('.').pop()?.toLowerCase()
@@ -500,17 +513,18 @@ export default function ProjectOverviewPage() {
       clearInterval(extractTimerRef.current)
       extractTimerRef.current = null
     }
+    showToast('Stopping extraction and saving progress...')
     try {
       await cancelSourceExtraction(projectId)
     } catch (e) {
-      console.warn('Extraction cancel notification error:', e)
+      console.warn('Extraction stop notification error:', e)
     }
     setExtractModalOpen(false)
     setShowExtractModal(false)
     setExtracting(false)
     setRowExtractingId(null)
-    showToast('Document extraction cancelled. You can extract again when ready.')
     await loadProjectData()
+    showToast('✓ Extraction stopped. Progress has been saved and is ready for review.')
   }
 
   async function handleRunAnalysis() {
@@ -842,7 +856,7 @@ export default function ProjectOverviewPage() {
 
   if (loading && !project) {
     return (
-      <ProjectShell project={{ id: projectId }}>
+      <ProjectShell project={{ id: projectId }} isTaskRunning={extracting || analyzing}>
         <div className="brief-ui-loading" style={{ minHeight: 'calc(100vh - 140px)' }}>
           <div className="bui-spinner bui-spinner-lg" />
           <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '15px' }}>Loading project...</div>
@@ -853,7 +867,7 @@ export default function ProjectOverviewPage() {
   }
 
   return (
-    <ProjectShell project={project}>
+    <ProjectShell project={project} isTaskRunning={extracting || analyzing}>
       <div className="pov-container">
 
         {/* Hidden File Input */}
@@ -1069,7 +1083,15 @@ export default function ProjectOverviewPage() {
                 /* 3. Already extracted documents needing review/approval */
                 <button
                   className="pov-btn-analyse"
-                  onClick={() => navigate(`/projects/${projectId}/extract`)}
+                  onClick={() => {
+                    if (extracting || analyzing) {
+                      showToast('⚠️ A background task is currently running. Please wait for it to finish or stop it before reviewing.')
+                      return
+                    }
+                    navigate(`/projects/${projectId}/extract`)
+                  }}
+                  disabled={extracting || analyzing}
+                  style={(extracting || analyzing) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
                 >
                   <span className="pov-sparkle">✓</span>
                   <span>Review Extracted Data →</span>
@@ -1079,7 +1101,8 @@ export default function ProjectOverviewPage() {
                 <button
                   className="pov-btn-analyse"
                   onClick={handleRunAnalysis}
-                  disabled={analyzing}
+                  disabled={analyzing || extracting}
+                  style={(analyzing || extracting) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
                 >
                   <span className="pov-sparkle">✦</span>
                   <span>
@@ -1091,7 +1114,15 @@ export default function ProjectOverviewPage() {
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <button
                     className="pov-btn-analyse"
-                    onClick={() => navigate(`/projects/${projectId}/brief`)}
+                    onClick={() => {
+                      if (extracting || analyzing) {
+                        showToast('⚠️ A background task is currently running. Please wait for it to finish or stop it before viewing Brief.')
+                        return
+                      }
+                      navigate(`/projects/${projectId}/brief`)
+                    }}
+                    disabled={extracting || analyzing}
+                    style={(extracting || analyzing) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
                   >
                     <span>View Brief Workspace →</span>
                   </button>
