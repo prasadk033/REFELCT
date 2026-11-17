@@ -24,6 +24,29 @@ function formatRelativeTime(dateString) {
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
 }
 
+function formatUserFacingError(errStr) {
+  if (!errStr || typeof errStr !== 'string') return 'AI services are temporarily unavailable. Please try again later.'
+  const lower = errStr.toLowerCase()
+  if (lower.includes('ai services') || lower.includes('timed out') || lower.includes('timeout') || lower.includes('low') || lower.includes('unavailable') || lower.includes('busy')) {
+    return 'AI services are temporarily unavailable. Please try again later.'
+  }
+  if (
+    lower.includes('psycopg2') ||
+    lower.includes('uniqueviolation') ||
+    lower.includes('duplicate key') ||
+    lower.includes('sql') ||
+    lower.includes('session') ||
+    lower.includes('transaction') ||
+    lower.includes('flush') ||
+    lower.includes('constraint') ||
+    lower.includes('traceback') ||
+    lower.includes('internal server error')
+  ) {
+    return 'A server processing error occurred while saving extracted data. Please try extracting again.'
+  }
+  return errStr.startsWith('Extraction failed:') ? errStr : `Extraction failed: ${errStr}`
+}
+
 export default function ProjectOverviewPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -387,9 +410,7 @@ export default function ProjectOverviewPage() {
 
             const completedCount = statusRes.cards_generated || 0
             const totalCount = statusRes.questions_count || 1
-            const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('unavailable') || statusRes.error?.includes('timed out') || statusRes.error?.includes('low')
-              ? 'AI services are temporarily unavailable. Please try again later.'
-              : (statusRes.error || 'AI services are temporarily unavailable. Please try again later.')
+            const msg = formatUserFacingError(statusRes.error)
 
             setAiFallbackTitle('PARTIAL / FAILED')
             setAiFallbackBadge(`${completedCount} / ${totalCount} Documents Completed`)
@@ -406,9 +427,7 @@ export default function ProjectOverviewPage() {
             setShowExtractModal(false)
 
             const totalCount = statusRes.questions_count || 1
-            const msg = statusRes.error?.includes('AI services') || statusRes.error?.includes('low') || statusRes.error?.includes('unavailable') || statusRes.error?.includes('timed out')
-              ? 'AI services are temporarily unavailable. Please try again later.'
-              : (statusRes.error ? `Extraction failed: ${statusRes.error}` : 'AI services are temporarily unavailable. Please try again later.')
+            const msg = formatUserFacingError(statusRes.error)
 
             setAiFallbackTitle('FAILED')
             setAiFallbackBadge(`0 / ${totalCount} Documents Completed`)
@@ -695,9 +714,7 @@ export default function ProjectOverviewPage() {
               showToast(`✓ Extracted data for "${source.file_name}"`)
               setShowExtractCompleteModal(true)
             } else if (current.processing_status === 'failed') {
-              const msg = current.processing_error?.includes('AI') || current.processing_error?.includes('timed out')
-                ? 'It might take some time, AI services are temporarily low.'
-                : `Extraction failed: ${current.processing_error || 'Unknown error'}`
+              const msg = formatUserFacingError(current.processing_error)
               setAiFallbackErrorMsg(msg)
               setAiFallbackModalOpen(true)
             }
@@ -715,9 +732,7 @@ export default function ProjectOverviewPage() {
       setExtractModalOpen(false)
       setShowExtractModal(false)
       setRowExtractingId(null)
-      const msg = err.message?.includes('AI services') || err.status === 503
-        ? 'It might take some time, AI services are temporarily low.'
-        : `Extraction failed: ${err.message}`
+      const msg = formatUserFacingError(err.message)
       setAiFallbackErrorMsg(msg)
       setAiFallbackModalOpen(true)
     }
@@ -793,9 +808,7 @@ export default function ProjectOverviewPage() {
         if (isConcurrency) {
           showError(err.message)
         } else {
-          const msg = err.message?.includes('AI services') || err.status === 503
-            ? 'It might take some time, AI services are temporarily low.'
-            : `Extraction failed: ${err.message}`
+          const msg = formatUserFacingError(err.message)
           setAiFallbackErrorMsg(msg)
           setAiFallbackModalOpen(true)
         }

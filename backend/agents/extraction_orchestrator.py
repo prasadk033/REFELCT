@@ -68,9 +68,14 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     db.commit()
 
                 if needs_osm_extraction:
-                    _perform_osm_analysis(db, project_id, project.site_url, osm_source)
+                    try:
+                        _perform_osm_analysis(db, project_id, project.site_url, osm_source)
+                    except Exception as osm_err:
+                        logger.warning(f"[{project_id}] Non-blocking OSM setup error: {osm_err}")
+                        db.rollback()
             except Exception as e:
                 logger.error(f"[{project_id}] OSM Virtual Source setup failed: {e}")
+                db.rollback()
         # ---------------------------------------------
 
         # Target specific sources if provided, otherwise all pending
@@ -172,7 +177,7 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                 logger.warning(f"Extraction error for text document {source.file_name}: {e}")
                 _update_job(
                     db, job_id, "extracting",
-                    step=f"{source.file_name} failed: {str(e)} ({completed_count} / {total_count} Documents Completed)",
+                    step=f"{source.file_name} failed ({completed_count} / {total_count} Documents Completed)",
                     cards_generated=completed_count,
                     questions_count=total_count
                 )
@@ -243,10 +248,16 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                             break
                         _update_job(
                             db, job_id, "extracting",
-                            step=f"{source.file_name} failed: {str(e)} ({completed_count} / {total_count} Documents Completed)",
+                            step=f"{source.file_name} failed ({completed_count} / {total_count} Documents Completed)",
                             cards_generated=completed_count,
                             questions_count=total_count
                         )
+                    except Exception as commit_err:
+                        logger.warning(f"Error handling vision doc error: {commit_err}")
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
 
         db.commit()
 
@@ -273,6 +284,10 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
                     _perform_osm_analysis(db, project_id, project.site_url, active_osm)
             except Exception as osm_retry_err:
                 logger.warning(f"[{project_id}] Post-extraction OSM retry error: {osm_retry_err}")
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
 
         elapsed = time.time() - pipeline_start
 
@@ -309,8 +324,11 @@ def run_extraction_pipeline(project_id: str, source_ids: List[str], job_id: str,
 
     except Exception as e:
         logger.error(f"[{project_id}] Extraction pipeline failed: {e}", exc_info=True)
-        db.rollback()
-        _update_job(db, job_id, "failed", "Error", str(e))
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        _update_job(db, job_id, "failed", "Error", _sanitize_error_message(e))
     finally:
         db.close()
 
@@ -413,6 +431,22 @@ def _extract_source_text_background(
         raise e
 
 
+def _sanitize_error_message(err) -> Optional[str]:
+    """Ensure database internals, SQL snippets, or tracebacks never leak to user."""
+    if not err:
+        return None
+    err_str = str(err)
+    lower = err_str.lower()
+    if any(k in lower for k in [
+        "psycopg2", "uniqueviolation", "sql:", "constraint", "transaction has been rolled back",
+        "flush", "traceback", "syntax error", "relation", "foreignkey", "column", "select ", "insert ", "update "
+    ]):
+        return "A server processing error occurred while saving extracted data. Please try extracting again."
+    if "ai services are temporarily unavailable" in lower or "timed out" in lower or "timeout" in lower:
+        return "AI services are temporarily busy. Please try extracting again."
+    return err_str
+
+
 def _update_job(
     db, job_id: str, status: str, step: str, error: str = None, document_names: str = None,
     cards_generated: int = None, questions_count: int = None
@@ -422,7 +456,7 @@ def _update_job(
     if job:
         job.status = status
         job.current_step = step
-        job.error = error
+        job.error = _sanitize_error_message(error)
         if document_names is not None:
             job.document_names = document_names
         if cards_generated is not None:
@@ -445,16 +479,27 @@ def _perform_osm_analysis(db, project_id: str, site_url: str, osm_source: Source
         geo_res = osm_service.geocode_location(site_url)
         if geo_res:
             lat, lon, addr = geo_res
+            # Unique constraint on site_analysis_cache is uq_project_radius_provider (project_id, radius, provider)
             cached_osm = db.query(SiteAnalysisCache).filter(
                 SiteAnalysisCache.project_id == project_id,
-                SiteAnalysisCache.provider == "openstreetmap",
-                SiteAnalysisCache.latitude == str(lat),
-                SiteAnalysisCache.longitude == str(lon)
+                SiteAnalysisCache.radius == 500,
+                SiteAnalysisCache.provider == "openstreetmap"
             ).first()
 
             structured_analysis = None
             if cached_osm:
-                structured_analysis = cached_osm.structured_analysis
+                # If cached coordinates match and structured analysis is present, reuse it
+                if cached_osm.latitude == str(lat) and cached_osm.longitude == str(lon) and cached_osm.structured_analysis:
+                    structured_analysis = cached_osm.structured_analysis
+                else:
+                    # Query Overpass and update existing cache row in place
+                    raw_osm = osm_service.query_overpass(lat, lon, radius=500)
+                    if raw_osm.get("elements"):
+                        structured_analysis = osm_service.analyze_site_context(raw_osm, lat, lon, radius=500, address=addr)
+                        cached_osm.latitude = str(lat)
+                        cached_osm.longitude = str(lon)
+                        cached_osm.structured_analysis = structured_analysis
+                        cached_osm.fetched_at = datetime.now(timezone.utc)
             else:
                 raw_osm = osm_service.query_overpass(lat, lon, radius=500)
                 if raw_osm.get("elements"):
@@ -465,7 +510,10 @@ def _perform_osm_analysis(db, project_id: str, site_url: str, osm_source: Source
                         latitude=str(lat),
                         longitude=str(lon),
                         radius=500,
-                        structured_analysis=structured_analysis
+                        provider="openstreetmap",
+                        structured_analysis=structured_analysis,
+                        fetched_at=datetime.now(timezone.utc),
+                        created_at=datetime.now(timezone.utc)
                     )
                     db.add(new_cache)
 
@@ -480,14 +528,30 @@ def _perform_osm_analysis(db, project_id: str, site_url: str, osm_source: Source
             else:
                 osm_source.extracted_text = "Unable to retrieve site analysis elements from OpenStreetMap."
                 osm_source.processing_status = "failed"
+                osm_source.processing_error = "Unable to retrieve site analysis elements from OpenStreetMap."
         else:
             osm_source.extracted_text = f"Unable to geocode location: {site_url}"
             osm_source.processing_status = "failed"
+            osm_source.processing_error = f"Unable to geocode location: {site_url}"
         db.commit()
     except Exception as e:
-        logger.error(f"[{project_id}] OSM Virtual Source failed: {e}")
-        osm_source.processing_status = "failed"
-        osm_source.extracted_text = f"Failed to generate OSM site analysis: {e}"
-        db.commit()
+        logger.error(f"[{project_id}] OSM Virtual Source failed: {e}", exc_info=True)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        try:
+            safe_source = db.query(Source).filter(Source.id == osm_source.id).first() if osm_source else None
+            if safe_source:
+                safe_source.processing_status = "failed"
+                safe_source.processing_error = "OpenStreetMap site analysis temporarily unavailable."
+                safe_source.extracted_text = "Failed to generate OSM site analysis."
+                db.commit()
+        except Exception as inner_err:
+            logger.warning(f"[{project_id}] Failed to save OSM failure state: {inner_err}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
     return False
 
