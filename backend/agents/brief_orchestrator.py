@@ -441,6 +441,10 @@ Return ONLY JSON list.
     except Exception as e:
         logger.error(f"[{project_id}] Brief pipeline failed: {e}", exc_info=True)
         try:
+            db.rollback()
+        except Exception:
+            pass
+        try:
             # Revert any pending batch source version assignments so they stay in pending batch!
             if 'pending_batch' in locals():
                 for s in pending_batch:
@@ -458,7 +462,10 @@ Return ONLY JSON list.
             db.commit()
         except Exception as rollback_err:
             logger.error(f"Rollback error: {rollback_err}")
-            db.rollback()
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
         from llm.qwen_health import AI_UNAVAILABLE_MESSAGE
         err_str = str(e).lower()
@@ -470,13 +477,27 @@ Return ONLY JSON list.
             friendly_err = AI_UNAVAILABLE_MESSAGE
             step_status = "Service Unavailable"
         else:
-            friendly_err = str(e)
+            friendly_err = _sanitize_brief_error(str(e))
             step_status = "Error"
 
         _update_job(db, job_id, "failed", step_status, friendly_err)
 
     finally:
         db.close()
+
+
+def _sanitize_brief_error(err) -> str:
+    """Ensure raw SQL, psycopg2, or database internals never leak to user."""
+    if not err:
+        return "An error occurred during Brief synthesis."
+    err_str = str(err)
+    lower = err_str.lower()
+    if any(k in lower for k in [
+        "psycopg2", "uniqueviolation", "sql:", "constraint", "transaction has been rolled back",
+        "flush", "traceback", "syntax error", "relation", "foreignkey", "column"
+    ]):
+        return "A server processing error occurred while saving Brief data. Please try generating again."
+    return err_str
 
 
 def _update_job(
@@ -489,7 +510,7 @@ def _update_job(
     if job:
         job.status = status
         job.current_step = step
-        job.error = error
+        job.error = _sanitize_brief_error(error) if error else None
         if cards_generated is not None:
             job.cards_generated = cards_generated
         if questions_count is not None:

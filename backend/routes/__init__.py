@@ -213,10 +213,13 @@ def delete_project(
     project = _get_user_project(db, project_id, user.id)
     project_name = project.name
 
-    # 1. Break self-referencing foreign keys on briefs so delete cascade won't violate FK constraints
-    from db import Brief, SiteAnalysisCache
+    # 1. Break self-referencing foreign keys on briefs and program versions so delete cascade won't violate FK constraints
+    from db import Brief, SiteAnalysisCache, ProgramPublishedVersion
     db.query(Brief).filter(Brief.project_id == project_id).update(
         {"previous_version_id": None}, synchronize_session=False
+    )
+    db.query(ProgramPublishedVersion).filter(ProgramPublishedVersion.project_id == project_id).update(
+        {"previous_program_version_id": None}, synchronize_session=False
     )
     db.query(SiteAnalysisCache).filter(SiteAnalysisCache.project_id == project_id).delete(
         synchronize_session=False

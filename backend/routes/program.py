@@ -106,11 +106,14 @@ def _release_generation_lock(project_id: str):
 def _sanitize_program_error(err: Exception) -> str:
     """Format technical exceptions into clear, professional, user-friendly messages."""
     err_str = str(err)
+    lower = err_str.lower()
+    if any(k in lower for k in ["psycopg2", "uniqueviolation", "sql:", "constraint", "transaction has been rolled back", "flush", "traceback", "relation", "foreignkey"]):
+        return "A server processing error occurred while saving Program items. Please try generating again."
     if "ContextWindowExceededError" in err_str or "maximum context length" in err_str:
         return "The project has extensive source documents and Brief cards that exceeded single-pass capacity. The system has adjusted processing limits—please try generating again."
-    if "timeout" in err_str.lower() or "timed out" in err_str.lower():
+    if "timeout" in lower or "timed out" in lower:
         return "AI synthesis timed out while processing documents. Please try generating again."
-    if "rate limit" in err_str.lower() or "overloaded" in err_str.lower():
+    if "rate limit" in lower or "overloaded" in lower:
         return "The AI service is temporarily busy. Please wait a moment and try again."
     for marker in ["litellm.", "OpenAIException", "BadRequestError", "Traceback", "parameter="]:
         if marker in err_str:
@@ -1194,10 +1197,10 @@ def _run_program_generation(
             source_documents=source_docs,
         )
 
-        # Clear existing working program items and questions (preserves all published versions)
-        db.query(ProgramQuestion).filter(ProgramQuestion.project_id == project_id).delete()
-        db.query(ProgramItem).filter(ProgramItem.project_id == project_id).delete()
-        db.commit()
+        # Clear existing working program items and questions atomically (preserves all published versions)
+        # We do NOT commit here; deletion and insertion are executed in a single atomic transaction
+        db.query(ProgramQuestion).filter(ProgramQuestion.project_id == project_id).delete(synchronize_session=False)
+        db.query(ProgramItem).filter(ProgramItem.project_id == project_id).delete(synchronize_session=False)
 
         # Insert new items
         item_name_to_id = {}

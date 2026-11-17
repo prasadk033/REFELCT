@@ -171,7 +171,7 @@ def analyze_brief(
             logger.error(f"Failed to dispatch job {job_id} to distributed Redis worker: {e}")
             job.status = "failed"
             job.current_step = "Queue Error"
-            job.error_message = f"Distributed worker queue unavailable: {str(e)}"
+            job.error = f"Distributed worker queue unavailable: {str(e)}"
             db.commit()
             raise HTTPException(
                 status_code=503,

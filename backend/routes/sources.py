@@ -330,6 +330,12 @@ def _check_active_extraction(db: Session, project_id: str):
             logger.warning(f"Auto-resolving stale extraction job {aj.id} as paused (last updated {aj.updated_at})")
             aj.status = "paused"
             aj.error = "Extraction paused due to timeout/restart"
+            # Also release any sources stuck in extracting status for this project
+            db.query(Source).filter(
+                Source.project_id == project_id,
+                Source.version.is_(None),
+                Source.processing_status == "extracting"
+            ).update({"processing_status": "paused", "processing_error": "Extraction paused due to timeout/restart"}, synchronize_session=False)
             db.commit()
         else:
             raise HTTPException(
@@ -414,11 +420,22 @@ def extract_all_sources(
     db.add(job)
     db.commit()
 
+    # Clear any stale Redis cancellation flag before starting new extraction
+    try:
+        from tasks.queue import get_redis_connection
+        r = get_redis_connection()
+        r.delete(f"reflect:cancelled:{project_id}")
+    except Exception:
+        pass
+
     source_ids = [s.id for s in sources_to_extract]
     try:
         enqueue_extraction_job(project_id, source_ids, job_id, user.id)
     except Exception as e:
         logger.error(f"Failed to enqueue extraction job: {e}")
+        for s in sources_to_extract:
+            s.processing_status = "failed"
+            s.processing_error = "Could not start extraction task"
         job.status = "failed"
         job.error = "Could not start extraction task"
         db.commit()
@@ -480,6 +497,14 @@ def reparse_single_source(
     )
     db.add(job)
     db.commit()
+
+    # Clear any stale Redis cancellation flag before starting re-extraction
+    try:
+        from tasks.queue import get_redis_connection
+        r = get_redis_connection()
+        r.delete(f"reflect:cancelled:{project_id}")
+    except Exception:
+        pass
 
     try:
         enqueue_extraction_job(project_id, [source.id], job_id, user.id)

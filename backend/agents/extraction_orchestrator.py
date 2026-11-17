@@ -382,6 +382,13 @@ def _extract_source_text_background(
             raise
         except Exception as cb_err:
             logger.warning(f"Error updating page checkpoint for {source.file_name} page {page_num}: {cb_err}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            from sqlalchemy.orm.exc import ObjectDeletedError
+            if isinstance(cb_err, ObjectDeletedError) or is_extraction_cancelled(source_id=source.id, file_path=abs_path):
+                raise RuntimeError(f"Extraction halted: source {source.id} was deleted or cancelled")
 
     try:
         is_image_doc = source.file_type == 'image' or bool(source.contains_images)
@@ -429,6 +436,12 @@ def _extract_source_text_background(
         source.approval_status = "pending_review"
         db.commit()
         raise e
+    finally:
+        if file_store.storage_type == "s3" and abs_path:
+            try:
+                file_store.cleanup_temp_file(abs_path)
+            except Exception:
+                pass
 
 
 def _sanitize_error_message(err) -> Optional[str]:

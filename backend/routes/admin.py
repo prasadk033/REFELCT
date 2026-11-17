@@ -847,9 +847,12 @@ def delete_admin_project(
     project_name = project.name
     owner_id = project.user_id
 
-    # 1. Break self-referencing foreign keys on briefs so cascade delete won't deadlock
+    # 1. Break self-referencing foreign keys on briefs and program versions so cascade delete won't deadlock
     db.query(Brief).filter(Brief.project_id == project_id).update(
         {"previous_version_id": None}, synchronize_session=False
+    )
+    db.query(ProgramPublishedVersion).filter(ProgramPublishedVersion.project_id == project_id).update(
+        {"previous_program_version_id": None}, synchronize_session=False
     )
     db.query(SiteAnalysisCache).filter(SiteAnalysisCache.project_id == project_id).delete(
         synchronize_session=False

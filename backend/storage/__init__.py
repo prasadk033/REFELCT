@@ -144,6 +144,19 @@ class FileStore:
             local_path = UPLOADS_BASE / storage_path
             return local_path.exists()
 
+    def cleanup_temp_file(self, file_path: Optional[str]) -> bool:
+        """Safely clean up downloaded S3 temp file from local disk."""
+        if not file_path:
+            return False
+        try:
+            p = Path(file_path)
+            if p.exists() and "tmp" in p.name.lower():
+                p.unlink(missing_ok=True)
+                return True
+        except Exception as e:
+            logger.debug(f"Could not remove temp file {file_path}: {e}")
+        return False
+
     def delete_file(self, storage_path: str) -> bool:
         """Delete a file from storage."""
         if self.storage_type == "s3":

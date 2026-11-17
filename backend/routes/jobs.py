@@ -42,16 +42,30 @@ def get_unacknowledged_jobs(
         .all()
     )
 
+    # Batch load projects to avoid N+1 queries
+    project_ids = list({j.project_id for j in jobs if j.project_id})
+    project_map = {}
+    if project_ids:
+        projects = db.query(Project.id, Project.name).filter(Project.id.in_(project_ids)).all()
+        project_map = {p[0]: p[1] for p in projects}
+
+    def _sanitize_error(err_str: Optional[str]) -> Optional[str]:
+        if not err_str:
+            return None
+        lower = err_str.lower()
+        if any(k in lower for k in ["psycopg2", "uniqueviolation", "sql:", "constraint", "transaction has been rolled back", "flush", "traceback"]):
+            return "A server processing error occurred while saving data. Please try again."
+        return err_str
+
     results = []
     for j in jobs:
-        proj = db.query(Project).filter(Project.id == j.project_id).first()
         results.append({
             "id": j.id,
             "project_id": j.project_id,
-            "project_name": proj.name if proj else "Project",
+            "project_name": project_map.get(j.project_id, "Project"),
             "status": j.status,
             "current_step": j.current_step,
-            "error": j.error,
+            "error": _sanitize_error(j.error),
             "cards_generated": j.cards_generated or 0,
             "questions_count": j.questions_count or 0,
             "document_names": j.document_names or "",
