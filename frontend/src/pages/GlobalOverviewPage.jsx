@@ -167,71 +167,68 @@ export default function GlobalOverviewPage() {
                 </svg>
               </div>
               <h3>No projects created yet</h3>
-              <p>Create your first project to start analyzing briefs and organizing architectural knowledge.</p>
-              <button className="gov-btn-new" onClick={() => setShowCreateModal(true)}>
-                + Create Project
-              </button>
+              <p>Get started by clicking <strong>New Project</strong> in the top header to begin organizing architectural knowledge.</p>
             </div>
           ) : (
             <div className="gov-projects-list">
-                  {projects.map(p => (
-                    <div key={p.id} className="gov-project-row" onClick={() => navigate(`/projects/${p.id}`)}>
+              {projects.map(p => (
+                <div key={p.id} className="gov-project-row" onClick={() => navigate(`/projects/${p.id}`)}>
 
-                      <div className="gov-project-thumb">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="22" height="22">
-                          <path d="M3 21h18M5 21V7l8-4v18M13 11l6 3v7" />
-                        </svg>
-                      </div>
+                  <div className="gov-project-thumb">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="22" height="22">
+                      <path d="M3 21h18M5 21V7l8-4v18M13 11l6 3v7" />
+                    </svg>
+                  </div>
 
-                      <div className="gov-project-details">
-                        <h3 className="gov-project-name">{p.name}</h3>
-                        <div className="gov-project-meta">
-                          <span>{p.project_type || 'Residential Project'}</span>
-                          {p.location && <span>• {p.location}</span>}
-                          {p.client && <span>• Client: {p.client}</span>}
-                        </div>
-                      </div>
-
-                      <div className="gov-project-stats">
-                        <div className="gov-stat-item">
-                          <strong className="gov-stat-val">{p.card_count || 0}</strong>
-                          <span className="gov-stat-lbl">Cards</span>
-                        </div>
-                      </div>
-
-                      <div className="gov-project-action" onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button className="gov-btn-open" onClick={() => navigate(`/projects/${p.id}`)}>
-                          Open
-                        </button>
-                        <button
-                          type="button"
-                          title="Delete Project"
-                          style={{
-                            background: 'transparent',
-                            border: '1px solid #fee2e2',
-                            color: '#ef4444',
-                            borderRadius: '6px',
-                            padding: '6px 10px',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.15s'
-                          }}
-                          onClick={(e) => handleDeleteProject(e, p.id, p.name)}
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="13" height="13">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          </svg>
-                        </button>
-                      </div>
-
+                  <div className="gov-project-details">
+                    <h3 className="gov-project-name">{p.name}</h3>
+                    <div className="gov-project-meta">
+                      <span>{p.project_type || 'Residential Project'}</span>
+                      {p.location && <span>• {p.location}</span>}
+                      {p.client && <span>• Client: {p.client}</span>}
                     </div>
-                  ))}
+                  </div>
+
+                  <div className="gov-project-stats">
+                    <div className="gov-stat-item">
+                      <strong className="gov-stat-val">{p.card_count || 0}</strong>
+                      <span className="gov-stat-lbl">Cards</span>
+                    </div>
+                  </div>
+
+                  <div className="gov-project-action" onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button className="gov-btn-open" onClick={() => navigate(`/projects/${p.id}`)}>
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      title="Delete Project"
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid #fee2e2',
+                        color: '#ef4444',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.15s'
+                      }}
+                      onClick={(e) => handleDeleteProject(e, p.id, p.name)}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="13" height="13">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
+                  </div>
+
                 </div>
-              )}
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Tip Box */}
@@ -244,9 +241,6 @@ export default function GlobalOverviewPage() {
             <p className="gov-tip-text">
               Upload all available project documents (Briefs, Transcripts, Schedules) to get comprehensive document-wise Brief Cards.
             </p>
-            <button className="gov-btn-learn-more" onClick={() => setShowCreateModal(true)}>
-              + Create Project
-            </button>
           </div>
         </section>
 

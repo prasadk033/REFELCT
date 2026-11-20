@@ -133,6 +133,19 @@ async def upload_source(
     t_start = time.time()
 
     safe_filename = Path(file.filename).name.replace("..", "").replace("/", "").replace("\\", "").strip() or "document"
+
+    # Reject duplicate uploads for this project
+    existing_duplicate = db.query(Source).filter(
+        Source.project_id == project_id,
+        Source.file_name == safe_filename,
+        Source.file_size == file_size
+    ).first()
+    if existing_duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This document ('{safe_filename}') has already been uploaded to this project. Please upload a new document."
+        )
+
     source_id = str(uuid.uuid4())
 
     # Save to storage
@@ -749,11 +762,13 @@ def cancel_sources_extraction(
     except Exception as re:
         logger.warning(f"Could not set Redis cancellation flag for project {project_id}: {re}")
 
-    # 2. In-memory cancellation registry
+    # 2. In-memory and Redis cancellation registry
     sources = db.query(Source).filter(Source.project_id == project_id).all()
     for s in sources:
         abs_p = file_store.get_absolute_path(s.storage_path) if s.storage_path else None
-        cancel_extraction(source_id=s.id, file_path=abs_p)
+        cancel_extraction(source_id=s.id, file_path=abs_p, project_id=project_id)
+
+    print(f"\n[REFLECT] ⏹ Extraction Stop/Cancel received for project {project_id}\n")
 
     # 3. Finalize any active extraction processing jobs cleanly
     active_jobs = db.query(ProcessingJob).filter(

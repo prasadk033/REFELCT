@@ -70,6 +70,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('reflect_user')
     setToken(null)
     setUser(null)
+    window.location.href = '/'
   }
 
   function dismissAiNotice() {

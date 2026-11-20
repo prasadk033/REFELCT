@@ -199,12 +199,13 @@ export default function GeneratingProgressModal({
                 color: '#ef4444',
                 background: '#ffffff',
                 border: '1px solid #fecaca',
-                borderRadius: '8px'
+                borderRadius: '8px',
+                cursor: 'pointer'
               }}
               onClick={onCancel}
-              title="Cancel the generation task"
+              title="Stop the generation task"
             >
-              ✕ Cancel Task
+              ⏹ Stop Generation
             </button>
           )}
         </div>

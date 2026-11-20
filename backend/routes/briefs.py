@@ -146,6 +146,15 @@ def analyze_brief(
 
     logger.info(f"Starting Brief analysis for project {project_id}, job {job_id} (idempotency key {idempotency_key})")
 
+    # Clear any prior cancellation flags before starting new analysis
+    try:
+        from tasks.queue import get_redis_connection
+        r = get_redis_connection()
+        r.delete(f"reflect:cancelled:brief:{project_id}")
+        r.delete(f"reflect:cancelled:{project_id}")
+    except Exception:
+        pass
+
     # Record activity
     from db import log_activity
     doc_names = ", ".join([s.file_name for s in sources])
@@ -215,6 +224,16 @@ def cancel_brief_job(
     """Cancel any running/queued brief processing job for this project."""
     _get_user_project(db, project_id, user.id)
 
+    # 1. Set Redis cancellation flags so worker and orchestrator stop immediately
+    try:
+        from tasks.queue import get_redis_connection
+        r = get_redis_connection()
+        r.set(f"reflect:cancelled:brief:{project_id}", "1", ex=300)
+        r.set(f"reflect:cancelled:{project_id}", "1", ex=300)
+    except Exception as e:
+        logger.warning(f"Could not set Redis cancellation flag for brief: {e}")
+
+    # 2. Mark active jobs in DB as cancelled
     active_jobs = (
         db.query(ProcessingJob)
         .filter(
@@ -227,6 +246,8 @@ def cancel_brief_job(
         aj.status = "cancelled"
         aj.current_step = "Cancelled by user"
     db.commit()
+
+    print(f"\n[REFLECT] ⏹ Stop/Cancel Brief Generation received for project {project_id} ({len(active_jobs)} active jobs cancelled)\n")
     logger.info(f"User cancelled {len(active_jobs)} active brief jobs for project {project_id}")
     return {"message": "Active processing job cancelled", "cancelled_count": len(active_jobs)}
 

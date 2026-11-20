@@ -58,6 +58,7 @@ export default function ProgramPage() {
   const [showUnpublishedDraftModal, setShowUnpublishedDraftModal] = useState(false)
   const [generatingCounts, setGeneratingCounts] = useState({ cards: 0, sources: 0 })
   const pollingRef = useRef(null)
+  const urlTriggerHandledRef = useRef(false)
 
   function cleanupPolling() {
     if (pollingRef.current) {
@@ -66,6 +67,17 @@ export default function ProgramPage() {
       if (pollingRef.current.pollInterval) clearInterval(pollingRef.current.pollInterval)
       pollingRef.current = null
     }
+  }
+
+  async function handleCancelGeneration() {
+    cleanupPolling()
+    setIsGenerating(false)
+    setShowGenModal(false)
+    try {
+      await fetch(`/api/projects/${projectId}/program/status/reset`, { credentials: 'include', method: 'POST' })
+    } catch (e) { }
+    showToastMsg('Program generation cancelled')
+    loadData()
   }
 
   useEffect(() => {
@@ -115,13 +127,14 @@ export default function ProgramPage() {
 
   // Handle URL query trigger for generation (e.g. from Brief Publish handoff)
   useEffect(() => {
-    if (searchParams.get('generate') === 'true' && summary && !isGenerating) {
+    if (searchParams.get('generate') === 'true' && summary && !isGenerating && !urlTriggerHandledRef.current) {
+      urlTriggerHandledRef.current = true
       const sourceBriefVersionId = searchParams.get('sourceBriefVersionId')
       // Remove query param to prevent re-triggering
       setSearchParams({}, { replace: true })
       handleGenerateClick(sourceBriefVersionId)
     }
-  }, [searchParams, summary])
+  }, [searchParams, summary, isGenerating])
 
   async function loadData() {
     setLoading(true)
@@ -268,6 +281,9 @@ export default function ProgramPage() {
         ])
 
         const genStatus = updatedSum?.generation_status?.status
+        if (updatedSum?.generation_status?.step) {
+          setGenerationStep(updatedSum.generation_status.step)
+        }
 
         if (genStatus === 'completed') {
           cleanupPolling()
@@ -706,8 +722,8 @@ export default function ProgramPage() {
                   {summary?.active_cards_count !== undefined
                     ? `Active workspace: ${summary.active_cards_count} Brief cards (accepted & pending)${summary.sources_count ? ` · ${summary.sources_count} source documents` : ''}`
                     : summary?.can_generate
-                    ? 'Available project data ready for Program generation.'
-                    : 'Upload documents or add Brief cards to generate the Program.'}
+                      ? 'Available project data ready for Program generation.'
+                      : 'Upload documents or add Brief cards to generate the Program.'}
                 </span>
               ) : (
                 <span>
@@ -936,39 +952,29 @@ export default function ProgramPage() {
                     background: 'linear-gradient(90deg, #2563eb, #3b82f6)',
                     borderRadius: '999px',
                     width: `${Math.min(95, Math.max(10, Math.round((genElapsedSeconds / 120) * 90)))}%`,
-                    transition: 'width 0.4s ease',
+                    transition: 'width 0.6s ease',
                   }}
                 />
               </div>
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                {genElapsedSeconds > 180 && (
-                  <button
-                    type="button"
-                    className="prog-btn prog-btn-outline"
-                    onClick={async () => {
-                      cleanupPolling()
-                      setIsGenerating(false)
-                      setShowGenModal(false)
-                      try {
-                        await fetch(`/api/projects/${projectId}/program/status/reset`, { credentials: 'include', method: 'POST' })
-                      } catch (e) {}
-                      showToastMsg('Generation dismissed')
-                      loadData()
-                    }}
-                    style={{
-                      padding: '8px 18px',
-                      borderRadius: '8px',
-                      fontSize: '12.5px',
-                      color: '#ef4444',
-                      borderColor: '#fca5a5',
-                      fontWeight: 600,
-                    }}
-                  >
-                    Reset & Dismiss
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="prog-btn prog-btn-outline"
+                  onClick={handleCancelGeneration}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    color: '#ef4444',
+                    borderColor: '#fca5a5',
+                    fontWeight: 600,
+                  }}
+                  title="Safely stop program synthesis and reset status"
+                >
+                  Stop Generation
+                </button>
                 <button
                   type="button"
                   className="prog-btn prog-btn-outline"

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   getProject,
   listSources,
@@ -8,6 +8,7 @@ import {
   approveSource,
   approveAllSources,
   analyzeBrief,
+  cancelBrief,
   getBriefStatus,
   listCards,
   checkAiHealth,
@@ -22,6 +23,17 @@ import { calculateBriefEstimate } from '../utils/estimate.js'
 export default function ExtractionReviewPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const targetSourceId = searchParams.get('sourceId')
+  const initialBatchParam = searchParams.get('batch')
+
+  const [activeBatchTab, setActiveBatchTab] = useState(() => {
+    if (initialBatchParam === '0') return 'batch-0'
+    if (initialBatchParam === '1') return 'batch-1'
+    if (initialBatchParam === 'pending') return 'pending'
+    if (initialBatchParam && initialBatchParam.startsWith('batch-')) return initialBatchParam
+    return 'all'
+  })
 
   const [project, setProject] = useState(null)
   const [sources, setSources] = useState([])
@@ -124,12 +136,32 @@ export default function ExtractionReviewPage() {
       setSources(allSrc)
 
       if (allSrc.length > 0) {
-        const pendingList = allSrc.filter(s => s.version === null || s.version === undefined)
-        const candidateList = pendingList.length > 0 ? pendingList : allSrc
-        const current = candidateList.find(s => s.id === selectedSourceId) || candidateList[0]
-        setSelectedSourceId(current.id)
-        setEditingText(current.extracted_text || '')
-        setIsSaved(true)
+        let current = null
+        if (targetSourceId) {
+          current = allSrc.find(s => s.id === targetSourceId)
+        }
+        if (!current && initialBatchParam) {
+          if (initialBatchParam === 'pending') {
+            current = allSrc.find(s => s.version === null || s.version === undefined)
+          } else {
+            const vNum = parseInt(initialBatchParam, 10)
+            current = allSrc.find(s => s.version === vNum)
+          }
+        }
+        if (!current) {
+          const pendingList = allSrc.filter(s => s.version === null || s.version === undefined)
+          const candidateList = pendingList.length > 0 ? pendingList : allSrc
+          current = candidateList.find(s => s.id === selectedSourceId) || candidateList[0]
+        }
+        if (current) {
+          setSelectedSourceId(current.id)
+          setEditingText(current.extracted_text || '')
+          setIsSaved(true)
+          if (initialBatchParam) {
+            const bKey = current.version === 0 ? 'batch-0' : (current.version === 1 ? 'batch-1' : (current.version !== null && current.version !== undefined ? `batch-${current.version}` : 'pending'))
+            setActiveBatchTab(bKey)
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to load extraction review data:', err)
@@ -385,8 +417,59 @@ export default function ExtractionReviewPage() {
     }
   }
 
+  async function handleCancelAnalysis() {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
+    try {
+      await cancelBrief(projectId)
+      showToast('Brief generation cancelled.')
+    } catch (err) {
+      console.warn('Cancel error:', err)
+    } finally {
+      setAnalyzing(false)
+      loadData().catch(() => {})
+    }
+  }
 
-  // Categorize sources: Focus on the current pending batch if pending documents exist
+  // Batch separation for Extraction Review (BUG-006)
+  const batchMap = new Map()
+  sources.forEach(s => {
+    let batchKey = 'pending'
+    let batchLabel = 'Pending Review (Current Batch)'
+    let shortLabel = 'Pending'
+    let batchOrder = -1
+
+    if (s.version === 0) {
+      batchKey = 'batch-0'
+      batchLabel = 'Batch 1 (Initial Brief)'
+      shortLabel = 'Batch 1'
+      batchOrder = 0
+    } else if (s.version === 1) {
+      batchKey = 'batch-1'
+      batchLabel = 'Batch 2 (Addendum)'
+      shortLabel = 'Batch 2'
+      batchOrder = 1
+    } else if (typeof s.version === 'number') {
+      batchKey = `batch-${s.version}`
+      batchLabel = `Batch ${s.version + 1}`
+      shortLabel = `Batch ${s.version + 1}`
+      batchOrder = s.version
+    }
+
+    if (!batchMap.has(batchKey)) {
+      batchMap.set(batchKey, { key: batchKey, label: batchLabel, shortLabel, order: batchOrder, sources: [] })
+    }
+    batchMap.get(batchKey).sources.push(s)
+  })
+
+  const sortedBatches = Array.from(batchMap.values()).sort((a, b) => a.order - b.order)
+  const visibleBatches = activeBatchTab === 'all'
+    ? sortedBatches
+    : sortedBatches.filter(b => b.key === activeBatchTab)
+
+  // Focus on pending sources if any, otherwise all sources
   const pendingSources = sources.filter(s => s.version === null || s.version === undefined)
   const displaySources = pendingSources.length > 0 ? pendingSources : sources
 
@@ -497,76 +580,112 @@ export default function ExtractionReviewPage() {
             <p>{pendingSources.length > 0 ? 'Select a source to review and approve its extracted text.' : 'All project documents are finalized and synthesized into Brief Cards.'}</p>
           </div>
 
-          <div className="extract-sidebar-groups">
-            {/* Documents Group */}
-            {documentSources.length > 0 && (
-              <div className="extract-group-block">
-                <div className="extract-group-title">
-                  <span className="extract-group-icon">📄</span>
-                  <span>Documents ({documentSources.length})</span>
-                </div>
-                <div className="extract-source-list">
-                  {documentSources.map((doc, idx) => {
-                    const hasExtractedText = Boolean(doc.extracted_text && doc.extracted_text.trim())
-                    const isApproved = (doc.approval_status === 'approved' || doc.processing_status === 'approved' || doc.processing_status === 'completed') && hasExtractedText
-                    const isSelected = doc.id === selectedSourceId
-                    return (
-                      <button
-                        key={doc.id}
-                        className={`extract-source-item ${isSelected ? 'active' : ''} ${isApproved ? 'approved' : 'pending'}`}
-                        onClick={() => handleSelectSource(doc)}
-                      >
-                        <div className="extract-item-status-icon">
-                          {isApproved ? '✓' : '○'}
-                        </div>
-                        <div className="extract-item-info">
-                          <span className="extract-item-num">Document {idx + 1}</span>
-                          <span className="extract-item-name" title={doc.file_name}>{doc.file_name}</span>
-                        </div>
-                        {isApproved ? (
-                          <span className="extract-badge-approved">Approved</span>
-                        ) : !hasExtractedText ? (
-                          <span className="extract-badge-pending" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: '10px', padding: '2px 6px', borderRadius: '4px' }}>
-                            {doc.processing_status === 'failed' ? 'Failed' : 'Needs Extraction'}
-                          </span>
-                        ) : null}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+          {sortedBatches.length > 1 && (
+            <div style={{ display: 'flex', gap: '6px', padding: '8px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="bui-btn"
+                onClick={() => setActiveBatchTab('all')}
+                style={{
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  borderRadius: '12px',
+                  border: '1px solid',
+                  borderColor: activeBatchTab === 'all' ? '#2563eb' : '#cbd5e1',
+                  background: activeBatchTab === 'all' ? '#2563eb' : '#ffffff',
+                  color: activeBatchTab === 'all' ? '#ffffff' : '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                All Batches ({sources.length})
+              </button>
+              {sortedBatches.map(b => (
+                <button
+                  key={b.key}
+                  type="button"
+                  className="bui-btn"
+                  onClick={() => {
+                    setActiveBatchTab(b.key)
+                    if (b.sources.length > 0 && !b.sources.some(s => s.id === selectedSourceId)) {
+                      handleSelectSource(b.sources[0])
+                    }
+                  }}
+                  style={{
+                    padding: '3px 8px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    borderRadius: '12px',
+                    border: '1px solid',
+                    borderColor: activeBatchTab === b.key ? '#2563eb' : '#cbd5e1',
+                    background: activeBatchTab === b.key ? '#2563eb' : '#ffffff',
+                    color: activeBatchTab === b.key ? '#ffffff' : '#475569',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {b.shortLabel} ({b.sources.length})
+                </button>
+              ))}
+            </div>
+          )}
 
-            {/* Images Group */}
-            {imageSources.length > 0 && (
-              <div className="extract-group-block">
-                <div className="extract-group-title">
-                  <span className="extract-group-icon">🖼️</span>
-                  <span>Images / Visuals ({imageSources.length})</span>
+          <div className="extract-sidebar-groups">
+            {visibleBatches.map(batch => (
+              <div key={batch.key} className="extract-batch-section" style={{ marginBottom: '18px' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '7px 10px',
+                  background: batch.key === 'pending' ? '#eff6ff' : '#f8fafc',
+                  borderLeft: batch.key === 'pending' ? '3px solid #2563eb' : '3px solid #94a3b8',
+                  borderRadius: '4px',
+                  marginBottom: '8px'
+                }}>
+                  <strong style={{ fontSize: '11.5px', color: batch.key === 'pending' ? '#1d4ed8' : '#334155', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    {batch.label}
+                  </strong>
+                  <span style={{
+                    fontSize: '10.5px',
+                    fontWeight: 600,
+                    padding: '1px 6px',
+                    borderRadius: '10px',
+                    background: batch.key === 'pending' ? '#dbeafe' : '#e2e8f0',
+                    color: batch.key === 'pending' ? '#1e40af' : '#475569'
+                  }}>
+                    {batch.sources.length} {batch.sources.length === 1 ? 'file' : 'files'}
+                  </span>
                 </div>
+
                 <div className="extract-source-list">
-                  {imageSources.map((img, idx) => {
-                    const hasExtractedText = Boolean(img.extracted_text && img.extracted_text.trim())
-                    const isApproved = (img.approval_status === 'approved' || img.processing_status === 'approved' || img.processing_status === 'completed') && hasExtractedText
-                    const isSelected = img.id === selectedSourceId
+                  {batch.sources.map((item, idx) => {
+                    const hasExtractedText = Boolean(item.extracted_text && item.extracted_text.trim())
+                    const isApproved = (item.approval_status === 'approved' || item.processing_status === 'approved' || item.processing_status === 'completed') && hasExtractedText
+                    const isSelected = item.id === selectedSourceId
+                    const isImg = item.file_type === 'image' || ['jpg', 'jpeg', 'png', 'webp'].includes(item.file_type?.toLowerCase())
                     return (
                       <button
-                        key={img.id}
+                        key={item.id}
                         className={`extract-source-item ${isSelected ? 'active' : ''} ${isApproved ? 'approved' : 'pending'}`}
-                        onClick={() => handleSelectSource(img)}
+                        onClick={() => handleSelectSource(item)}
                       >
                         <div className="extract-item-status-icon">
                           {isApproved ? '✓' : '○'}
                         </div>
                         <div className="extract-item-info">
-                          <span className="extract-item-num">Image {idx + 1}</span>
-                          <span className="extract-item-name" title={img.file_name}>{img.file_name}</span>
+                          <span className="extract-item-num" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>{isImg ? '🖼️ Image' : '📄 Doc'} {idx + 1}</span>
+                            <span style={{ fontSize: '9.5px', color: '#64748b', background: '#f1f5f9', padding: '1px 4px', borderRadius: '3px' }}>
+                              {batch.shortLabel}
+                            </span>
+                          </span>
+                          <span className="extract-item-name" title={item.file_name}>{item.file_name}</span>
                         </div>
                         {isApproved ? (
                           <span className="extract-badge-approved">Approved</span>
                         ) : !hasExtractedText ? (
                           <span className="extract-badge-pending" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: '10px', padding: '2px 6px', borderRadius: '4px' }}>
-                            {img.processing_status === 'failed' ? 'Failed' : 'Needs Extraction'}
+                            {item.processing_status === 'failed' ? 'Failed' : 'Needs Extraction'}
                           </span>
                         ) : null}
                       </button>
@@ -574,7 +693,7 @@ export default function ExtractionReviewPage() {
                   })}
                 </div>
               </div>
-            )}
+            ))}
 
             {sources.length === 0 && (
               <div className="extract-empty-sources">
@@ -639,6 +758,36 @@ export default function ExtractionReviewPage() {
 
         {/* Main Content Area: Single Selected Source Inspection & Editor */}
         <main className="extract-main-content">
+          {activeBatchTab !== 'all' && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 20px',
+              background: '#eff6ff',
+              borderBottom: '1px solid #bfdbfe',
+              fontSize: '12px',
+              color: '#1e40af'
+            }}>
+              <span>Filtering extraction review to: <strong>{sortedBatches.find(b => b.key === activeBatchTab)?.label}</strong></span>
+              <button
+                type="button"
+                onClick={() => setActiveBatchTab('all')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#2563eb',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: '11.5px',
+                  textDecoration: 'underline'
+                }}
+              >
+                View All Batches
+              </button>
+            </div>
+          )}
+
           {selectedSource ? (
             <div className="extract-card-view">
               
@@ -658,11 +807,11 @@ export default function ExtractionReviewPage() {
                         className="extract-btn-action-reparse"
                         onClick={handleReparseSingle}
                         disabled={actionLoading || reparsing || selectedSource?.processing_status === 'extracting'}
-                        title="Re-extract raw text from file"
+                        title={selectedSource?.processing_status === 'paused' ? "Resume extraction for this document" : "Re-extract text from scratch"}
                       >
                         {reparsing || selectedSource?.processing_status === 'extracting'
                           ? '↻ Extracting...'
-                          : selectedSource?.processing_status === 'paused' || Boolean(selectedSource?.extracted_text?.trim())
+                          : selectedSource?.processing_status === 'paused'
                             ? '▶ Continue Extraction'
                             : '↻ Reparse'}
                       </button>
@@ -799,6 +948,7 @@ export default function ExtractionReviewPage() {
             setAnalyzing(false)
             navigate(`/projects/${projectId}`)
           }}
+          onCancel={handleCancelAnalysis}
         />
       )}
 

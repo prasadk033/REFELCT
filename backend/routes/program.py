@@ -103,6 +103,21 @@ def _release_generation_lock(project_id: str):
             logger.debug(f"Redis lock release error: {e}")
 
 
+def _is_program_cancelled(project_id: str) -> bool:
+    """Check if program generation was cancelled or reset for this project."""
+    st = _get_generation_status(project_id)
+    if st.get("status") in ("idle", "cancelled"):
+        return True
+    r = _get_redis_client()
+    if r:
+        try:
+            if r.exists(f"reflect:cancelled:program:{project_id}") or r.exists(f"reflect:cancelled:{project_id}"):
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def _sanitize_program_error(err: Exception) -> str:
     """Format technical exceptions into clear, professional, user-friendly messages."""
     err_str = str(err)
@@ -1188,6 +1203,12 @@ def _run_program_generation(
         print(banner)
         logger.info(banner)
 
+        if _is_program_cancelled(project_id):
+            print(f"\n[REFLECT] ⏹ Program generation halted before agent call for project {project_id} (cancelled by user).\n")
+            logger.info(f"Program generation halted before agent call for project {project_id}")
+            db.rollback()
+            return
+
         agent = ProgramAgent()
         result = agent.generate_program(
             project_context=project_context,
@@ -1196,6 +1217,12 @@ def _run_program_generation(
             previous_program_version=previous_version_num,
             source_documents=source_docs,
         )
+
+        if _is_program_cancelled(project_id):
+            print(f"\n[REFLECT] ⏹ Program generation halted before saving items for project {project_id} (cancelled by user).\n")
+            logger.info(f"Program generation halted before saving items for project {project_id}")
+            db.rollback()
+            return
 
         # Clear existing working program items and questions atomically (preserves all published versions)
         # We do NOT commit here; deletion and insertion are executed in a single atomic transaction
@@ -1362,6 +1389,15 @@ def generate_program(
             detail="Program generation is already in progress for this project. Please wait for the current run to finish."
         )
 
+    # Clear any previous cancellation flags before starting program generation
+    r = _get_redis_client()
+    if r:
+        try:
+            r.delete(f"reflect:cancelled:program:{project_id}")
+            r.delete(f"reflect:cancelled:{project_id}")
+        except Exception:
+            pass
+
     # Check AI health
     from llm.qwen_health import check_qwen_health
     health = check_qwen_health()
@@ -1439,6 +1475,14 @@ def reset_program_generation_status(
     _get_user_project(db, project_id, user.id)
     _release_generation_lock(project_id)
     _set_generation_status(project_id, {"status": "idle"})
+    r = _get_redis_client()
+    if r:
+        try:
+            r.set(f"reflect:cancelled:program:{project_id}", "1", ex=300)
+            r.set(f"reflect:cancelled:{project_id}", "1", ex=300)
+        except Exception:
+            pass
+    print(f"\n[REFLECT] ⏹ Stop/Reset Program Generation received for project {project_id}\n")
     return {"status": "ok", "message": "Program generation status reset successfully."}
 
 

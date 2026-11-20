@@ -36,16 +36,26 @@ logger = logging.getLogger(__name__)
 _cancelled_sources: set = set()
 _cancelled_files: set = set()
 
-def cancel_extraction(source_id: Optional[str] = None, file_path: Optional[str] = None):
+def cancel_extraction(source_id: Optional[str] = None, file_path: Optional[str] = None, project_id: Optional[str] = None):
     """Mark a source or file as cancelled/deleted so active vision extraction loops abort immediately."""
     if source_id:
         _cancelled_sources.add(str(source_id))
     if file_path:
         _cancelled_files.add(str(Path(file_path).resolve()))
-    logger.info(f"Cancellation registered: source_id={source_id}, file_path={file_path}")
+    try:
+        from tasks.queue import get_redis_connection
+        r = get_redis_connection()
+        if source_id:
+            r.set(f"reflect:cancelled:source:{source_id}", "1", ex=300)
+        if project_id:
+            r.set(f"reflect:cancelled:{project_id}", "1", ex=300)
+    except Exception:
+        pass
+    print(f"\n[REFLECT] ⏹ Extraction cancellation registered: source={source_id}, project={project_id}\n")
+    logger.info(f"Cancellation registered: source_id={source_id}, file_path={file_path}, project_id={project_id}")
 
-def is_extraction_cancelled(source_id: Optional[str] = None, file_path: Optional[str] = None) -> bool:
-    """Check if an extraction has been cancelled or if file was deleted."""
+def is_extraction_cancelled(source_id: Optional[str] = None, file_path: Optional[str] = None, project_id: Optional[str] = None) -> bool:
+    """Check if an extraction has been cancelled or if file was deleted across processes and Redis."""
     if source_id and str(source_id) in _cancelled_sources:
         return True
     if file_path:
@@ -54,13 +64,31 @@ def is_extraction_cancelled(source_id: Optional[str] = None, file_path: Optional
             return True
         if str(p.resolve()) in _cancelled_files:
             return True
+    try:
+        from tasks.queue import get_redis_connection
+        r = get_redis_connection()
+        if source_id and r.exists(f"reflect:cancelled:source:{source_id}"):
+            return True
+        if project_id and r.exists(f"reflect:cancelled:{project_id}"):
+            return True
+    except Exception:
+        pass
     return False
 
-def clear_cancelled(source_id: Optional[str] = None, file_path: Optional[str] = None):
+def clear_cancelled(source_id: Optional[str] = None, file_path: Optional[str] = None, project_id: Optional[str] = None):
     if source_id and str(source_id) in _cancelled_sources:
         _cancelled_sources.discard(str(source_id))
     if file_path:
         _cancelled_files.discard(str(Path(file_path).resolve()))
+    try:
+        from tasks.queue import get_redis_connection
+        r = get_redis_connection()
+        if source_id:
+            r.delete(f"reflect:cancelled:source:{source_id}")
+        if project_id:
+            r.delete(f"reflect:cancelled:{project_id}")
+    except Exception:
+        pass
 
 
 class DocumentLoader:
@@ -231,6 +259,7 @@ class DocumentLoader:
 
                 # Immediate Cancellation / Deletion Check
                 if is_extraction_cancelled(source_id=source_id, file_path=file_path) or not Path(file_path).exists():
+                    print(f"\n[REFLECT] ⏹ Extraction halted immediately for '{filename}' (page {page_num}/{total_pages}): cancelled by user.\n")
                     logger.warning(f"Extraction halted for {filename} (page {page_num}/{total_pages}): source cancelled or deleted.")
                     raise RuntimeError(f"Extraction cancelled for {filename}")
 

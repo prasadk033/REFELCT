@@ -26,6 +26,28 @@ from storage import file_store
 logger = logging.getLogger(__name__)
 
 
+def is_brief_cancelled(project_id: str, job_id: str = None) -> bool:
+    """Check whether brief generation for this project or job was cancelled via Redis or DB."""
+    try:
+        from tasks.queue import get_redis_connection
+        r = get_redis_connection()
+        if r.exists(f"reflect:cancelled:brief:{project_id}") or r.exists(f"reflect:cancelled:{project_id}"):
+            return True
+    except Exception:
+        pass
+    if job_id:
+        try:
+            from db import SessionLocal, ProcessingJob
+            _db = SessionLocal()
+            j = _db.query(ProcessingJob.status).filter(ProcessingJob.id == job_id).first()
+            _db.close()
+            if j and j[0] == "cancelled":
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user_id: str = None):
     """
     Execute the full Brief processing pipeline with multi-document isolation and incremental versioning.
@@ -131,6 +153,11 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         historical_sources = [s for s in all_approved_sources if s.version is not None and s.version in completed_brief_versions and s not in pending_batch]
 
         # ── Step 1: Ensure Extraction for Pending Batch ──────────────────────
+        if is_brief_cancelled(project_id, job_id):
+            print(f"\n[REFLECT] ⏹ Brief pipeline halted immediately before parsing (cancelled by user).\n")
+            _update_job(db, job_id, "cancelled", "Cancelled by user")
+            return
+
         _update_job(db, job_id, "parsing", f"Parsing Document Batch {new_version + 1} Documents")
         print(f"\n[REFLECT] 🚀 Starting Brief Synthesis Pipeline | Project: {project.name} (ID: {project_id[:8]}...) | Target: Document Batch {new_version + 1}")
         print(f"[REFLECT] 📂 Batch: {len(pending_batch)} new document(s) | Prior History: {len(historical_sources)} existing document(s)")
@@ -173,6 +200,11 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
         )
 
         # ── Step 5: Create Working Brief Container for Batch ─────────────────
+        if is_brief_cancelled(project_id, job_id):
+            print(f"\n[REFLECT] ⏹ Brief pipeline halted immediately before container creation (cancelled by user).\n")
+            _update_job(db, job_id, "cancelled", "Cancelled by user")
+            return
+
         _update_job(db, job_id, "processing_brief", f"Processing Document Batch {new_version + 1}")
         print(f"[REFLECT] 📝 Processing Document Batch ({new_version + 1}) container...")
         logger.info(f"[{project_id}] Creating Working Brief Container for Document Batch {new_version + 1}")
@@ -227,6 +259,12 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
 
         # Generate cards for each document in the pending batch
         for source in pending_batch:
+            if is_brief_cancelled(project_id, job_id):
+                print(f"\n[REFLECT] ⏹ Brief card generation halted immediately during processing '{source.file_name}' (cancelled by user).\n")
+                db.rollback()
+                _update_job(db, job_id, "cancelled", "Cancelled by user")
+                return
+
             src_text = source_text_map.get(source.id, "")
             if not src_text or len(src_text.strip()) < 25:
                 continue
@@ -250,6 +288,7 @@ def run_brief_pipeline(project_id: str, source_ids: List[str], job_id: str, user
             cards_data = brief_agent.generate_cards(
                 brief_content=single_source_input,
                 project_context=project_context,
+                project_id=project_id,
             )
 
             doc_cards_count = 0

@@ -14,7 +14,7 @@ export default function SettingsPage() {
   const [preferences, setPreferences] = useState({
     defaultView: 'grid', // 'grid' | 'list'
     autoExpandEvidence: true,
-    theme: 'dark-contrast',
+    theme: localStorage.getItem('reflect-theme') || 'light',
   })
 
   const [savedToast, setSavedToast] = useState(false)
@@ -30,6 +30,12 @@ export default function SettingsPage() {
 
     setSavedToast(true)
     setTimeout(() => setSavedToast(false), 3000)
+  }
+
+  function handleThemeChange(newTheme) {
+    setPreferences(prev => ({ ...prev, theme: newTheme }))
+    localStorage.setItem('reflect-theme', newTheme)
+    document.documentElement.setAttribute('data-theme', newTheme)
   }
 
   return (
@@ -61,13 +67,13 @@ export default function SettingsPage() {
               Profile & Account
             </h3>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', padding: '16px 0', borderBottom: '1px solid #1e293b' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', padding: '16px 0', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
               <div className="g-avatar" style={{ width: '56px', height: '56px', fontSize: '20px' }}>
                 {user?.picture ? <img src={user.picture} alt="Avatar" /> : <span>{user?.name?.[0] || 'A'}</span>}
               </div>
               <div>
-                <strong style={{ fontSize: '16px', display: 'block', color: '#f8fafc' }}>{user?.name || 'Architect'}</strong>
-                <span style={{ fontSize: '13px', color: '#94a3b8' }}>{user?.email || 'architect@reflect.local'}</span>
+                <strong style={{ fontSize: '16px', display: 'block', color: 'var(--text-main, #0f172a)' }}>{user?.name || 'Architect'}</strong>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted, #64748b)' }}>{user?.email || 'architect@reflect.local'}</span>
               </div>
             </div>
 
@@ -78,7 +84,8 @@ export default function SettingsPage() {
                   type="text"
                   defaultValue={user?.name || 'Architect'}
                   readOnly
-                  style={{ background: '#090d16', color: '#cbd5e1', cursor: 'not-allowed' }}
+                  className="bui-input"
+                  style={{ cursor: 'not-allowed', opacity: 0.8 }}
                 />
               </div>
               <div className="bui-form-group">
@@ -87,7 +94,8 @@ export default function SettingsPage() {
                   type="email"
                   defaultValue={user?.email || 'architect@reflect.local'}
                   readOnly
-                  style={{ background: '#090d16', color: '#cbd5e1', cursor: 'not-allowed' }}
+                  className="bui-input"
+                  style={{ cursor: 'not-allowed', opacity: 0.8 }}
                 />
               </div>
             </div>
@@ -105,12 +113,12 @@ export default function SettingsPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                  <strong style={{ fontSize: '14px', color: '#f8fafc' }}>Google Authentication</strong>
-                  <span style={{ fontSize: '11px', background: '#052e16', color: '#4ade80', padding: '2px 8px', borderRadius: '12px', border: '1px solid #166534' }}>
+                  <strong style={{ fontSize: '14px', color: 'var(--text-main, #0f172a)' }}>Google Authentication</strong>
+                  <span style={{ fontSize: '11px', background: '#ecfdf5', color: '#166534', padding: '2px 8px', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
                     Connected
                   </span>
                 </div>
-                <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
+                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted, #64748b)' }}>
                   Signed in via Google OAuth for single-click access and document analysis security.
                 </p>
               </div>
@@ -138,40 +146,40 @@ export default function SettingsPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                 <div>
-                  <strong style={{ fontSize: '13px', display: 'block', color: '#f8fafc' }}>Analysis Completion Alerts</strong>
-                  <span style={{ fontSize: '12px', color: '#94a3b8' }}>Show in-app banner and modal immediately when Brief cards are synthesized</span>
+                  <strong style={{ fontSize: '13px', display: 'block', color: 'var(--text-main, #0f172a)' }}>Analysis Completion Alerts</strong>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)' }}>Show in-app banner and modal immediately when Brief cards are synthesized</span>
                 </div>
                 <input
                   type="checkbox"
                   checked={notifications.analysisAlerts}
                   onChange={e => setNotifications({ ...notifications, analysisAlerts: e.target.checked })}
-                  style={{ width: '18px', height: '18px', accentColor: '#ffffff' }}
+                  style={{ width: '18px', height: '18px', accentColor: '#2563eb' }}
                 />
               </label>
 
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                 <div>
-                  <strong style={{ fontSize: '13px', display: 'block', color: '#f8fafc' }}>Card Review Changes</strong>
-                  <span style={{ fontSize: '12px', color: '#94a3b8' }}>Notify when cards are accepted or updated</span>
+                  <strong style={{ fontSize: '13px', display: 'block', color: 'var(--text-main, #0f172a)' }}>Card Review Changes</strong>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)' }}>Notify when cards are accepted or updated</span>
                 </div>
                 <input
                   type="checkbox"
                   checked={notifications.cardStatusUpdates}
                   onChange={e => setNotifications({ ...notifications, cardStatusUpdates: e.target.checked })}
-                  style={{ width: '18px', height: '18px', accentColor: '#ffffff' }}
+                  style={{ width: '18px', height: '18px', accentColor: '#2563eb' }}
                 />
               </label>
 
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                 <div>
-                  <strong style={{ fontSize: '13px', display: 'block', color: '#f8fafc' }}>Daily Project Digest</strong>
-                  <span style={{ fontSize: '12px', color: '#94a3b8' }}>Receive an email summary of unresolved questions and conflicts</span>
+                  <strong style={{ fontSize: '13px', display: 'block', color: 'var(--text-main, #0f172a)' }}>Daily Project Digest</strong>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)' }}>Receive an email summary of unresolved questions and conflicts</span>
                 </div>
                 <input
                   type="checkbox"
                   checked={notifications.emailSummary}
                   onChange={e => setNotifications({ ...notifications, emailSummary: e.target.checked })}
-                  style={{ width: '18px', height: '18px', accentColor: '#ffffff' }}
+                  style={{ width: '18px', height: '18px', accentColor: '#2563eb' }}
                 />
               </label>
             </div>
@@ -203,7 +211,7 @@ export default function SettingsPage() {
                 <label>Theme</label>
                 <select
                   value={preferences.theme}
-                  onChange={e => setPreferences({ ...preferences, theme: e.target.value })}
+                  onChange={e => handleThemeChange(e.target.value)}
                 >
                   <option value="light">Light Theme</option>
                   <option value="dark">Dark Theme</option>

@@ -103,12 +103,19 @@ class BriefAgent:
         self,
         brief_content: str,
         project_context: str,
+        project_id: Optional[str] = None,
     ) -> list:
         """
         Generate structured Cards from the Brief content via Qwen LLM using chunking.
         """
         logger.info("Generating Cards from Brief via LLM...")
         
+        if project_id:
+            from agents.brief_orchestrator import is_brief_cancelled
+            if is_brief_cancelled(project_id):
+                print(f"\n[REFLECT] ⏹ Card generation halted before chunking (cancelled by user).\n")
+                raise RuntimeError("Brief generation cancelled by user")
+
         # If content fits in one chunk, process it normally
         if len(brief_content) <= BRIEF_CHUNK_SIZE:
             prompt = CARD_GENERATION_PROMPT.format(
@@ -136,6 +143,12 @@ class BriefAgent:
         logger.info(f"Brief content exceeds chunk size. Splitting into {total_chunks} chunks.")
 
         for i, chunk in enumerate(chunks, 1):
+            if project_id:
+                from agents.brief_orchestrator import is_brief_cancelled
+                if is_brief_cancelled(project_id):
+                    print(f"\n[REFLECT] ⏹ Card generation halted at chunk {i}/{total_chunks} (cancelled by user).\n")
+                    raise RuntimeError("Brief generation cancelled by user")
+
             logger.info(f"Processing brief chunk {i}/{total_chunks}")
             chunk_disclaimer = (
                 "\n\nIMPORTANT: You are analyzing ONE section (chunk) of a larger project brief. "

@@ -21,28 +21,25 @@ class AIServiceError(Exception):
     """Raised when Qwen-VL or LLM proxy is unavailable, timed out, or returning server errors."""
     pass
 
-SITE_ANALYSIS_PROMPT = """You are an expert architectural site analyst and document vision AI for the REFELCT architecture system.
-Carefully analyze this image (which may be a site photograph, aerial view, architectural drawing, or scanned document) and extract both:
-1. Structured Visual Site Observations
-2. Any readable Text, Annotations, Dimensions, or Labels
+SITE_ANALYSIS_PROMPT = """You are an expert architectural vision AI and document analyst for the REFELCT architecture system.
+Carefully analyze this image (which may be an architectural drawing, floor plan, section, elevation, site plan, aerial photograph, or site condition image).
 
-Analyze and structure your findings using the following schema:
+Determine the image nature and extract accurate, factual information:
 
-### 1. Visual Site Observations
-- **Existing vegetation**: Detail any trees, shrubs, grass, planted areas, dense vegetation, or absence thereof.
-- **Landscape character**: Describe if natural, manicured, barren, agricultural, wooded, or urban context.
-- **Ground condition**: Note paved surfaces, bare soil, grass, gravel, rocky terrain, slopes, or visible grading.
-- **Surrounding buildings**: Visible buildings, adjacent structures, boundaries, or setbacks.
-- **Building height**: Approximate storeys / levels of visible surrounding structures.
-- **Building typology**: Function/types (e.g. houses, apartments, offices, retail/shops, warehouses, institutions, etc.).
-- **Materials**: Visible façade, wall, framing, or roofing materials.
-- **Water & Drainage**: Visible water bodies, streams, drainage channels, gutters, or evidence of waterlogging.
+### 1. Document / Image Classification
+- **Type**: Identify if this is a Site Photograph, Aerial View, Floor Plan, Site Plan, Section/Elevation, Detail Drawing, Diagram, or Mixed Document.
 
-### 2. Extracted Text & Annotations
-- Extract all visible text, signage, sheet titles, drawing labels, keynotes, numbers, or stamped data.
-- If no text is visible, state: "[No text or annotations detected]"
+### 2. Extracted Text, Dimensions & Annotations (Verbatim)
+- Extract all readable text, sheet titles, drawing numbers, scale indications, north arrow directions, room labels, dimensions, notes, and stamped data exactly as written.
+- If text is partially blurred, low-resolution, or uncertain, mark it explicitly as `[Unclear / Uncertain]` rather than guessing.
+- If no text or annotation is present, state: "[No text or annotations detected]"
 
-Provide an objective, clear, and professional architectural report.
+### 3. Visual & Spatial Observations
+- For Architectural Drawings/Plans: Detail space layout, access points, circulation, room adjacencies, wall types, structural grids, and boundary lines.
+- For Site/Aerial Photographs: Detail ground conditions, visible topography/slope, existing vegetation/trees, surrounding structures, building heights, materials, and drainage/water features.
+- If a feature is not visible or not applicable (e.g., vegetation on an indoor floor plan), state "N/A - Architectural Drawing".
+
+Provide an objective, highly accurate, and professional report with zero speculation.
 """
 
 

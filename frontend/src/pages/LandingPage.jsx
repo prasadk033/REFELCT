@@ -35,8 +35,7 @@ function Navbar({ navigate }) {
           ))}
         </nav>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-          <button onClick={() => navigate('/login')} style={{ background: 'none', border: 'none', fontSize: 13.5, fontWeight: 500, color: '#374151', cursor: 'pointer' }}>Sign in</button>
-          <button onClick={() => navigate('/login')} style={{ background: '#000', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Get Started</button>
+          <button onClick={() => navigate('/login')} style={{ background: '#000', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Sign in</button>
         </div>
       </div>
     </header>
@@ -406,7 +405,7 @@ function ForArchitectsSection({ navigate }) {
 }
 
 /* ─── Section 4: CONTACT ─────────────────────────────────────────── */
-function ContactSection() {
+function ContactSection({ navigate }) {
   const [form, setForm] = useState({ name: '', email: '', company: '', message: '' })
   const [sent, setSent] = useState(false)
 
@@ -482,7 +481,7 @@ function ContactSection() {
             <div style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: 10, padding: '18px 20px', marginTop: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#000', marginBottom: 6 }}>✦ Interested in early access?</div>
               <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 14, lineHeight: 1.6 }}>Join our early users and be part of shaping Reflect.</p>
-              <button style={{ background: '#fff', color: '#000', border: '1.5px solid #000', borderRadius: 6, padding: '8px 18px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Get Started →</button>
+              <button onClick={() => navigate?.('/login')} style={{ background: '#fff', color: '#000', border: '1.5px solid #000', borderRadius: 6, padding: '8px 18px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Get Started →</button>
             </div>
           </div>
         </div>
@@ -518,7 +517,7 @@ export default function LandingPage() {
       <ProductSection navigate={navigate} />
       <HowItWorksSection navigate={navigate} />
       <ForArchitectsSection navigate={navigate} />
-      <ContactSection />
+      <ContactSection navigate={navigate} />
       <Footer />
     </div>
   )

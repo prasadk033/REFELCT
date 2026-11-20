@@ -94,6 +94,10 @@ export default function ProjectOverviewPage() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [uploadCategory, setUploadCategory] = useState('document') // 'document' or 'image'
   const [selectedFile, setSelectedFile] = useState(null)
+  const [persistedDocFile, setPersistedDocFile] = useState(null)
+  const [persistedImageFile, setPersistedImageFile] = useState(null)
+  const [docReplacePrompt, setDocReplacePrompt] = useState(false)
+  const [batchBlockedModal, setBatchBlockedModal] = useState(false)
   const [uploadDescription, setUploadDescription] = useState('')
   const [containsImages, setContainsImages] = useState(false)
   const [fileTypeError, setFileTypeError] = useState(null)
@@ -103,8 +107,21 @@ export default function ProjectOverviewPage() {
       showToast('⚠️ Please wait for active extraction to finish before adding new sources.')
       return
     }
+
+    // BUG-004: Enforce sequential batch processing. Batch 2 upload is restricted only AFTER Batch 1 cards have been generated and are awaiting Brief approval.
+    const hasBatch1Cards = totalCards > 0 || sources.some(s => s.version !== null && s.version !== undefined)
+    const isBatch1Approved = Boolean(project?.published_brief_version || (project?.brief_version !== undefined && project?.brief_version !== null && project?.brief_version >= 0 && isBriefApproved))
+    const isBatchBlocked = hasBatch1Cards && !isBatch1Approved
+    if (isBatchBlocked) {
+      setBatchBlockedModal(true)
+      return
+    }
+
     setUploadCategory(category)
     setSelectedFile(null)
+    setPersistedDocFile(null)
+    setPersistedImageFile(null)
+    setDocReplacePrompt(false)
     setUploading(false)
     setUploadDescription('')
     setContainsImages(category === 'image')
@@ -117,6 +134,9 @@ export default function ProjectOverviewPage() {
   function closeUploadModal() {
     setShowUploadModal(false)
     setSelectedFile(null)
+    setPersistedDocFile(null)
+    setPersistedImageFile(null)
+    setDocReplacePrompt(false)
     setUploading(false)
     setUploadDescription('')
     setContainsImages(false)
@@ -125,11 +145,34 @@ export default function ProjectOverviewPage() {
   }
 
   function switchUploadCategory(cat) {
-    setUploadCategory(cat)
-    setSelectedFile(null)
-    setContainsImages(cat === 'image')
+    if (cat === uploadCategory) return
     setFileTypeError(null)
     if (modalFileInputRef.current) modalFileInputRef.current.value = ''
+
+    if (cat === 'image') {
+      // Switching from document to image: persist current document
+      if (uploadCategory === 'document' && selectedFile) {
+        setPersistedDocFile(selectedFile)
+      }
+      setUploadCategory('image')
+      setContainsImages(true)
+      setSelectedFile(persistedImageFile || null)
+      setDocReplacePrompt(false)
+    } else if (cat === 'document') {
+      // Switching from image to document: persist current image
+      if (uploadCategory === 'image' && selectedFile) {
+        setPersistedImageFile(selectedFile)
+      }
+      setUploadCategory('document')
+      setContainsImages(false)
+      if (persistedDocFile) {
+        setSelectedFile(persistedDocFile)
+        setDocReplacePrompt(true)
+      } else {
+        setSelectedFile(null)
+        setDocReplacePrompt(false)
+      }
+    }
   }
 
   // Analysis Blocking & Progress
@@ -245,17 +288,23 @@ export default function ProjectOverviewPage() {
       if (!allowed.includes(ext)) {
         setFileTypeError(`Selected file is .${ext}. Please select a PDF, DOCX, DOC, or TXT file for Document sources.`)
         setSelectedFile(null)
+        setPersistedDocFile(null)
         return
       }
+      setSelectedFile(file)
+      setPersistedDocFile(file)
+      setDocReplacePrompt(false)
     } else {
       const allowed = ['jpg', 'jpeg', 'png', 'webp']
       if (!allowed.includes(ext)) {
         setFileTypeError(`Selected file is .${ext}. Please select a JPG, PNG, or WEBP file for Image sources.`)
         setSelectedFile(null)
+        setPersistedImageFile(null)
         return
       }
+      setSelectedFile(file)
+      setPersistedImageFile(file)
     }
-    setSelectedFile(file)
   }
 
   async function handleSaveSiteLocation(e) {
@@ -304,6 +353,13 @@ export default function ProjectOverviewPage() {
       showToast('⚠️ A background task is currently running. Please wait for it to finish before uploading documents.')
       return
     }
+
+    const isDuplicate = sources.some(s => s.file_name === selectedFile.name && (!s.file_size || s.file_size === selectedFile.size))
+    if (isDuplicate) {
+      showError(`This document ('${selectedFile.name}') has already been uploaded to this project. Please upload a new document.`)
+      return
+    }
+
     setUploading(true)
     setError(null)
     const ext = selectedFile.name.split('.').pop()?.toLowerCase()
@@ -1060,16 +1116,11 @@ export default function ProjectOverviewPage() {
             <div className="pov-analyse-action-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', ...(analyzing || extracting || extractModalOpen ? { opacity: 0.65, pointerEvents: 'none' } : {}) }}>
 
               {sources.length === 0 ? (
-                /* 1. No documents yet: Add Source CTA */
-                <button
-                  className="pov-btn-analyse"
-                  onClick={() => openUploadModal('document')}
-                  disabled={uploading || analyzing || extracting}
-                  style={(uploading || analyzing || extracting) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
-                >
-                  <span className="pov-sparkle">+</span>
-                  <span>Add Project Source</span>
-                </button>
+                /* 1. No documents yet: Informative status label */
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '13px', padding: '6px 0' }}>
+                  <span style={{ fontSize: '16px' }}>📄</span>
+                  <span>No project sources uploaded yet. Add a source below to begin.</span>
+                </div>
               ) : pendingNeedsExtraction ? (
                 /* 2. Newly uploaded or paused documents requiring extraction */
                 <button
@@ -1321,15 +1372,7 @@ export default function ProjectOverviewPage() {
 
           {sources.length === 0 ? (
             <div className="pov-empty-sources">
-              <p>No documents or images uploaded to this project yet.</p>
-              <button
-                className="pov-btn-add-doc"
-                onClick={() => openUploadModal('document')}
-                disabled={uploading || analyzing || extracting}
-                style={(uploading || analyzing || extracting) ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
-              >
-                + Add Project Source
-              </button>
+              <p>No documents or images uploaded to this project yet. Use the <strong>Add Source</strong> button above to upload project briefs, site photos, or drawings.</p>
             </div>
           ) : (
             <div className="pov-sources-version-groups" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -1791,8 +1834,9 @@ export default function ProjectOverviewPage() {
                   className="bui-btn bui-btn-outline"
                   style={{ padding: '6px 14px', fontSize: '12px', color: '#2563eb', borderColor: '#cbd5e1' }}
                   onClick={() => {
+                    const batchParam = viewingSource.version !== null && viewingSource.version !== undefined ? viewingSource.version : 'pending'
                     setViewingSource(null)
-                    navigate(`/projects/${projectId}/extract`)
+                    navigate(`/projects/${projectId}/extract?sourceId=${viewingSource.id}&batch=${batchParam}`)
                   }}
                 >
                   ✏ Open in Editor →
@@ -1878,6 +1922,79 @@ export default function ProjectOverviewPage() {
 
 
 
+
+        {/* BATCH 2 BLOCKED: BATCH 1 APPROVAL PENDING MODAL */}
+        {batchBlockedModal && (
+          <div className="bui-modal-overlay" onClick={() => setBatchBlockedModal(false)}>
+            <div
+              className="bui-modal"
+              onClick={e => e.stopPropagation()}
+              style={{
+                maxWidth: '460px',
+                width: '100%',
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
+                padding: '24px 28px',
+                boxSizing: 'border-box'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fffbeb', border: '1px solid #fef08a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>
+                  ⏳
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>
+                    Batch 1 Approval Pending
+                  </h3>
+                  <span style={{ fontSize: '11.5px', color: '#64748b' }}>Sequential Batch Processing</span>
+                </div>
+              </div>
+
+              <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5, margin: '0 0 18px 0' }}>
+                Batch 2 source upload is available only after Batch 1 sources have been reviewed, approved, and integrated into the project Brief.
+                Please complete Batch 1 review and brief synthesis before uploading additional sources.
+              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="bui-btn"
+                  onClick={() => setBatchBlockedModal(false)}
+                  style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475569', padding: '8px 16px', borderRadius: '6px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Close
+                </button>
+                {pendingNeedsReview ? (
+                  <button
+                    type="button"
+                    className="bui-btn"
+                    onClick={() => {
+                      setBatchBlockedModal(false)
+                      navigate(`/projects/${projectId}/extraction-review`)
+                    }}
+                    style={{ background: '#2563eb', color: '#ffffff', padding: '8px 16px', borderRadius: '6px', fontSize: '12.5px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                  >
+                    Review Batch 1 Sources →
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="bui-btn"
+                    onClick={() => {
+                      setBatchBlockedModal(false)
+                      navigate(`/projects/${projectId}/brief`)
+                    }}
+                    style={{ background: '#2563eb', color: '#ffffff', padding: '8px 16px', borderRadius: '6px', fontSize: '12.5px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                  >
+                    Go to Brief Workspace →
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* SOURCE UPLOAD MODAL (DOCUMENT VS IMAGE SELECTION) */}
         {showUploadModal && (
@@ -1979,56 +2096,115 @@ export default function ProjectOverviewPage() {
                 />
 
                 {/* Step 2: File Selector / Dropzone */}
-                <div
-                  style={{
-                    border: '1.5px dashed #cbd5e1',
-                    borderRadius: '8px',
-                    padding: '20px 16px',
-                    textAlign: 'center',
-                    background: '#f8fafc',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s'
-                  }}
-                  onClick={() => modalFileInputRef.current?.click()}
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    const f = e.dataTransfer?.files?.[0]
-                    if (f) handleFileSelected(f)
-                  }}
-                >
-                  {selectedFile ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px' }}>
-                        ✓ File Selected
-                      </span>
-                      <strong style={{ fontSize: '13px', color: '#0f172a', wordBreak: 'break-all', marginTop: '2px' }}>
-                        {selectedFile.name}
-                      </strong>
-                      <span style={{ fontSize: '11.5px', color: '#64748b' }}>
-                        {formatFileSize(selectedFile.size)} • Click to change
-                      </span>
+                {docReplacePrompt && persistedDocFile ? (
+                  <div
+                    style={{
+                      border: '1.5px solid #bfdbfe',
+                      borderRadius: '8px',
+                      padding: '18px 16px',
+                      textAlign: 'center',
+                      background: '#f8fafc',
+                    }}
+                  >
+                    <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px' }}>
+                      Existing Document Preserved
+                    </span>
+                    <strong style={{ fontSize: '13.5px', color: '#0f172a', display: 'block', margin: '8px 0 2px 0', wordBreak: 'break-all' }}>
+                      {persistedDocFile.name}
+                    </strong>
+                    <span style={{ fontSize: '11.5px', color: '#64748b', display: 'block', marginBottom: '14px' }}>
+                      {formatFileSize(persistedDocFile.size)} • A document was already selected
+                    </span>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDocReplacePrompt(false)
+                          modalFileInputRef.current?.click()
+                        }}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: '6px',
+                          border: '1px solid #2563eb',
+                          background: '#eff6ff',
+                          color: '#2563eb',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Replace Document
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDocReplacePrompt(false)}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          background: '#ffffff',
+                          color: '#475569',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Keep Existing
+                      </button>
                     </div>
-                  ) : (
-                    <div>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="1.75" width="24" height="24" style={{ margin: '0 auto 6px auto', display: 'block' }}>
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="17 8 12 3 7 8" />
-                        <line x1="12" y1="3" x2="12" y2="15" />
-                      </svg>
-                      <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block', marginBottom: '2px' }}>
-                        Click to browse {uploadCategory === 'document' ? 'documents' : 'images'}
-                      </strong>
-                      <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
-                        {uploadCategory === 'document' ? 'Supported: PDF, DOCX, DOC, TXT' : 'Supported: JPG, JPEG, PNG, WEBP'}
-                      </span>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      border: '1.5px dashed #cbd5e1',
+                      borderRadius: '8px',
+                      padding: '20px 16px',
+                      textAlign: 'center',
+                      background: '#f8fafc',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                    onClick={() => modalFileInputRef.current?.click()}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      const f = e.dataTransfer?.files?.[0]
+                      if (f) handleFileSelected(f)
+                    }}
+                  >
+                    {selectedFile ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px' }}>
+                          ✓ File Selected
+                        </span>
+                        <strong style={{ fontSize: '13px', color: '#0f172a', wordBreak: 'break-all', marginTop: '2px' }}>
+                          {selectedFile.name}
+                        </strong>
+                        <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                          {formatFileSize(selectedFile.size)} • Click to change
+                        </span>
+                      </div>
+                    ) : (
+                      <div>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="1.75" width="24" height="24" style={{ margin: '0 auto 6px auto', display: 'block' }}>
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block', marginBottom: '2px' }}>
+                          Click to browse {uploadCategory === 'document' ? 'documents' : 'images'}
+                        </strong>
+                        <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+                          {uploadCategory === 'document' ? 'Supported: PDF, DOCX, DOC, TXT' : 'Supported: JPG, JPEG, PNG, WEBP'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Step 2b: Image Presence Option — Only for Documents (PDF, DOCX, TXT); Images route directly to visual pipeline */}
                 {uploadCategory === 'document' ? (
