@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { getProject, updateProject, listSources, uploadSource, deleteSource, extractSources, reparseSource, cancelSourceExtraction, analyzeBrief, cancelBrief, listCards, getBriefStatus, deleteProject, resetSourceVersion, resetVersion, acknowledgeJobNotification, checkAiHealth } from '../api.js'
 import ProjectShell from '../components/ProjectShell.jsx'
 import GeneratingProgressModal from '../components/GeneratingProgressModal.jsx'
@@ -176,11 +176,24 @@ export default function ProjectOverviewPage() {
   }
 
   // Analysis Blocking & Progress
-  const [analyzing, setAnalyzing] = useState(false)
-  const [showAnalysisModal, setShowAnalysisModal] = useState(true)
-  const [extracting, setExtracting] = useState(false)
-  const [showExtractModal, setShowExtractModal] = useState(true)
-  const [analysisStep, setAnalysisStep] = useState('Initiating analysis...')
+  const location = useLocation()
+  const isNavBackgroundAnalysis = Boolean(location.state?.backgroundAnalysis)
+  const isSessionBackgroundAnalysis = typeof window !== 'undefined' && sessionStorage.getItem(`reflect_analyzing_${projectId}`) === 'true'
+  const initialAnalyzing = isNavBackgroundAnalysis || isSessionBackgroundAnalysis
+
+  const isNavBackgroundExtraction = Boolean(location.state?.backgroundExtraction)
+  const isSessionBackgroundExtraction = typeof window !== 'undefined' && sessionStorage.getItem(`reflect_extracting_${projectId}`) === 'true'
+  const initialExtracting = isNavBackgroundExtraction || isSessionBackgroundExtraction
+
+  const [analyzing, setAnalyzing] = useState(initialAnalyzing)
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false)
+  const [extracting, setExtracting] = useState(initialExtracting)
+  const [showExtractModal, setShowExtractModal] = useState(false)
+  const [analysisStep, setAnalysisStep] = useState(
+    location.state?.analysisStep ||
+    (typeof window !== 'undefined' && sessionStorage.getItem(`reflect_analysis_step_${projectId}`)) ||
+    'Generating Brief Cards for Document Batch 1'
+  )
   const [analysisJobId, setAnalysisJobId] = useState(null)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
   const [showExtractCompleteModal, setShowExtractCompleteModal] = useState(false)
@@ -195,19 +208,31 @@ export default function ProjectOverviewPage() {
   }
 
   const [analysisError, setAnalysisError] = useState(null)
-  const [analyzingSeconds, setAnalyzingSeconds] = useState(0)
-  const [analysisEstimate, setAnalysisEstimate] = useState(null)
+  const [analyzingSeconds, setAnalyzingSeconds] = useState(location.state?.analyzingSeconds || 0)
+  const [analysisEstimate, setAnalysisEstimate] = useState(() => {
+    if (location.state?.analysisEstimate) return location.state.analysisEstimate
+    try {
+      const cached = sessionStorage.getItem(`reflect_analysis_estimate_${projectId}`)
+      return cached ? JSON.parse(cached) : null
+    } catch {
+      return null
+    }
+  })
 
   // Document Extraction Progress Modal
-  const [extractModalOpen, setExtractModalOpen] = useState(false)
+  const [extractModalOpen, setExtractModalOpen] = useState(initialExtracting)
   const [hideFloatingPill, setHideFloatingPill] = useState(false)
-  const [extractDocName, setExtractDocName] = useState('Document')
-  const [extractDocsCompleted, setExtractDocsCompleted] = useState(0)
-  const [extractDocCount, setExtractDocCount] = useState(1)
-  const [extractServerStep, setExtractServerStep] = useState('')
-  const [extractTotalPages, setExtractTotalPages] = useState(20)
-  const [extractEstSeconds, setExtractEstSeconds] = useState(35)
-  const [extractElapsedSeconds, setExtractElapsedSeconds] = useState(0)
+  const [extractDocName, setExtractDocName] = useState(location.state?.extractDocName || 'Document')
+  const [extractDocsCompleted, setExtractDocsCompleted] = useState(location.state?.extractDocsCompleted || 0)
+  const [extractDocCount, setExtractDocCount] = useState(location.state?.extractDocCount || 1)
+  const [extractServerStep, setExtractServerStep] = useState(
+    location.state?.extractServerStep ||
+    (typeof window !== 'undefined' && sessionStorage.getItem(`reflect_extract_step_${projectId}`)) ||
+    ''
+  )
+  const [extractTotalPages, setExtractTotalPages] = useState(location.state?.extractTotalPages || 20)
+  const [extractEstSeconds, setExtractEstSeconds] = useState(location.state?.extractEstSeconds || 35)
+  const [extractElapsedSeconds, setExtractElapsedSeconds] = useState(location.state?.extractElapsedSeconds || 0)
   const extractTimerRef = useRef(null)
 
   const pollIntervalRef = useRef(null)
@@ -240,6 +265,12 @@ export default function ProjectOverviewPage() {
     if (projectId) {
       loadProjectData()
       checkActiveBackgroundJob()
+      if (initialAnalyzing) {
+        startPollingStatus()
+      }
+      if (initialExtracting) {
+        startExtractionPolling()
+      }
     }
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
@@ -254,27 +285,55 @@ export default function ProjectOverviewPage() {
         if (['queued', 'parsing', 'extracting_images', 'processing_brief', 'generating_cards'].includes(statusRes.status)) {
           setAnalyzing(true)
           setShowAnalysisModal(false) // If returning to page while job runs, stay in non-blocking background mode
-          setAnalysisStep(statusRes.current_step || 'Processing brief in background...')
+          sessionStorage.setItem(`reflect_analyzing_${projectId}`, 'true')
+          if (statusRes.current_step) {
+            setAnalysisStep(statusRes.current_step)
+            sessionStorage.setItem(`reflect_analysis_step_${projectId}`, statusRes.current_step)
+          }
           startPollingStatus()
         } else if (['pending', 'extracting'].includes(statusRes.status)) {
           setExtracting(true)
           setExtractModalOpen(false)
           setShowExtractModal(false)
           setHideFloatingPill(false)
+          sessionStorage.setItem(`reflect_extracting_${projectId}`, 'true')
           if (typeof statusRes.cards_generated === 'number') setExtractDocsCompleted(statusRes.cards_generated)
           if (typeof statusRes.questions_count === 'number' && statusRes.questions_count > 0) setExtractDocCount(statusRes.questions_count)
           if (statusRes.current_step) setExtractServerStep(statusRes.current_step)
           startExtractionPolling()
-        } else if (statusRes.status === 'completed' && !statusRes.notification_seen) {
-          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
-          await loadProjectData()
-        } else if ((statusRes.status === 'failed' || statusRes.status === 'partial') && !statusRes.notification_seen) {
-          if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
-          await loadProjectData()
+        } else {
+          sessionStorage.removeItem(`reflect_analyzing_${projectId}`)
+          sessionStorage.removeItem(`reflect_analysis_step_${projectId}`)
+          sessionStorage.removeItem(`reflect_analysis_estimate_${projectId}`)
+          sessionStorage.removeItem(`reflect_extracting_${projectId}`)
+          sessionStorage.removeItem(`reflect_extract_step_${projectId}`)
+          setAnalyzing(false)
+          setExtracting(false)
+          if (statusRes.status === 'completed' && !statusRes.notification_seen) {
+            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
+            await loadProjectData()
+          } else if ((statusRes.status === 'failed' || statusRes.status === 'partial') && !statusRes.notification_seen) {
+            if (statusRes.id) acknowledgeJobNotification(statusRes.id).catch(() => { })
+            await loadProjectData()
+          }
         }
+      } else {
+        sessionStorage.removeItem(`reflect_analyzing_${projectId}`)
+        sessionStorage.removeItem(`reflect_analysis_step_${projectId}`)
+        sessionStorage.removeItem(`reflect_analysis_estimate_${projectId}`)
+        sessionStorage.removeItem(`reflect_extracting_${projectId}`)
+        sessionStorage.removeItem(`reflect_extract_step_${projectId}`)
+        setAnalyzing(false)
+        setExtracting(false)
       }
     } catch (e) {
-      // No active job found
+      sessionStorage.removeItem(`reflect_analyzing_${projectId}`)
+      sessionStorage.removeItem(`reflect_analysis_step_${projectId}`)
+      sessionStorage.removeItem(`reflect_analysis_estimate_${projectId}`)
+      sessionStorage.removeItem(`reflect_extracting_${projectId}`)
+      sessionStorage.removeItem(`reflect_extract_step_${projectId}`)
+      setAnalyzing(false)
+      setExtracting(false)
     }
   }
 
@@ -513,6 +572,9 @@ export default function ProjectOverviewPage() {
         if (statusRes.status === 'completed' || statusRes.current_step === 'Ready for Review') {
           clearInterval(pollIntervalRef.current)
           pollIntervalRef.current = null
+          sessionStorage.removeItem(`reflect_analyzing_${projectId}`)
+          sessionStorage.removeItem(`reflect_analysis_step_${projectId}`)
+          sessionStorage.removeItem(`reflect_analysis_estimate_${projectId}`)
           setAnalyzing(false)
           setShowAnalysisModal(false)
 
@@ -546,6 +608,9 @@ export default function ProjectOverviewPage() {
         } else if (statusRes.status === 'failed') {
           clearInterval(pollIntervalRef.current)
           pollIntervalRef.current = null
+          sessionStorage.removeItem(`reflect_analyzing_${projectId}`)
+          sessionStorage.removeItem(`reflect_analysis_step_${projectId}`)
+          sessionStorage.removeItem(`reflect_analysis_estimate_${projectId}`)
           setAnalyzing(false)
           setShowAnalysisModal(false)
           const rawErr = statusRes.error || statusRes.error_message || ''
@@ -556,6 +621,9 @@ export default function ProjectOverviewPage() {
         } else if (statusRes.status === 'cancelled') {
           clearInterval(pollIntervalRef.current)
           pollIntervalRef.current = null
+          sessionStorage.removeItem(`reflect_analyzing_${projectId}`)
+          sessionStorage.removeItem(`reflect_analysis_step_${projectId}`)
+          sessionStorage.removeItem(`reflect_analysis_estimate_${projectId}`)
           setAnalyzing(false)
           setShowAnalysisModal(false)
           loadProjectData().catch(() => { })
@@ -571,6 +639,9 @@ export default function ProjectOverviewPage() {
       clearInterval(pollIntervalRef.current)
       pollIntervalRef.current = null
     }
+    sessionStorage.removeItem(`reflect_analyzing_${projectId}`)
+    sessionStorage.removeItem(`reflect_analysis_step_${projectId}`)
+    sessionStorage.removeItem(`reflect_analysis_estimate_${projectId}`)
     try {
       await cancelBrief(projectId)
       showToast('Brief generation cancelled.')
@@ -588,6 +659,8 @@ export default function ProjectOverviewPage() {
       clearInterval(extractTimerRef.current)
       extractTimerRef.current = null
     }
+    sessionStorage.removeItem(`reflect_extracting_${projectId}`)
+    sessionStorage.removeItem(`reflect_extract_step_${projectId}`)
     showToast('Stopping extraction and saving progress...')
     try {
       await cancelSourceExtraction(projectId)
@@ -626,19 +699,29 @@ export default function ProjectOverviewPage() {
     const docsToProcess = pendingBatchSources.length > 0 ? pendingBatchSources : sources
     const estimate = calculateBriefEstimate(docsToProcess)
     setAnalysisEstimate(estimate)
+    try {
+      sessionStorage.setItem(`reflect_analysis_estimate_${projectId}`, JSON.stringify(estimate))
+    } catch (e) { }
+
+    const initialStep = `Generating Brief Cards for Document Batch ${completedVersions.length === 0 ? 1 : completedVersions.length + 1}`
+    sessionStorage.setItem(`reflect_analyzing_${projectId}`, 'true')
+    sessionStorage.setItem(`reflect_analysis_step_${projectId}`, initialStep)
 
     setAnalyzing(true)
     setShowAnalysisModal(true)
     setHideFloatingPill(false)
     setAnalysisError(null)
     setAnalyzingSeconds(0)
-    setAnalysisStep('Initiating multi-agent analysis...')
+    setAnalysisStep(initialStep)
 
     try {
       const job = await analyzeBrief(projectId)
       setAnalysisJobId(job.id)
       startPollingStatus()
     } catch (err) {
+      sessionStorage.removeItem(`reflect_analyzing_${projectId}`)
+      sessionStorage.removeItem(`reflect_analysis_step_${projectId}`)
+      sessionStorage.removeItem(`reflect_analysis_estimate_${projectId}`)
       setAnalyzing(false)
       setShowAnalysisModal(false)
       const rawMsg = err.message || ''
@@ -1514,16 +1597,24 @@ export default function ProjectOverviewPage() {
                         <button
                           type="button"
                           className="bui-btn bui-btn-outline"
-                          onClick={() => navigate(`/projects/${projectId}/extract`)}
+                          onClick={() => {
+                            if (extracting || analyzing) {
+                              showToast('⚠️ A background task is currently running. Please wait for it to finish or stop it before reviewing.')
+                              return
+                            }
+                            navigate(`/projects/${projectId}/extract`)
+                          }}
+                          disabled={extracting || analyzing}
                           style={{
                             padding: '4px 10px',
                             fontSize: '11.5px',
                             fontWeight: 600,
-                            color: '#2563eb',
-                            borderColor: '#93c5fd',
-                            background: '#eff6ff',
+                            color: (extracting || analyzing) ? '#94a3b8' : '#2563eb',
+                            borderColor: (extracting || analyzing) ? '#cbd5e1' : '#93c5fd',
+                            background: (extracting || analyzing) ? '#f8fafc' : '#eff6ff',
                             borderRadius: '6px',
-                            cursor: 'pointer'
+                            cursor: (extracting || analyzing) ? 'not-allowed' : 'pointer',
+                            opacity: (extracting || analyzing) ? 0.6 : 1
                           }}
                         >
                           Review Extracted Data →
@@ -1631,12 +1722,12 @@ export default function ProjectOverviewPage() {
                                 style={{
                                   padding: '3px 8px',
                                   fontSize: '11px',
-                                  color: (extracting || isThisDocActive || rowExtractingId === s.id) ? '#cbd5e1' : '#ef4444',
-                                  borderColor: (extracting || isThisDocActive || rowExtractingId === s.id) ? '#f1f5f9' : '#cbd5e1',
-                                  cursor: (extracting || isThisDocActive || rowExtractingId === s.id) ? 'not-allowed' : 'pointer'
+                                  color: (extracting || analyzing || isThisDocActive || rowExtractingId === s.id) ? '#cbd5e1' : '#ef4444',
+                                  borderColor: (extracting || analyzing || isThisDocActive || rowExtractingId === s.id) ? '#f1f5f9' : '#cbd5e1',
+                                  cursor: (extracting || analyzing || isThisDocActive || rowExtractingId === s.id) ? 'not-allowed' : 'pointer'
                                 }}
                                 onClick={() => handleDeleteSource(s.id, s.file_name)}
-                                disabled={extracting || isThisDocActive || rowExtractingId === s.id}
+                                disabled={extracting || analyzing || isThisDocActive || rowExtractingId === s.id}
                                 title="Delete document"
                               >
                                 🗑

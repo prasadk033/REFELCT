@@ -508,18 +508,21 @@ Return ONLY JSON list.
 
         from llm.qwen_health import AI_UNAVAILABLE_MESSAGE
         err_str = str(e).lower()
-        is_ai_service_issue = any(k in err_str for k in [
-            "timeout", "connect", "connection", "refused", "unavailable",
-            "503", "502", "504", "proxy", "unreachable", "qwen", "failed to connect"
-        ])
-        if is_ai_service_issue:
-            friendly_err = AI_UNAVAILABLE_MESSAGE
-            step_status = "Service Unavailable"
+        if "cancelled" in err_str:
+            _update_job(db, job_id, "cancelled", "Cancelled by user", "Brief generation cancelled by user")
         else:
-            friendly_err = _sanitize_brief_error(str(e))
-            step_status = "Error"
+            is_ai_service_issue = any(k in err_str for k in [
+                "timeout", "connect", "connection", "refused", "unavailable",
+                "503", "502", "504", "proxy", "unreachable", "qwen", "failed to connect"
+            ])
+            if is_ai_service_issue:
+                friendly_err = AI_UNAVAILABLE_MESSAGE
+                step_status = "Service Unavailable"
+            else:
+                friendly_err = _sanitize_brief_error(str(e))
+                step_status = "Error"
 
-        _update_job(db, job_id, "failed", step_status, friendly_err)
+            _update_job(db, job_id, "failed", step_status, friendly_err)
 
     finally:
         db.close()

@@ -945,8 +945,21 @@ export default function ExtractionReviewPage() {
           serverStep={analysisStep}
           projectName={project?.name || 'Project'}
           onRunInBackground={() => {
+            sessionStorage.setItem(`reflect_analyzing_${projectId}`, 'true')
+            const stepToSave = analysisStep || 'Generating Brief Cards for Document Batch 1'
+            sessionStorage.setItem(`reflect_analysis_step_${projectId}`, stepToSave)
+            if (analysisEstimate) {
+              sessionStorage.setItem(`reflect_analysis_estimate_${projectId}`, JSON.stringify(analysisEstimate))
+            }
             setAnalyzing(false)
-            navigate(`/projects/${projectId}`)
+            navigate(`/projects/${projectId}`, {
+              state: {
+                backgroundAnalysis: true,
+                analysisEstimate,
+                analyzingSeconds,
+                analysisStep: stepToSave
+              }
+            })
           }}
           onCancel={handleCancelAnalysis}
         />
@@ -1152,8 +1165,22 @@ export default function ExtractionReviewPage() {
           estimatedSeconds={extractEstSeconds}
           elapsedSeconds={extractElapsedSeconds}
           onRunInBackground={() => {
+            sessionStorage.setItem(`reflect_extracting_${projectId}`, 'true')
+            const stepToSave = `Reparsing ${extractDocName}...`
+            sessionStorage.setItem(`reflect_extract_step_${projectId}`, stepToSave)
             setExtractModalOpen(false)
-            navigate(`/projects/${projectId}`)
+            navigate(`/projects/${projectId}`, {
+              state: {
+                backgroundExtraction: true,
+                extractDocName,
+                extractDocsCompleted: 0,
+                extractDocCount: extractDocCount || 1,
+                extractServerStep: stepToSave,
+                extractElapsedSeconds,
+                extractEstSeconds,
+                extractTotalPages
+              }
+            })
           }}
         />
       )}
