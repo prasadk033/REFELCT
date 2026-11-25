@@ -14,6 +14,8 @@ import {
   updateContextCardTags,
   deleteContextCard,
   createManualContextCard,
+  previewSplitContextCard,
+  confirmSplitContextCard,
 } from '../api.js'
 
 const KS_META = {
@@ -48,11 +50,19 @@ export default function ContextPage() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [errorMsg, setErrorMsg] = useState(null)
 
-  // Search & Card Action Modals
+  // Search, Aspect Filter, Sort, Layout & Card Action Modals
   const [searchQuery, setSearchQuery] = useState('')
+  const [activeAspectFilter, setActiveAspectFilter] = useState('all')
+  const [sortBy, setSortBy] = useState('relevance') // 'relevance' | 'title' | 'aspect'
+  const [layoutMode, setLayoutMode] = useState('grid') // 'grid' | 'list'
   const [detailCard, setDetailCard] = useState(null)
   const [modifyModalCard, setModifyModalCard] = useState(null)
   const [modifyInstruction, setModifyInstruction] = useState('')
+  const [splitParentCard, setSplitParentCard] = useState(null)
+  const [splitProposals, setSplitProposals] = useState([])
+  const [splitSelectedIds, setSplitSelectedIds] = useState([])
+  const [splitPreviewLoading, setSplitPreviewLoading] = useState(false)
+  const [splitConfirmLoading, setSplitConfirmLoading] = useState(false)
   const [noteModalCard, setNoteModalCard] = useState(null)
   const [noteText, setNoteText] = useState('')
   const [tagModalCard, setTagModalCard] = useState(null)
@@ -281,15 +291,78 @@ export default function ContextPage() {
     }
   }
 
-  const filteredCards = cards.filter(c => {
-    if (!searchQuery.trim()) return true
-    const q = searchQuery.toLowerCase()
-    return (
-      (c.title || '').toLowerCase().includes(q) ||
-      (c.content || '').toLowerCase().includes(q) ||
-      (c.tags || []).some(t => t.toLowerCase().includes(q))
+  async function handleOpenSplit(card) {
+    if (runningJob || splitPreviewLoading) return
+    setErrorMsg(null)
+    setSplitParentCard(card)
+    setSplitProposals([])
+    setSplitSelectedIds([])
+    setSplitPreviewLoading(true)
+    try {
+      const res = await previewSplitContextCard(projectId, card.id)
+      const proposals = res.proposed_cards || []
+      setSplitProposals(proposals)
+      setSplitSelectedIds(proposals.map((p, idx) => p.temp_id || `split_${idx}`))
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to analyze card for splitting.')
+      setSplitParentCard(null)
+    } finally {
+      setSplitPreviewLoading(false)
+    }
+  }
+
+  function toggleSplitSelection(tempId) {
+    setSplitSelectedIds(prev =>
+      prev.includes(tempId) ? prev.filter(id => id !== tempId) : [...prev, tempId]
     )
-  })
+  }
+
+  async function handleConfirmSplit() {
+    if (!splitParentCard || splitConfirmLoading || splitSelectedIds.length === 0) return
+    setSplitConfirmLoading(true)
+    setErrorMsg(null)
+    try {
+      const chosen = splitProposals.filter((p, idx) =>
+        splitSelectedIds.includes(p.temp_id || `split_${idx}`)
+      )
+      const res = await confirmSplitContextCard(projectId, splitParentCard.id, chosen)
+      const created = res.created_cards || []
+      if (created.length > 0) {
+        setCards(prev => [...prev, ...created])
+      }
+      setSplitParentCard(null)
+      setSplitProposals([])
+      setSplitSelectedIds([])
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to split Context Card.')
+    } finally {
+      setSplitConfirmLoading(false)
+    }
+  }
+
+  const aspectCounts = cards.reduce((acc, c) => {
+    const k = c.sub_aspect_key || 'place_identity'
+    acc[k] = (acc[k] || 0) + 1
+    return acc
+  }, {})
+
+  const filteredCards = cards
+    .filter(c => {
+      if (activeAspectFilter !== 'all' && c.sub_aspect_key !== activeAspectFilter) return false
+      if (!searchQuery.trim()) return true
+      const q = searchQuery.toLowerCase()
+      return (
+        (c.title || '').toLowerCase().includes(q) ||
+        (c.content || '').toLowerCase().includes(q) ||
+        (c.aspect_title || '').toLowerCase().includes(q) ||
+        (c.tags || []).some(t => t.toLowerCase().includes(q))
+      )
+    })
+    .sort((a, b) => {
+      if (sortBy === 'title') return (a.title || '').localeCompare(b.title || '')
+      if (sortBy === 'aspect') return (a.aspect_title || '').localeCompare(b.aspect_title || '')
+      return (a.display_order || 0) - (b.display_order || 0)
+    })
 
   return (
     <ProjectShell project={project} isTaskRunning={runningJob}>
@@ -500,75 +573,93 @@ export default function ContextPage() {
                 </button>
                 <button
                   type="button"
-                  disabled
+                  disabled={runningJob}
+                  onClick={() => setAddCardModalOpen(true)}
                   style={{
-                    background: '#94a3b8',
+                    background: '#6d28d9',
                     color: '#ffffff',
                     border: 'none',
                     borderRadius: '8px',
                     padding: '7px 14px',
                     fontSize: '12px',
                     fontWeight: 600,
-                    cursor: 'not-allowed',
-                    opacity: 0.7,
+                    cursor: runningJob ? 'not-allowed' : 'pointer',
+                    opacity: runningJob ? 0.5 : 1,
                   }}
-                  title="Climate Knowledge Set unlocks in Phase 2"
                 >
-                  Next: Climate →
+                  + Add Context Card
                 </button>
               </div>
             </header>
 
-            {/* Compact Horizontal 8 Knowledge Sets Strip */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: '8px', marginBottom: '20px' }}>
-              {knowledgeSets.map(ks => {
-                const meta = KS_META[ks.id] || { icon: '📘' }
-                const isActive = ks.id === activeSet
-                return (
-                  <div
-                    key={ks.id}
-                    style={{
-                      padding: '10px 8px',
-                      borderRadius: '10px',
-                      border: isActive ? '1.5px solid #8b5cf6' : '1px solid var(--border-color, #e2e8f0)',
-                      background: isActive ? '#f5f3ff' : 'var(--bg-surface, #ffffff)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '4px',
-                      opacity: ks.enabled ? 1 : 0.65,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 700, color: isActive ? '#4c1d95' : 'var(--text-main, #0f172a)' }}>
-                      <span>{isActive ? '✅' : meta.icon}</span>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ks.name}</span>
-                    </div>
-                    {!ks.enabled && (
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted, #64748b)' }}>🔒 Locked</span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Resolved Location Pill */}
-            {latestRun?.resolved_location && (
-              <div className="pov-box" style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)', marginBottom: '16px', fontSize: '12.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                <div>
-                  <strong>📍 Resolved Location:</strong> {latestRun.resolved_location.location_description || project?.location}
-                </div>
-                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '12px', background: '#eff6ff', color: '#1d4ed8' }}>
-                  {latestRun.location_confidence} · Attempts: {latestRun.attempt_count}/3
-                </span>
+            {/* Aspect Lens Filter Pills */}
+            {cards.length > 0 && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => setActiveAspectFilter('all')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    border: '1px solid',
+                    borderColor: activeAspectFilter === 'all' ? '#7c3aed' : 'var(--border-color, #e2e8f0)',
+                    background: activeAspectFilter === 'all' ? '#f5f3ff' : 'var(--bg-surface, #ffffff)',
+                    color: activeAspectFilter === 'all' ? '#5b21b6' : 'var(--text-main, #334155)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  All ({cards.length})
+                </button>
+                {Object.entries(aspectCounts).map(([key, count]) => {
+                  const sample = cards.find(c => c.sub_aspect_key === key)
+                  const label = sample?.aspect_title || key.replace(/_/g, ' ')
+                  const isSel = activeAspectFilter === key
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setActiveAspectFilter(key)}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        border: '1px solid',
+                        borderColor: isSel ? '#7c3aed' : 'var(--border-color, #e2e8f0)',
+                        background: isSel ? '#f5f3ff' : 'var(--bg-surface, #ffffff)',
+                        color: isSel ? '#5b21b6' : 'var(--text-main, #334155)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {label} ({count})
+                    </button>
+                  )
+                })}
               </div>
             )}
 
-            {/* Sub-header: Count + Search + Add Context Card */}
+            {/* Resolved Location Pill */}
+            {latestRun?.resolved_location && (
+              <div className="pov-box" style={{ padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border-color, #e2e8f0)', marginBottom: '18px', fontSize: '12.5px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div>
+                  <strong>📍 Resolved Location:</strong> {latestRun.resolved_location.location_description || project?.location}
+                </div>
+                <div>
+                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 9px', borderRadius: '8px', background: '#eff6ff', color: '#1d4ed8' }}>
+                    {latestRun.location_confidence} · Attempts: {latestRun.attempt_count}/3
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-header: Context Cards (N) + Search + Sort + Grid/List Toggle */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
-              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#4c1d95', borderBottom: '2px solid #5b21b6', paddingBottom: '4px' }}>
-                Cultural Context ({filteredCards.length})
+              <h2 style={{ margin: 0, fontSize: '15.5px', fontWeight: 700, color: '#4c1d95' }}>
+                Context Cards ({filteredCards.length})
               </h2>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <input
                   type="text"
                   value={searchQuery}
@@ -580,53 +671,216 @@ export default function ContextPage() {
                     borderRadius: '8px',
                     border: '1px solid var(--border-color, #cbd5e1)',
                     fontSize: '12.5px',
-                    minWidth: '210px',
+                    minWidth: '190px',
                     opacity: runningJob ? 0.6 : 1,
                   }}
                 />
-                <button
-                  type="button"
+                <select
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value)}
                   disabled={runningJob}
-                  onClick={() => setAddCardModalOpen(true)}
-                  className="bui-btn bui-btn-outline"
                   style={{
-                    padding: '6px 12px',
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color, #cbd5e1)',
                     fontSize: '12px',
-                    fontWeight: 600,
-                    opacity: runningJob ? 0.5 : 1,
-                    cursor: runningJob ? 'not-allowed' : 'pointer',
+                    background: 'var(--bg-surface, #ffffff)',
+                    color: 'var(--text-main, #0f172a)',
                   }}
                 >
-                  + Add Context Card
-                </button>
+                  <option value="relevance">Sort: Relevance</option>
+                  <option value="title">Sort: Title A-Z</option>
+                  <option value="aspect">Sort: Aspect</option>
+                </select>
+                <div style={{ display: 'inline-flex', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '8px', overflow: 'hidden' }}>
+                  <button
+                    type="button"
+                    onClick={() => setLayoutMode('grid')}
+                    title="Grid View"
+                    style={{
+                      padding: '5px 9px',
+                      border: 'none',
+                      background: layoutMode === 'grid' ? '#f5f3ff' : 'var(--bg-surface, #ffffff)',
+                      color: layoutMode === 'grid' ? '#5b21b6' : 'var(--text-muted, #64748b)',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                    }}
+                  >
+                    ⊞
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLayoutMode('list')}
+                    title="List View"
+                    style={{
+                      padding: '5px 9px',
+                      border: 'none',
+                      borderLeft: '1px solid var(--border-color, #cbd5e1)',
+                      background: layoutMode === 'list' ? '#f5f3ff' : 'var(--bg-surface, #ffffff)',
+                      color: layoutMode === 'list' ? '#5b21b6' : 'var(--text-muted, #64748b)',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                    }}
+                  >
+                    ☰
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* 3-Column Card Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: '16px' }}>
-              {filteredCards.map(card => (
-                <ContextCard
-                  key={card.id}
-                  card={card}
-                  busy={runningJob}
-                  isUpdatingThisCard={runningJob && jobKind === 'card_modification' && targetCardId === card.id}
-                  onOpenDetail={c => setDetailCard(c)}
-                  onModify={c => {
-                    setModifyModalCard(c)
-                    setModifyInstruction('')
+            {/* Main Area: Cards Grid/List + Optional Right-Side Split Drawer */}
+            <div style={{ display: 'grid', gridTemplateColumns: splitParentCard ? 'minmax(0, 1fr) 360px' : '1fr', gap: '18px', alignItems: 'start' }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: layoutMode === 'list' ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
+                  gap: '16px',
+                  alignItems: 'start',
+                }}
+              >
+                {filteredCards.map(card => (
+                  <ContextCard
+                    key={card.id}
+                    card={card}
+                    busy={runningJob}
+                    isUpdatingThisCard={runningJob && jobKind === 'card_modification' && targetCardId === card.id}
+                    isSplittingThisCard={splitParentCard?.id === card.id}
+                    onOpenDetail={c => setDetailCard(c)}
+                    onModify={c => {
+                      setModifyModalCard(c)
+                      setModifyInstruction('')
+                    }}
+                    onSplit={handleOpenSplit}
+                    onAddNote={c => {
+                      setNoteModalCard(c)
+                      setNoteText('')
+                    }}
+                    onAddTag={c => {
+                      setTagModalCard(c)
+                      setTagText('')
+                    }}
+                    onRemoveTag={handleRemoveTag}
+                    onDelete={c => !deleteLoading && setDeleteTargetCard(c)}
+                  />
+                ))}
+              </div>
+
+              {/* Right-Side Split Panel (Matching Mockup) */}
+              {splitParentCard && (
+                <aside
+                  className="pov-box"
+                  style={{
+                    padding: '18px',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border-color, #e2e8f0)',
+                    background: 'var(--bg-surface, #ffffff)',
+                    position: 'sticky',
+                    top: '20px',
+                    boxShadow: '0 10px 28px rgba(15, 23, 42, 0.08)',
                   }}
-                  onAddNote={c => {
-                    setNoteModalCard(c)
-                    setNoteText('')
-                  }}
-                  onAddTag={c => {
-                    setTagModalCard(c)
-                    setTagText('')
-                  }}
-                  onRemoveTag={handleRemoveTag}
-                  onDelete={c => !deleteLoading && setDeleteTargetCard(c)}
-                />
-              ))}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-main, #0f172a)' }}>
+                      Split into Smaller Cards (AI)
+                    </h3>
+                    <button
+                      type="button"
+                      disabled={splitConfirmLoading}
+                      onClick={() => setSplitParentCard(null)}
+                      style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', margin: '0 0 14px 0', lineHeight: 1.45 }}>
+                    REFLECT has identified distinct findings in this card. Select the points you want to create as individual cards.
+                  </p>
+
+                  {splitPreviewLoading ? (
+                    <div style={{ padding: '28px 12px', textAlign: 'center' }}>
+                      <span className="bui-spinner-inline" style={{ width: '22px', height: '22px', borderWidth: '3px', borderColor: '#ddd6fe', borderTopColor: '#6d28d9' }} />
+                      <p style={{ fontSize: '12.5px', color: 'var(--text-muted, #64748b)', marginTop: '10px' }}>
+                        Analyzing findings...
+                      </p>
+                    </div>
+                  ) : splitProposals.length === 0 ? (
+                    <p style={{ fontSize: '12.5px', color: 'var(--text-muted, #64748b)', padding: '12px 0' }}>
+                      No separate points were extracted from this card.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px', maxHeight: '360px', overflowY: 'auto' }}>
+                      {splitProposals.map((prop, idx) => {
+                        const tid = prop.temp_id || `split_${idx}`
+                        const checked = splitSelectedIds.includes(tid)
+                        return (
+                          <label
+                            key={tid}
+                            style={{
+                              display: 'flex',
+                              gap: '10px',
+                              alignItems: 'flex-start',
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              border: checked ? '1px solid #c4b5fd' : '1px solid transparent',
+                              background: checked ? '#f5f3ff' : 'transparent',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleSplitSelection(tid)}
+                              style={{ marginTop: '3px', accentColor: '#6d28d9' }}
+                            />
+                            <div>
+                              <strong style={{ display: 'block', fontSize: '12.5px', color: 'var(--text-main, #0f172a)', marginBottom: '2px' }}>
+                                {prop.title}
+                              </strong>
+                              <span style={{ fontSize: '11.5px', color: 'var(--text-muted, #64748b)', lineHeight: 1.4, display: 'block' }}>
+                                {prop.content}
+                              </span>
+                            </div>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted, #475569)', background: 'var(--bg-subtle, #f8fafc)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '8px', padding: '8px 10px', marginBottom: '14px', lineHeight: 1.4 }}>
+                    ℹ The selected points will be created as separate cards. The original parent card will be kept intact.
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="bui-btn bui-btn-outline"
+                      disabled={splitConfirmLoading}
+                      onClick={() => setSplitParentCard(null)}
+                      style={{ fontSize: '12px', padding: '7px 14px' }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={splitPreviewLoading || splitConfirmLoading || splitSelectedIds.length === 0}
+                      onClick={handleConfirmSplit}
+                      style={{
+                        background: '#6d28d9',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '7px 14px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: (splitPreviewLoading || splitConfirmLoading || splitSelectedIds.length === 0) ? 'not-allowed' : 'pointer',
+                        opacity: (splitPreviewLoading || splitConfirmLoading || splitSelectedIds.length === 0) ? 0.55 : 1,
+                      }}
+                    >
+                      {splitConfirmLoading ? 'Creating...' : `Create (${splitSelectedIds.length}) Cards`}
+                    </button>
+                  </div>
+                </aside>
+              )}
             </div>
           </div>
         )}
@@ -637,7 +891,7 @@ export default function ContextPage() {
             <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px', padding: '24px' }}>
               <h3 style={{ margin: '0 0 6px 0' }}>Start Cultural Context Research</h3>
               <p style={{ fontSize: '12.5px', color: 'var(--text-muted, #64748b)', margin: '0 0 14px 0' }}>
-                Context Master (Qwen) will resolve the site location and Cultural Context Agent (DeepSeek) will research the 7 sub-aspects using live web tools.
+                REFLECT will resolve your project location from your Brief, Program, and site data, then research local building culture, materials, climate wisdom, and heritage from verified sources.
               </p>
               <form onSubmit={handleStartGeneration}>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>
@@ -678,7 +932,7 @@ export default function ContextPage() {
               </p>
 
               <div style={{ background: 'var(--bg-subtle, #f8fafc)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '10px', padding: '12px 14px', marginBottom: '20px', fontSize: '12.5px', fontWeight: 600, color: 'var(--text-main, #0f172a)' }}>
-                {jobStep || 'Running Context Master & DeepSeek Web Research...'}
+                {jobStep || 'Analyzing site context and gathering verified local research...'}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>

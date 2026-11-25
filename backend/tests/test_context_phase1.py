@@ -61,28 +61,33 @@ class TestContextPhase1(unittest.TestCase):
             if ks["id"] != "cultural_context":
                 self.assertFalse(ks["enabled"])
 
-    def test_master_enforces_max_3_attempts_and_creates_7_cards(self):
-        seven_keys = [
-            "the_place_briefly",
-            "how_this_place_has_built",
+    def test_master_enforces_max_3_attempts_and_creates_dynamic_cards(self):
+        aspect_keys = [
+            "place_identity",
+            "spatial_traditions",
             "materials_and_making",
-            "climate_as_culture_has_answered_it",
+            "materials_and_making",
+            "everyday_life",
+            "cultural_identity",
+            "living_tensions",
+            "contemporary_production",
             "history_and_memory",
-            "the_living_tensions",
-            "what_the_team_should_learn_locally",
+            "learn_locally",
         ]
         mock_output = {
-            "sub_aspects": [
+            "documentation_level": "PARTLY_DOCUMENTED",
+            "cards": [
                 {
-                    "sub_aspect_key": k,
-                    "title": k.replace("_", " ").title(),
-                    "content": f"Verified architectural content for {k}.",
+                    "aspect_key": k,
+                    "title": f"Finding {idx + 1} ({k})",
+                    "content": f"Concise project-aware finding {idx + 1} for {k}.",
+                    "scale": "city",
                     "research_register": "DOCUMENTED",
                     "confidence": "MEDIUM",
                     "sources": [{"title": "Local Archive", "url": "https://example.org/doc"}],
                     "validated_images": [],
                 }
-                for k in seven_keys
+                for idx, k in enumerate(aspect_keys)
             ],
             "limitations": ["Limited municipal archive digitization."],
             "local_verification_requirements": ["Confirm local stone quarry availability."],
@@ -115,7 +120,70 @@ class TestContextPhase1(unittest.TestCase):
                 ContextCard.project_id == self.project_a.id,
                 ContextCard.is_deleted == False,
             ).all()
-            self.assertEqual(len(cards), 7)
+            # Dynamic card count (>7) rather than fixed 7
+            self.assertEqual(len(cards), 10)
+
+    def test_card_split_preview_and_confirm_preserves_parent_card(self):
+        parent = ContextCard(
+            id=str(uuid.uuid4()),
+            project_id=self.project_a.id,
+            knowledge_set_id="cultural_context",
+            knowledge_set_name="Cultural Context",
+            sub_aspect_key="materials_and_making",
+            display_order=1,
+            title="Materials and making",
+            content="Hyderabad sits on granite and also has lime-surkhi plaster traditions.",
+            research_register="DOCUMENTED",
+            confidence="MEDIUM",
+            version=1,
+            tags=["city"],
+        )
+        self.db.add(parent)
+        self.db.commit()
+
+        with patch("context.master_agent.CulturalContextAgent") as mock_agent_cls:
+            mock_agent = MagicMock()
+            mock_agent.propose_card_splits.return_value = {
+                "proposed_cards": [
+                    {
+                        "temp_id": "split_1",
+                        "title": "Hyderabad Granite Tradition",
+                        "content": "Granite is quarried locally and worked by stone yards.",
+                        "aspect_key": "materials_and_making",
+                        "research_register": "DOCUMENTED",
+                        "sources": [{"title": "Stone Survey", "url": "https://example.org/stone"}],
+                    },
+                    {
+                        "temp_id": "split_2",
+                        "title": "Lime-Surkhi Plaster",
+                        "content": "Traditional breathable lime mortars remain regionally known.",
+                        "aspect_key": "materials_and_making",
+                        "research_register": "PATTERN",
+                        "sources": [],
+                    },
+                ]
+            }
+            mock_agent_cls.return_value = mock_agent
+
+            master = ContextMasterAgent(db=self.db)
+            proposals = master.propose_card_splits(self.project_a.id, parent.id)
+            self.assertEqual(len(proposals), 2)
+
+            # Preview must NOT mutate DB
+            count_after_preview = self.db.query(ContextCard).filter(
+                ContextCard.project_id == self.project_a.id, ContextCard.is_deleted == False
+            ).count()
+            self.assertEqual(count_after_preview, 1)
+
+            # Confirm only 1 selected split card
+            created = master.confirm_card_splits(self.project_a.id, parent.id, [proposals[0]])
+            self.assertEqual(len(created), 1)
+            self.assertEqual(created[0].title, "Hyderabad Granite Tradition")
+
+            # Parent card must still be preserved intact
+            parent_check = self.db.query(ContextCard).filter(ContextCard.id == parent.id).first()
+            self.assertFalse(parent_check.is_deleted)
+            self.assertEqual(parent_check.title, "Materials and making")
 
     def test_card_modification_preserves_original_on_failure(self):
         card = ContextCard(
@@ -192,20 +260,23 @@ class TestContextPhase1(unittest.TestCase):
     def test_cultural_agent_executes_search_and_read_url_tool_loop(self):
         mock_client = MagicMock()
         seven_keys = [
-            "the_place_briefly",
-            "how_this_place_has_built",
+            "place_identity",
+            "spatial_traditions",
             "materials_and_making",
-            "climate_as_culture_has_answered_it",
+            "everyday_life",
+            "cultural_identity",
+            "living_tensions",
+            "contemporary_production",
             "history_and_memory",
-            "the_living_tensions",
-            "what_the_team_should_learn_locally",
         ]
         final_json = {
-            "sub_aspects": [
+            "documentation_level": "PARTLY_DOCUMENTED",
+            "cards": [
                 {
-                    "sub_aspect_key": k,
+                    "aspect_key": k,
                     "title": k.replace("_", " ").title(),
                     "content": f"Researched content for {k}",
+                    "scale": "city",
                     "research_register": "DOCUMENTED",
                     "confidence": "HIGH",
                     "sources": [{"title": "Vizag Heritage", "url": "https://example.org/vizag"}],
@@ -275,7 +346,7 @@ class TestContextPhase1(unittest.TestCase):
             self.assertTrue(result["research_trace"][0]["success"])
             self.assertFalse(result["research_trace"][1]["success"])  # malformed args
             self.assertTrue(result["research_trace"][2]["success"])
-            self.assertEqual(len(result["sub_aspects"]), 7)
+            self.assertEqual(len(result["cards"]), 8)
 
     def test_tool_call_limit_enforced_and_forces_final_synthesis(self):
         mock_client = MagicMock()

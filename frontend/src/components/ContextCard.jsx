@@ -11,8 +11,10 @@ export default function ContextCard({
   card,
   busy = false,
   isUpdatingThisCard = false,
+  isSplittingThisCard = false,
   onOpenDetail,
   onModify,
+  onSplit,
   onAddNote,
   onAddTag,
   onRemoveTag,
@@ -21,6 +23,9 @@ export default function ContextCard({
   const [expanded, setExpanded] = useState(false)
   const reg = REGISTER_STYLES[card.research_register] || REGISTER_STYLES.DOCUMENTED
   const verifiedImages = (card.images || []).filter(img => img.verified || img.is_architect_upload)
+  const contentText = (card.content || '').trim()
+  const isLong = contentText.length > 170
+  const displayContent = !isLong || expanded ? contentText : `${contentText.slice(0, 170).trimEnd()}...`
 
   if (isUpdatingThisCard) {
     return (
@@ -29,13 +34,13 @@ export default function ContextCard({
         style={{
           padding: '24px 20px',
           borderRadius: '12px',
-          border: '1.5px solid #c4b5fd',
+          border: '1.5px solid #8b5cf6',
           background: 'var(--bg-surface, #ffffff)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          minHeight: '230px',
+          minHeight: '210px',
           gap: '10px',
           textAlign: 'center',
         }}
@@ -60,7 +65,8 @@ export default function ContextCard({
       style={{
         padding: '16px 18px',
         borderRadius: '12px',
-        border: '1px solid var(--border-color, #e2e8f0)',
+        border: isSplittingThisCard ? '1.5px solid #7c3aed' : '1px solid var(--border-color, #e2e8f0)',
+        boxShadow: isSplittingThisCard ? '0 0 0 3px rgba(124, 58, 237, 0.1)' : 'none',
         background: 'var(--bg-surface, #ffffff)',
         display: 'flex',
         flexDirection: 'column',
@@ -69,7 +75,6 @@ export default function ContextCard({
       }}
     >
       <div>
-        {/* Optional Validated Web Image Banner */}
         {verifiedImages.length > 0 && (
           <div style={{ marginBottom: '12px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-color, #e2e8f0)' }}>
             <img
@@ -80,13 +85,13 @@ export default function ContextCard({
           </div>
         )}
 
-        {/* Title & Register */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+        {/* Top Meta Row: Register + Version/Sources + More Button */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
           <span
             style={{
-              fontSize: '10.5px',
+              fontSize: '11px',
               fontWeight: 600,
-              padding: '2px 8px',
+              padding: '2px 9px',
               borderRadius: '12px',
               background: reg.bg,
               color: reg.color,
@@ -95,16 +100,27 @@ export default function ContextCard({
           >
             {reg.label}
           </span>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)' }}>
-            v{card.version} · {(card.sources || []).length} src
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '11.5px', color: 'var(--text-muted, #64748b)' }}>
+              v{card.version} · {(card.sources || []).length} src
+            </span>
+            <button
+              type="button"
+              onClick={() => onOpenDetail?.(card)}
+              title="View full card, sources & notes"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted, #64748b)', fontSize: '14px', padding: '0 2px', lineHeight: 1 }}
+            >
+              •••
+            </button>
+          </div>
         </div>
 
+        {/* Title */}
         <h3
           onClick={() => onOpenDetail?.(card)}
           style={{
             margin: '0 0 6px 0',
-            fontSize: '15.5px',
+            fontSize: '16px',
             fontWeight: 700,
             color: 'var(--text-main, #0f172a)',
             cursor: 'pointer',
@@ -113,49 +129,48 @@ export default function ContextCard({
           {card.title}
         </h3>
 
-        {/* Concise Content Preview */}
+        {/* Body Content + Dynamic Show More / Show Less */}
         <div
           style={{
-            fontSize: '12.5px',
+            fontSize: '13px',
             lineHeight: 1.55,
             color: 'var(--text-muted, #475569)',
             whiteSpace: 'pre-wrap',
-            display: expanded ? 'block' : '-webkit-box',
-            WebkitLineClamp: expanded ? 'unset' : 4,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
+            height: 'auto',
+            overflow: 'visible',
           }}
         >
-          {card.content}
+          {displayContent}
         </div>
-        {card.content && card.content.length > 180 && (
+        {isLong && (
           <button
             type="button"
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => setExpanded(prev => !prev)}
+            aria-expanded={expanded}
             style={{
               background: 'none',
               border: 'none',
-              padding: '4px 0 0 0',
-              color: '#5b21b6',
-              fontSize: '11.5px',
+              padding: '5px 0 0 0',
+              color: '#6d28d9',
+              fontSize: '12px',
               fontWeight: 600,
               cursor: 'pointer',
             }}
           >
-            {expanded ? 'Show less' : 'Read full card →'}
+            {expanded ? 'Show less ⌃' : 'Show more ⌄'}
           </button>
         )}
 
         {/* Tags */}
         {(card.tags || []).length > 0 && (
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px' }}>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
             {card.tags.map(tag => (
               <span
                 key={tag}
                 style={{
-                  fontSize: '11px',
+                  fontSize: '10.5px',
                   fontWeight: 600,
-                  padding: '2px 8px',
+                  padding: '2px 7px',
                   borderRadius: '10px',
                   background: '#eef2ff',
                   color: '#4338ca',
@@ -180,13 +195,12 @@ export default function ContextCard({
           </div>
         )}
 
-        {/* Architect Notes Count */}
         {(card.architect_notes || []).length > 0 && (
           <div
             onClick={() => onOpenDetail?.(card)}
             style={{
               marginTop: '8px',
-              fontSize: '11.5px',
+              fontSize: '11px',
               color: '#1d4ed8',
               background: '#eff6ff',
               padding: '4px 8px',
@@ -194,79 +208,122 @@ export default function ContextCard({
               cursor: 'pointer',
             }}
           >
-            📝 {card.architect_notes.length} Architect Note{card.architect_notes.length > 1 ? 's' : ''}
+            💬 {card.architect_notes.length} Architect Note{card.architect_notes.length > 1 ? 's' : ''}
           </div>
         )}
       </div>
 
-      {/* Bottom Action Bar (Modify | Add Note | Add Tag | Delete) */}
+      {/* Footer Row: Aspect Label (left) + Compact Actions (right) */}
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-          gap: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
           paddingTop: '10px',
           borderTop: '1px solid var(--border-color, #e2e8f0)',
+          flexWrap: 'wrap',
         }}
       >
-        <button
-          type="button"
-          className="bui-btn bui-btn-outline"
-          disabled={busy}
-          onClick={() => onModify?.(card)}
-          style={{
-            fontSize: '11px',
-            padding: '5px 4px',
-            opacity: busy ? 0.5 : 1,
-            cursor: busy ? 'not-allowed' : 'pointer',
-          }}
-        >
-          ✎ Modify
-        </button>
-        <button
-          type="button"
-          className="bui-btn bui-btn-outline"
-          disabled={busy}
-          onClick={() => onAddNote?.(card)}
-          style={{
-            fontSize: '11px',
-            padding: '5px 4px',
-            opacity: busy ? 0.5 : 1,
-            cursor: busy ? 'not-allowed' : 'pointer',
-          }}
-        >
-          📝 Note
-        </button>
-        <button
-          type="button"
-          className="bui-btn bui-btn-outline"
-          disabled={busy}
-          onClick={() => onAddTag?.(card)}
-          style={{
-            fontSize: '11px',
-            padding: '5px 4px',
-            opacity: busy ? 0.5 : 1,
-            cursor: busy ? 'not-allowed' : 'pointer',
-          }}
-        >
-          🏷 Tag
-        </button>
-        <button
-          type="button"
-          className="bui-btn bui-btn-outline"
-          disabled={busy}
-          onClick={() => onDelete?.(card)}
-          style={{
-            fontSize: '11px',
-            padding: '5px 4px',
-            color: busy ? '#94a3b8' : '#dc2626',
-            borderColor: busy ? '#e2e8f0' : '#fecaca',
-            opacity: busy ? 0.5 : 1,
-            cursor: busy ? 'not-allowed' : 'pointer',
-          }}
-        >
-          🗑 Delete
-        </button>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)', fontWeight: 500 }}>
+          📍 {card.aspect_title || 'Cultural Context'}
+        </span>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onSplit?.(card)}
+            title="Split into smaller cards (AI)"
+            style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              padding: '4px 9px',
+              borderRadius: '6px',
+              border: '1px solid',
+              borderColor: isSplittingThisCard ? '#6d28d9' : 'var(--border-color, #cbd5e1)',
+              background: isSplittingThisCard ? '#6d28d9' : 'var(--bg-surface, #ffffff)',
+              color: isSplittingThisCard ? '#ffffff' : 'var(--text-main, #334155)',
+              opacity: busy ? 0.5 : 1,
+              cursor: busy ? 'not-allowed' : 'pointer',
+            }}
+          >
+            ✦ Split
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onModify?.(card)}
+            title="Modify card with AI"
+            style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              padding: '4px 9px',
+              borderRadius: '6px',
+              border: '1px solid var(--border-color, #cbd5e1)',
+              background: 'var(--bg-surface, #ffffff)',
+              color: 'var(--text-main, #334155)',
+              opacity: busy ? 0.5 : 1,
+              cursor: busy ? 'not-allowed' : 'pointer',
+            }}
+          >
+            ✎ Edit
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onAddNote?.(card)}
+            title="Add Architect Note"
+            style={{
+              fontSize: '12px',
+              padding: '4px 6px',
+              borderRadius: '6px',
+              border: '1px solid transparent',
+              background: 'transparent',
+              color: 'var(--text-muted, #64748b)',
+              opacity: busy ? 0.45 : 1,
+              cursor: busy ? 'not-allowed' : 'pointer',
+            }}
+          >
+            💬
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onAddTag?.(card)}
+            title="Add Tag"
+            style={{
+              fontSize: '12px',
+              padding: '4px 6px',
+              borderRadius: '6px',
+              border: '1px solid transparent',
+              background: 'transparent',
+              color: 'var(--text-muted, #64748b)',
+              opacity: busy ? 0.45 : 1,
+              cursor: busy ? 'not-allowed' : 'pointer',
+            }}
+          >
+            🏷
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onDelete?.(card)}
+            title="Delete Card"
+            style={{
+              fontSize: '12px',
+              padding: '4px 6px',
+              borderRadius: '6px',
+              border: '1px solid transparent',
+              background: 'transparent',
+              color: busy ? '#94a3b8' : '#ef4444',
+              opacity: busy ? 0.45 : 1,
+              cursor: busy ? 'not-allowed' : 'pointer',
+            }}
+          >
+            🗑
+          </button>
+        </div>
       </div>
     </article>
   )

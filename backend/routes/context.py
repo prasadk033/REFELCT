@@ -17,7 +17,8 @@ from context.schemas import (
     ContextCardNoteRequest,
     ContextCardTagsRequest,
 )
-from context.registry import KNOWLEDGE_SETS, is_knowledge_set_enabled
+from context.registry import KNOWLEDGE_SETS, CULTURAL_ASPECT_LENSES, is_knowledge_set_enabled
+from context.master_agent import ContextMasterAgent
 from context.orchestrator import (
     run_context_generation_job,
     run_context_card_modification_job,
@@ -36,6 +37,7 @@ def _get_owned_project(db: Session, project_id: str, user_id: str) -> Project:
 
 
 def _serialize_card(card: ContextCard) -> Dict[str, Any]:
+    aspect_map = {l["key"]: l["title"] for l in CULTURAL_ASPECT_LENSES}
     return {
         "id": card.id,
         "project_id": card.project_id,
@@ -43,6 +45,7 @@ def _serialize_card(card: ContextCard) -> Dict[str, Any]:
         "knowledge_set_id": card.knowledge_set_id,
         "knowledge_set_name": card.knowledge_set_name,
         "sub_aspect_key": card.sub_aspect_key,
+        "aspect_title": aspect_map.get(card.sub_aspect_key, card.sub_aspect_key.replace("_", " ").title()),
         "display_order": card.display_order,
         "title": card.title,
         "content": card.content,
@@ -464,3 +467,49 @@ def create_manual_context_card(
     db.commit()
     db.refresh(card)
     return _serialize_card(card)
+
+
+@router.post("/{project_id}/context/cards/{card_id}/split/preview")
+def preview_split_context_card(
+    project_id: str,
+    card_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """MODE C Preview: Extract selectable standalone card proposals from a parent card."""
+    _get_owned_project(db, project_id, user.id)
+    if not config.DEEPSEEK_API_KEY:
+        raise HTTPException(status_code=503, detail="DeepSeek API key is not configured on the server.")
+    try:
+        master = ContextMasterAgent(db=db)
+        proposed = master.propose_card_splits(project_id, card_id)
+        return {"parent_card_id": card_id, "proposed_cards": proposed}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Card split preview failed: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Split preview failed: {exc}")
+
+
+@router.post("/{project_id}/context/cards/{card_id}/split/confirm", status_code=201)
+def confirm_split_context_card(
+    project_id: str,
+    card_id: str,
+    body: Dict[str, Any],
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """MODE C Confirm: Persist user-selected split cards while preserving the parent card."""
+    _get_owned_project(db, project_id, user.id)
+    selected_cards = body.get("selected_cards") or []
+    if not isinstance(selected_cards, list) or not selected_cards:
+        raise HTTPException(status_code=400, detail="At least one selected card is required.")
+    try:
+        master = ContextMasterAgent(db=db)
+        created = master.confirm_card_splits(project_id, card_id, selected_cards)
+        return {
+            "parent_card_id": card_id,
+            "created_cards": [_serialize_card(c) for c in created],
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

@@ -205,46 +205,46 @@ LOCATION CLUES (DATA):
         architect_local_knowledge: Optional[str] = None,
     ) -> Tuple[str, List[str], str]:
         """
-        Evaluate the 7-sub-aspect Cultural Context output.
+        Evaluate dynamic Cultural Context cards (one idea per card, 8 aspect lenses).
         Returns (decision: ACCEPTED|ACCEPTED_WITH_GAPS|RETRY, issues: list, targeted_feedback: str).
         """
-        sections = agent_output.get("sub_aspects") or []
-        expected_keys = [sa["key"] for sa in get_knowledge_set("cultural_context")["sub_aspects"]]
-        present_keys = [s.get("sub_aspect_key") for s in sections]
-        missing = [k for k in expected_keys if k not in present_keys]
+        cards_out = agent_output.get("cards") or agent_output.get("sub_aspects") or []
 
         issues: List[str] = []
-        if missing:
-            issues.append(f"Missing required sub-aspects: {', '.join(missing)}")
+        if not cards_out:
+            issues.append("No Cultural Context cards were produced.")
 
-        for s in sections:
-            if not (s.get("content") or "").strip():
-                issues.append(f"Empty content in sub-aspect '{s.get('sub_aspect_key')}'")
+        seen_titles = set()
+        for c in cards_out:
+            title = (c.get("title") or "").strip()
+            content = (c.get("content") or "").strip()
+            if not title or not content:
+                issues.append("One or more cards have an empty title or content.")
+            norm_t = title.lower()
+            if norm_t in seen_titles:
+                issues.append(f"Duplicate card title detected: '{title}'")
+            seen_titles.add(norm_t)
 
         if issues:
-            feedback = (
-                "Ensure all 7 required Cultural Context sub_aspects are present and non-empty: "
-                + "; ".join(issues)
-            )
+            feedback = "Fix structural defects while preserving valid findings: " + "; ".join(issues)
             return "RETRY", issues, feedback
 
-        # DeepSeek / LLM quality gate for location specificity, prescriptions, and attribution
-        eval_prompt = f"""Evaluate this Cultural Context research against REFLECT Context Master criteria:
-1. Relevant to resolved location ({json.dumps(resolved_location)}) rather than generic country essay.
-2. No design prescriptions (never tells architect what they should design/avoid).
+        # DeepSeek / LLM quality gate for location specificity, project awareness, and register honesty
+        eval_prompt = f"""Evaluate this dynamic set of Cultural Context cards against REFLECT Context Master criteria:
+1. Relevant to resolved location ({json.dumps(resolved_location)}) and connected to project type ({project_type}).
+2. One idea per card (~40-70 words), no duplicate cards, no design prescriptions.
 3. Distinguishes DOCUMENTED facts, PATTERN inferences, and UNKNOWNs.
 4. Attributes architect local knowledge ("You noted that...") if provided: "{(architect_local_knowledge or '')[:400]}".
-5. Calibrated to project type: {project_type}.
 
 Return ONLY valid JSON:
 {{
   "decision": "ACCEPTED | ACCEPTED_WITH_GAPS | RETRY",
-  "issues": ["specific material defects only if RETRY, else empty or minor notes"],
+  "issues": ["specific material defects only if RETRY, else empty"],
   "targeted_feedback": "specific instructions on what to fix if RETRY, else empty string"
 }}
 
-RESEARCH OUTPUT:
-{json.dumps(sections, indent=2, default=str)[:14000]}
+CARDS OUTPUT ({len(cards_out)} cards):
+{json.dumps(cards_out, indent=2, default=str)[:14000]}
 """
         try:
             ds = get_deepseek_client()
@@ -380,33 +380,44 @@ RESEARCH OUTPUT:
             pc.is_deleted = True
 
         ks_meta = get_knowledge_set("cultural_context")
-        order_map = {sa["key"]: (sa["order"], sa["title"]) for sa in ks_meta["sub_aspects"]}
-        sections = (best_output or {}).get("sub_aspects") or []
+        valid_lenses = {l["key"] for l in (ks_meta.get("aspect_lenses") or [])}
+        generated_cards = (best_output or {}).get("cards") or (best_output or {}).get("sub_aspects") or []
 
-        for sec in sections:
-            key = sec.get("sub_aspect_key") or "the_place_briefly"
-            order, canonical_title = order_map.get(key, (99, sec.get("title") or key))
+        seen_titles = set()
+        for idx, item in enumerate(generated_cards, start=1):
+            title = (item.get("title") or "").strip()
+            content = (item.get("content") or "").strip()
+            if not title or not content:
+                continue
+            if title.lower() in seen_titles:
+                continue
+            seen_titles.add(title.lower())
+
+            aspect_key = (item.get("aspect_key") or item.get("sub_aspect_key") or "place_identity").strip()
+            if aspect_key not in valid_lenses:
+                aspect_key = "place_identity"
+
             card = ContextCard(
                 id=str(uuid.uuid4()),
                 project_id=project_id,
                 run_id=run.id,
                 knowledge_set_id="cultural_context",
                 knowledge_set_name="Cultural Context",
-                sub_aspect_key=key,
-                display_order=order,
-                title=canonical_title,
-                content=(sec.get("content") or "").strip(),
-                research_register=sec.get("research_register") or "DOCUMENTED",
-                confidence=sec.get("confidence") or "MEDIUM",
+                sub_aspect_key=aspect_key,
+                display_order=idx,
+                title=title,
+                content=content,
+                research_register=item.get("research_register") or "DOCUMENTED",
+                confidence=item.get("confidence") or "MEDIUM",
                 version=next_version,
                 architect_notes=[],
-                tags=[],
+                tags=[item["scale"]] if item.get("scale") else [],
                 is_deleted=False,
             )
             self.db.add(card)
             self.db.flush()
 
-            for src in sec.get("sources") or []:
+            for src in item.get("sources") or []:
                 self.db.add(
                     ContextSource(
                         id=str(uuid.uuid4()),
@@ -420,7 +431,7 @@ RESEARCH OUTPUT:
                     )
                 )
 
-            for img in sec.get("validated_images") or []:
+            for img in item.get("validated_images") or []:
                 self.db.add(
                     ContextCardImage(
                         id=str(uuid.uuid4()),
@@ -541,3 +552,127 @@ RESEARCH OUTPUT:
         self.db.commit()
         self.db.refresh(card)
         return card
+
+    def propose_card_splits(self, project_id: str, card_id: str) -> List[Dict[str, Any]]:
+        """
+        MODE C Preview: Ask Cultural Context Agent to extract standalone card proposals
+        from a parent card without modifying the database.
+        """
+        card = (
+            self.db.query(ContextCard)
+            .filter(ContextCard.id == card_id, ContextCard.project_id == project_id, ContextCard.is_deleted == False)
+            .first()
+        )
+        if not card:
+            raise ValueError("Context card not found.")
+
+        card_data = {
+            "id": card.id,
+            "title": card.title,
+            "content": card.content,
+            "aspect_key": card.sub_aspect_key,
+            "confidence": card.confidence,
+            "sources": [
+                {
+                    "title": s.title,
+                    "author_or_org": s.author_or_org,
+                    "url": s.url,
+                    "published_date": s.published_date,
+                    "source_type": s.source_type,
+                    "supported_claim": s.supported_claim,
+                }
+                for s in (card.sources or [])
+            ],
+        }
+        agent = CulturalContextAgent()
+        res = agent.propose_card_splits(card_data)
+        return res.get("proposed_cards") or []
+
+    def confirm_card_splits(
+        self,
+        project_id: str,
+        parent_card_id: str,
+        selected_cards: List[Dict[str, Any]],
+    ) -> List[ContextCard]:
+        """
+        MODE C Confirm: Persist user-selected split cards as standalone ContextCards,
+        preserving the original parent card intact and preventing duplicate titles.
+        """
+        parent = (
+            self.db.query(ContextCard)
+            .filter(ContextCard.id == parent_card_id, ContextCard.project_id == project_id, ContextCard.is_deleted == False)
+            .first()
+        )
+        if not parent:
+            raise ValueError("Parent context card not found.")
+
+        existing_cards = (
+            self.db.query(ContextCard)
+            .filter(
+                ContextCard.project_id == project_id,
+                ContextCard.knowledge_set_id == parent.knowledge_set_id,
+                ContextCard.is_deleted == False,
+            )
+            .all()
+        )
+        existing_titles = {c.title.strip().lower() for c in existing_cards}
+        max_order = max([c.display_order for c in existing_cards], default=0)
+
+        created: List[ContextCard] = []
+        for idx, item in enumerate(selected_cards, start=1):
+            title = (item.get("title") or "").strip()
+            content = (item.get("content") or "").strip()
+            if not title or not content or title.lower() in existing_titles:
+                continue
+            existing_titles.add(title.lower())
+
+            new_card = ContextCard(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                run_id=parent.run_id,
+                knowledge_set_id=parent.knowledge_set_id,
+                knowledge_set_name=parent.knowledge_set_name,
+                sub_aspect_key=item.get("aspect_key") or parent.sub_aspect_key,
+                display_order=max_order + idx,
+                title=title,
+                content=content,
+                research_register=item.get("research_register") or parent.research_register,
+                confidence=item.get("confidence") or parent.confidence,
+                version=1,
+                architect_notes=[],
+                tags=list(parent.tags or []),
+                is_deleted=False,
+            )
+            self.db.add(new_card)
+            self.db.flush()
+
+            sources_to_copy = item.get("sources") or [
+                {
+                    "title": s.title,
+                    "author_or_org": s.author_or_org,
+                    "url": s.url,
+                    "published_date": s.published_date,
+                    "source_type": s.source_type,
+                    "supported_claim": s.supported_claim,
+                }
+                for s in (parent.sources or [])
+            ]
+            for src in sources_to_copy:
+                self.db.add(
+                    ContextSource(
+                        id=str(uuid.uuid4()),
+                        card_id=new_card.id,
+                        title=src.get("title") or "Source",
+                        author_or_org=src.get("author_or_org"),
+                        url=src.get("url"),
+                        published_date=src.get("published_date"),
+                        source_type=src.get("source_type"),
+                        supported_claim=src.get("supported_claim"),
+                    )
+                )
+            created.append(new_card)
+
+        self.db.commit()
+        for c in created:
+            self.db.refresh(c)
+        return created

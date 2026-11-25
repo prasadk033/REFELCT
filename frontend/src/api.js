@@ -582,3 +582,17 @@ export async function createManualContextCard(projectId, knowledgeSetId = 'cultu
   });
 }
 
+export async function previewSplitContextCard(projectId, cardId) {
+  return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}/split/preview`, {
+    method: 'POST',
+  });
+}
+
+export async function confirmSplitContextCard(projectId, cardId, selectedCards) {
+  return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}/split/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ selected_cards: selectedCards }),
+  });
+}
+
