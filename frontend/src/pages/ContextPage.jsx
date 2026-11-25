@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import ProjectShell from '../components/ProjectShell.jsx'
 import ContextCard from '../components/ContextCard.jsx'
+import ConfirmModal from '../components/ConfirmModal.jsx'
 import {
   getProject,
   getProjectContext,
@@ -30,6 +31,8 @@ export default function ContextPage() {
 
   const [modifyModalCard, setModifyModalCard] = useState(null)
   const [modifyInstruction, setModifyInstruction] = useState('')
+  const [deleteTargetCard, setDeleteTargetCard] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
   const pollRef = useRef(null)
 
   useEffect(() => {
@@ -144,9 +147,24 @@ export default function ContextPage() {
     setCards(prev => prev.map(c => (c.id === cardId ? updated : c)))
   }
 
-  async function handleDeleteCard(card) {
-    await deleteContextCard(projectId, card.id)
-    setCards(prev => prev.filter(c => c.id !== card.id))
+  function handleDeleteCard(card) {
+    if (deleteLoading) return
+    setDeleteTargetCard(card)
+  }
+
+  async function confirmDeleteCard() {
+    if (!deleteTargetCard || deleteLoading) return
+    setDeleteLoading(true)
+    setErrorMsg(null)
+    try {
+      await deleteContextCard(projectId, deleteTargetCard.id)
+      setCards(prev => prev.filter(c => c.id !== deleteTargetCard.id))
+      setDeleteTargetCard(null)
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to delete Context Card.')
+    } finally {
+      setDeleteLoading(false)
+    }
   }
 
   return (
@@ -302,6 +320,19 @@ export default function ContextPage() {
               </form>
             </div>
           </div>
+        )}
+        {/* Delete Context Card Confirmation Dialog */}
+        {deleteTargetCard && (
+          <ConfirmModal
+            title="Delete Context Card"
+            message={`Are you sure you want to delete "${deleteTargetCard.title}"? Only this card will be removed; the remaining Cultural Context cards, your other Knowledge Sets, and project data will stay intact.`}
+            confirmLabel="Delete"
+            cancelLabel="Cancel"
+            confirmStyle="danger"
+            loading={deleteLoading}
+            onConfirm={confirmDeleteCard}
+            onCancel={() => !deleteLoading && setDeleteTargetCard(null)}
+          />
         )}
       </div>
     </ProjectShell>

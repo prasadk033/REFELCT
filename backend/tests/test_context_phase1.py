@@ -23,6 +23,12 @@ import context.models  # noqa: F401
 from context.models import ContextCard
 from context.registry import KNOWLEDGE_SETS, is_knowledge_set_enabled
 from context.master_agent import ContextMasterAgent, MAX_RESEARCH_ATTEMPTS
+from context.agents.cultural_context import CulturalContextAgent, MAX_TOOL_CALLS_PER_RUN, MAX_MODEL_ROUNDS
+from context.search_service import (
+    DEEPSEEK_WEB_TOOLS,
+    validate_safe_external_url,
+    read_url,
+)
 
 
 class TestContextPhase1(unittest.TestCase):
@@ -143,6 +149,159 @@ class TestContextPhase1(unittest.TestCase):
             preserved = self.db.query(ContextCard).filter(ContextCard.id == card.id).first()
             self.assertEqual(preserved.content, "Original valid architectural research.")
             self.assertEqual(preserved.version, 1)
+
+    def test_ssrf_protection_blocks_private_loopback_metadata_ipv6_and_unsafe_redirects(self):
+        unsafe_urls = [
+            "http://127.0.0.1:8000/secret",
+            "http://localhost/admin",
+            "http://10.0.0.5/internal",
+            "http://172.16.0.10/db",
+            "http://192.168.1.1/router",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://[::1]:8000/",
+            "http://[fc00::1]/",
+            "http://[fe80::1]/",
+            "file:///etc/passwd",
+            "ftp://example.com/file",
+        ]
+        for u in unsafe_urls:
+            ok, reason = validate_safe_external_url(u)
+            self.assertFalse(ok, f"Expected SSRF block for {u}, got ok=True")
+            self.assertTrue(len(reason) > 0)
+
+        # DNS rebinding / private DNS resolution test
+        with patch("context.search_service.socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = [(2, 1, 6, "", ("10.20.30.40", 0))]
+            ok, reason = validate_safe_external_url("https://evil-rebind.example.com/page")
+            self.assertFalse(ok)
+            self.assertIn("10.20.30.40", reason)
+
+        # Unsafe redirect target test (public URL redirecting to 127.0.0.1)
+        with patch("context.search_service.socket.getaddrinfo") as mock_dns, \
+             patch("context.search_service.requests.request") as mock_req:
+            mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 0))]
+            redirect_resp = MagicMock()
+            redirect_resp.status_code = 302
+            redirect_resp.headers = {"Location": "http://127.0.0.1:5432/"}
+            mock_req.return_value = redirect_resp
+
+            res = read_url("https://example.com/redirect")
+            self.assertFalse(res["success"])
+            self.assertIn("SSRF protection blocked URL", res["error"])
+
+    def test_cultural_agent_executes_search_and_read_url_tool_loop(self):
+        mock_client = MagicMock()
+        seven_keys = [
+            "the_place_briefly",
+            "how_this_place_has_built",
+            "materials_and_making",
+            "climate_as_culture_has_answered_it",
+            "history_and_memory",
+            "the_living_tensions",
+            "what_the_team_should_learn_locally",
+        ]
+        final_json = {
+            "sub_aspects": [
+                {
+                    "sub_aspect_key": k,
+                    "title": k.replace("_", " ").title(),
+                    "content": f"Researched content for {k}",
+                    "research_register": "DOCUMENTED",
+                    "confidence": "HIGH",
+                    "sources": [{"title": "Vizag Heritage", "url": "https://example.org/vizag"}],
+                }
+                for k in seven_keys
+            ],
+            "limitations": [],
+            "local_verification_requirements": [],
+        }
+
+        # Round 1: search + malformed tool call; Round 2: read_url; Round 3: final JSON
+        mock_client.chat.side_effect = [
+            {
+                "content": "",
+                "tool_calls": [
+                    {"id": "tc_1", "type": "function", "function": {"name": "deepseek_web_search", "arguments": '{"query": "Visakhapatnam architecture"}'}},
+                    {"id": "tc_bad", "type": "function", "function": {"name": "deepseek_web_search", "arguments": "{bad-json"}},
+                ],
+                "usage": {},
+            },
+            {
+                "content": "",
+                "tool_calls": [
+                    {"id": "tc_2", "type": "function", "function": {"name": "deepseek_read_url", "arguments": '{"url": "https://example.org/vizag"}'}},
+                ],
+                "usage": {},
+            },
+            {
+                "content": __import__("json").dumps(final_json),
+                "tool_calls": [],
+                "usage": {"total_tokens": 500},
+                "reasoning_content": "Synthesized from retrieved page.",
+            },
+        ]
+
+        with patch("context.agents.cultural_context.web_search") as mock_search, \
+             patch("context.agents.cultural_context.read_url") as mock_read:
+            mock_search.return_value = {
+                "success": True,
+                "query": "Visakhapatnam architecture",
+                "results": [{"title": "Vizag Heritage", "url": "https://example.org/vizag", "snippet": "Coastal stone and brick."}],
+            }
+            mock_read.return_value = {
+                "success": True,
+                "requested_url": "https://example.org/vizag",
+                "retrieved_url": "https://example.org/vizag",
+                "title": "Vizag Heritage",
+                "domain": "example.org",
+                "published_date": "2024",
+                "content": "Visakhapatnam built traditions include coastal stone and lime mortar.",
+                "chars_returned": 68,
+            }
+
+            agent = CulturalContextAgent(client=mock_client)
+            result = agent.run_initial_research({"LOCATION": {"city": "Visakhapatnam"}})
+
+            # Verify tools were passed to DeepSeek
+            first_call_kwargs = mock_client.chat.call_args_list[0].kwargs
+            self.assertEqual(first_call_kwargs["tools"], DEEPSEEK_WEB_TOOLS)
+
+            # Verify search & read_url actually executed
+            mock_search.assert_called_once_with("Visakhapatnam architecture", max_results=5)
+            mock_read.assert_called_once_with("https://example.org/vizag")
+
+            # Verify trace preserved
+            self.assertEqual(len(result["research_trace"]), 3)
+            self.assertTrue(result["research_trace"][0]["success"])
+            self.assertFalse(result["research_trace"][1]["success"])  # malformed args
+            self.assertTrue(result["research_trace"][2]["success"])
+            self.assertEqual(len(result["sub_aspects"]), 7)
+
+    def test_tool_call_limit_enforced_and_forces_final_synthesis(self):
+        mock_client = MagicMock()
+        # Return tool calls on every round up to MAX_MODEL_ROUNDS, then final JSON
+        tool_resp = {
+            "content": "",
+            "tool_calls": [
+                {"id": f"tc_{i}", "type": "function", "function": {"name": "deepseek_web_search", "arguments": '{"query": "test"}'}}
+                for i in range(4)
+            ],
+            "usage": {},
+        }
+        final_resp = {
+            "content": '{"sub_aspects": [], "limitations": ["Budget reached"], "local_verification_requirements": []}',
+            "tool_calls": [],
+            "usage": {},
+        }
+        mock_client.chat.side_effect = [tool_resp] * (MAX_MODEL_ROUNDS - 1) + [tool_resp, final_resp]
+
+        with patch("context.agents.cultural_context.web_search") as mock_search:
+            mock_search.return_value = {"success": False, "results": [], "error": "Empty"}
+            agent = CulturalContextAgent(client=mock_client)
+            res = agent.run_initial_research({"LOCATION": {"city": "Unknown"}})
+
+            self.assertLessEqual(mock_search.call_count, MAX_TOOL_CALLS_PER_RUN)
+            self.assertEqual(res["limitations"], ["Budget reached"])
 
 
 if __name__ == "__main__":
