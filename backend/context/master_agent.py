@@ -10,7 +10,7 @@ import uuid
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
-from db import Project, Source, Card, ProgramItem, ProgramQuestion, SiteAnalysisCache
+from db import Project, Source, Card, ProgramItem, ProgramQuestion, SiteAnalysisCache, utc_now
 from llm.provider import get_llm_generator, get_deepseek_client
 from context.models import ContextRun, ContextCard, ContextSource, ContextCardImage
 from context.prompts.context_master import CONTEXT_MASTER_SYSTEM_PROMPT
@@ -593,10 +593,15 @@ CARDS OUTPUT ({len(cards_out)} cards):
         project_id: str,
         parent_card_id: str,
         selected_cards: List[Dict[str, Any]],
+        create_mode: str = "separate",
+        priority: Optional[str] = None,
+        note: Optional[str] = None,
     ) -> List[ContextCard]:
         """
-        MODE C Confirm: Persist user-selected split cards as standalone ContextCards,
-        preserving the original parent card intact and preventing duplicate titles.
+        Manual Split Confirm (Zero AI):
+        - create_mode='separate': creates one new card per selected point.
+        - create_mode='combined': combines all selected points into ONE new card.
+        Preserves the original parent card intact and prevents duplicate titles.
         """
         parent = (
             self.db.query(ContextCard)
@@ -618,12 +623,40 @@ CARDS OUTPUT ({len(cards_out)} cards):
         existing_titles = {c.title.strip().lower() for c in existing_cards}
         max_order = max([c.display_order for c in existing_cards], default=0)
 
+        clean_priority = priority.strip().lower() if isinstance(priority, str) and priority.strip().lower() in ("high", "medium", "low") else None
+        initial_notes = (
+            [{"id": str(uuid.uuid4()), "text": note.strip(), "created_at": utc_now().isoformat()}]
+            if note and note.strip()
+            else []
+        )
+
+        items_to_create = list(selected_cards)
+        if create_mode == "combined" and len(items_to_create) > 1:
+            combined_content = " ".join((it.get("content") or "").strip() for it in items_to_create if (it.get("content") or "").strip())
+            first_title = (items_to_create[0].get("title") or "").strip()
+            combined_title = f"{parent.title} — Extracted Selection"
+            if combined_title.lower() in existing_titles and first_title:
+                combined_title = f"{first_title} (+{len(items_to_create) - 1} points)"
+            items_to_create = [{
+                "title": combined_title,
+                "content": combined_content,
+                "aspect_key": parent.sub_aspect_key,
+                "research_register": parent.research_register,
+                "confidence": parent.confidence,
+            }]
+
         created: List[ContextCard] = []
-        for idx, item in enumerate(selected_cards, start=1):
-            title = (item.get("title") or "").strip()
+        for idx, item in enumerate(items_to_create, start=1):
             content = (item.get("content") or "").strip()
-            if not title or not content or title.lower() in existing_titles:
+            if not content:
                 continue
+            raw_title = (item.get("title") or "").strip()
+            if not raw_title:
+                words = content.split()[:7]
+                raw_title = " ".join(words).rstrip(".,;:") + ("..." if len(content.split()) > 7 else "")
+            title = raw_title
+            if title.lower() in existing_titles:
+                title = f"{raw_title} ({max_order + idx})"
             existing_titles.add(title.lower())
 
             new_card = ContextCard(
@@ -639,7 +672,8 @@ CARDS OUTPUT ({len(cards_out)} cards):
                 research_register=item.get("research_register") or parent.research_register,
                 confidence=item.get("confidence") or parent.confidence,
                 version=1,
-                architect_notes=[],
+                priority=clean_priority,
+                architect_notes=list(initial_notes),
                 tags=list(parent.tags or []),
                 is_deleted=False,
             )

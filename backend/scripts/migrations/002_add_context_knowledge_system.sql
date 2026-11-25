@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS context_cards (
     research_register VARCHAR NOT NULL DEFAULT 'DOCUMENTED',
     confidence VARCHAR,
     version INTEGER NOT NULL DEFAULT 1,
+    priority VARCHAR,
     architect_notes JSONB NOT NULL DEFAULT '[]'::jsonb,
     tags JSONB NOT NULL DEFAULT '[]'::jsonb,
     is_deleted BOOLEAN NOT NULL DEFAULT FALSE,

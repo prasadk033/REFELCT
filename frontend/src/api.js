@@ -588,11 +588,19 @@ export async function previewSplitContextCard(projectId, cardId) {
   });
 }
 
-export async function confirmSplitContextCard(projectId, cardId, selectedCards) {
+export async function confirmSplitContextCard(projectId, cardId, payload) {
   return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}/split/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ selected_cards: selectedCards }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateContextCardPriority(projectId, cardId, priority) {
+  return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}/priority`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ priority }),
   });
 }
 

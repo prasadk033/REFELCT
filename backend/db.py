@@ -581,6 +581,16 @@ def init_db():
         except Exception as idx_err:
             logger.warning(f"admin_project_permissions index notice: {idx_err}")
 
+        # ── Context Cards Priority Column (Phase 1) ──────────────────────────
+        if "context_cards" in existing_tables:
+            ctx_cols = [c["name"] for c in inspector.get_columns("context_cards")]
+            if "priority" not in ctx_cols:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE context_cards ADD COLUMN priority VARCHAR;"))
+                except Exception as ctx_err:
+                    logger.warning(f"Could not add priority to context_cards: {ctx_err}")
+
         logger.info("Database tables created/verified successfully.")
     except Exception as e:
         logger.warning(f"Database migration notice: {e}")

@@ -52,6 +52,7 @@ def _serialize_card(card: ContextCard) -> Dict[str, Any]:
         "research_register": card.research_register,
         "confidence": card.confidence,
         "version": card.version,
+        "priority": card.priority,
         "architect_notes": card.architect_notes or [],
         "tags": card.tags or [],
         "sources": [
@@ -506,10 +507,49 @@ def confirm_split_context_card(
         raise HTTPException(status_code=400, detail="At least one selected card is required.")
     try:
         master = ContextMasterAgent(db=db)
-        created = master.confirm_card_splits(project_id, card_id, selected_cards)
+        created = master.confirm_card_splits(
+            project_id,
+            card_id,
+            selected_cards,
+            create_mode=body.get("create_mode") or "separate",
+            priority=body.get("priority"),
+            note=body.get("note"),
+        )
         return {
             "parent_card_id": card_id,
             "created_cards": [_serialize_card(c) for c in created],
         }
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.patch("/{project_id}/context/cards/{card_id}/priority")
+def update_context_card_priority(
+    project_id: str,
+    card_id: str,
+    body: Dict[str, Any],
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Architect action outside AI research: set High / Medium / Low / None priority."""
+    _get_owned_project(db, project_id, user.id)
+    card = (
+        db.query(ContextCard)
+        .filter(ContextCard.id == card_id, ContextCard.project_id == project_id, ContextCard.is_deleted == False)
+        .first()
+    )
+    if not card:
+        raise HTTPException(status_code=404, detail="Context card not found")
+
+    raw_p = body.get("priority")
+    if raw_p is None or str(raw_p).strip() == "":
+        card.priority = None
+    else:
+        norm_p = str(raw_p).strip().lower()
+        if norm_p not in ("high", "medium", "low"):
+            raise HTTPException(status_code=400, detail="Priority must be 'high', 'medium', 'low', or null.")
+        card.priority = norm_p
+
+    db.commit()
+    db.refresh(card)
+    return _serialize_card(card)

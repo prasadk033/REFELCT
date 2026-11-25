@@ -176,9 +176,28 @@ class TestContextPhase1(unittest.TestCase):
             self.assertEqual(count_after_preview, 1)
 
             # Confirm only 1 selected split card
-            created = master.confirm_card_splits(self.project_a.id, parent.id, [proposals[0]])
+            created = master.confirm_card_splits(self.project_a.id, parent.id, [proposals[0]], create_mode="separate", priority="high")
             self.assertEqual(len(created), 1)
             self.assertEqual(created[0].title, "Hyderabad Granite Tradition")
+            self.assertEqual(created[0].priority, "high")
+
+            # Confirm combined mode (2 points -> 1 combined card with priority + note)
+            combined = master.confirm_card_splits(
+                self.project_a.id,
+                parent.id,
+                [
+                    {"content": "Granite is quarried locally."},
+                    {"content": "Traditional lime mortars remain known."},
+                ],
+                create_mode="combined",
+                priority="medium",
+                note="Check stone yards near Jubilee Hills.",
+            )
+            self.assertEqual(len(combined), 1)
+            self.assertIn("Granite is quarried locally.", combined[0].content)
+            self.assertIn("Traditional lime mortars remain known.", combined[0].content)
+            self.assertEqual(combined[0].priority, "medium")
+            self.assertEqual(len(combined[0].architect_notes), 1)
 
             # Parent card must still be preserved intact
             parent_check = self.db.query(ContextCard).filter(ContextCard.id == parent.id).first()

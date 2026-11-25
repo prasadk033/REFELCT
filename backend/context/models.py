@@ -49,6 +49,7 @@ class ContextCard(Base):
     research_register = Column(String, nullable=False, default="DOCUMENTED")  # DOCUMENTED, PATTERN, UNKNOWN, MIXED
     confidence = Column(String, nullable=True)
     version = Column(Integer, nullable=False, default=1)
+    priority = Column(String, nullable=True, default=None)  # high, medium, low, or None
     architect_notes = Column(JSON, nullable=False, default=list)  # List of {id, text, created_at}
     tags = Column(JSON, nullable=False, default=list)  # List of strings
     is_deleted = Column(Boolean, nullable=False, default=False)

@@ -11,12 +11,47 @@ import {
   cancelContextJob,
   modifyContextCard,
   addContextCardNote,
-  updateContextCardTags,
+  updateContextCardPriority,
   deleteContextCard,
   createManualContextCard,
-  previewSplitContextCard,
   confirmSplitContextCard,
 } from '../api.js'
+
+/**
+ * Sentence-based manual splitting parser.
+ * Splits on ., ?, ! and newlines while respecting abbreviations, decimals, and URLs.
+ */
+function parseSentences(text) {
+  if (!text || typeof text !== 'string') return []
+  const cleaned = text.trim()
+  if (!cleaned) return []
+
+  // Protect URLs, decimals (e.g. 17.430), and common abbreviations
+  const placeholders = []
+  let masked = cleaned
+    .replace(/https?:\/\/\S+/gi, m => {
+      placeholders.push(m)
+      return `__PH_${placeholders.length - 1}__`
+    })
+    .replace(/\b(\d+)\.(\d+)/g, (_, a, b) => {
+      placeholders.push(`${a}.${b}`)
+      return `__PH_${placeholders.length - 1}__`
+    })
+    .replace(/\b(Mr|Mrs|Ms|Dr|Prof|St|No|Nos|sq|approx|e\.g|i\.e|etc|vs|Rs)\./gi, m => {
+      placeholders.push(m)
+      return `__PH_${placeholders.length - 1}__`
+    })
+
+  // Split by sentence-ending punctuation followed by whitespace, or line breaks
+  const rawParts = masked
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map(p => p.replace(/^[-•*]\s*/, '').trim())
+    .filter(Boolean)
+
+  return rawParts.map(part =>
+    part.replace(/__PH_(\d+)__/g, (_, idx) => placeholders[Number(idx)] || '')
+  )
+}
 
 const KS_META = {
   cultural_context: { icon: '🏛', subtitle: 'Place, people, practices and meaning' },
@@ -50,23 +85,30 @@ export default function ContextPage() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [errorMsg, setErrorMsg] = useState(null)
 
-  // Search, Aspect Filter, Sort, Layout & Card Action Modals
+  // Search, Aspect Filter, Priority/Register/Scale Filters, Sort & Layout
   const [searchQuery, setSearchQuery] = useState('')
   const [activeAspectFilter, setActiveAspectFilter] = useState('all')
-  const [sortBy, setSortBy] = useState('relevance') // 'relevance' | 'title' | 'aspect'
+  const [priorityFilter, setPriorityFilter] = useState('all') // 'all' | 'high' | 'medium' | 'low' | 'unassigned'
+  const [registerFilter, setRegisterFilter] = useState('all')
+  const [scaleFilter, setScaleFilter] = useState('all')
   const [layoutMode, setLayoutMode] = useState('grid') // 'grid' | 'list'
   const [detailCard, setDetailCard] = useState(null)
   const [modifyModalCard, setModifyModalCard] = useState(null)
   const [modifyInstruction, setModifyInstruction] = useState('')
+
+  // Manual Sentence Split state (Zero AI)
   const [splitParentCard, setSplitParentCard] = useState(null)
-  const [splitProposals, setSplitProposals] = useState([])
-  const [splitSelectedIds, setSplitSelectedIds] = useState([])
-  const [splitPreviewLoading, setSplitPreviewLoading] = useState(false)
+  const [splitSentences, setSplitSentences] = useState([])
+  const [splitSelectedIndices, setSplitSelectedIndices] = useState([])
+  const [splitCreateMode, setSplitCreateMode] = useState('separate') // 'separate' | 'combined'
+  const [splitPriority, setSplitPriority] = useState('') // '' | 'high' | 'medium' | 'low'
+  const [splitNote, setSplitNote] = useState('')
   const [splitConfirmLoading, setSplitConfirmLoading] = useState(false)
+
   const [noteModalCard, setNoteModalCard] = useState(null)
   const [noteText, setNoteText] = useState('')
-  const [tagModalCard, setTagModalCard] = useState(null)
-  const [tagText, setTagText] = useState('')
+  const [priorityModalCard, setPriorityModalCard] = useState(null)
+  const [selectedCardPriority, setSelectedCardPriority] = useState('')
   const [addCardModalOpen, setAddCardModalOpen] = useState(false)
   const [newCardTitle, setNewCardTitle] = useState('')
   const [newCardContent, setNewCardContent] = useState('')
@@ -234,26 +276,12 @@ export default function ContextPage() {
     }
   }
 
-  async function handleSaveTag(e) {
-    e.preventDefault()
-    if (!tagModalCard || !tagText.trim() || runningJob) return
-    try {
-      const nextTags = [...(tagModalCard.tags || []), tagText.trim()]
-      const updated = await updateContextCardTags(projectId, tagModalCard.id, nextTags)
-      setCards(prev => prev.map(c => (c.id === tagModalCard.id ? updated : c)))
-      setTagModalCard(null)
-      setTagText('')
-    } catch (err) {
-      setErrorMsg(err.message)
-    }
-  }
-
-  async function handleRemoveTag(card, tagToRemove) {
+  async function handleSavePriority(card, newPriority) {
     if (runningJob) return
     try {
-      const nextTags = (card.tags || []).filter(t => t !== tagToRemove)
-      const updated = await updateContextCardTags(projectId, card.id, nextTags)
+      const updated = await updateContextCardPriority(projectId, card.id, newPriority || null)
       setCards(prev => prev.map(c => (c.id === card.id ? updated : c)))
+      setPriorityModalCard(null)
     } catch (err) {
       setErrorMsg(err.message)
     }
@@ -291,48 +319,49 @@ export default function ContextPage() {
     }
   }
 
-  async function handleOpenSplit(card) {
-    if (runningJob || splitPreviewLoading) return
+  function handleOpenSplit(card) {
+    if (runningJob || splitConfirmLoading) return
     setErrorMsg(null)
+    const sentences = parseSentences(card.content || '')
     setSplitParentCard(card)
-    setSplitProposals([])
-    setSplitSelectedIds([])
-    setSplitPreviewLoading(true)
-    try {
-      const res = await previewSplitContextCard(projectId, card.id)
-      const proposals = res.proposed_cards || []
-      setSplitProposals(proposals)
-      setSplitSelectedIds(proposals.map((p, idx) => p.temp_id || `split_${idx}`))
-    } catch (err) {
-      setErrorMsg(err.message || 'Failed to analyze card for splitting.')
-      setSplitParentCard(null)
-    } finally {
-      setSplitPreviewLoading(false)
-    }
+    setSplitSentences(sentences)
+    setSplitSelectedIndices(sentences.length > 0 ? [0] : [])
+    setSplitCreateMode('separate')
+    setSplitPriority('')
+    setSplitNote('')
   }
 
-  function toggleSplitSelection(tempId) {
-    setSplitSelectedIds(prev =>
-      prev.includes(tempId) ? prev.filter(id => id !== tempId) : [...prev, tempId]
+  function toggleSplitSentence(idx) {
+    setSplitSelectedIndices(prev =>
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx].sort((a, b) => a - b)
     )
   }
 
   async function handleConfirmSplit() {
-    if (!splitParentCard || splitConfirmLoading || splitSelectedIds.length === 0) return
+    if (!splitParentCard || splitConfirmLoading || splitSelectedIndices.length === 0) return
     setSplitConfirmLoading(true)
     setErrorMsg(null)
     try {
-      const chosen = splitProposals.filter((p, idx) =>
-        splitSelectedIds.includes(p.temp_id || `split_${idx}`)
-      )
-      const res = await confirmSplitContextCard(projectId, splitParentCard.id, chosen)
+      const selectedCards = splitSelectedIndices.map(idx => ({
+        content: splitSentences[idx],
+        aspect_key: splitParentCard.sub_aspect_key,
+        research_register: splitParentCard.research_register,
+        confidence: splitParentCard.confidence,
+      }))
+      const res = await confirmSplitContextCard(projectId, splitParentCard.id, {
+        selected_cards: selectedCards,
+        create_mode: splitCreateMode,
+        priority: splitPriority || null,
+        note: splitNote.trim() || null,
+      })
       const created = res.created_cards || []
       if (created.length > 0) {
         setCards(prev => [...prev, ...created])
       }
       setSplitParentCard(null)
-      setSplitProposals([])
-      setSplitSelectedIds([])
+      setSplitSentences([])
+      setSplitSelectedIndices([])
+      setSplitNote('')
     } catch (err) {
       setErrorMsg(err.message || 'Failed to split Context Card.')
     } finally {
@@ -349,20 +378,19 @@ export default function ContextPage() {
   const filteredCards = cards
     .filter(c => {
       if (activeAspectFilter !== 'all' && c.sub_aspect_key !== activeAspectFilter) return false
+      if (priorityFilter === 'unassigned' && c.priority) return false
+      if (['high', 'medium', 'low'].includes(priorityFilter) && c.priority !== priorityFilter) return false
+      if (registerFilter !== 'all' && c.research_register !== registerFilter) return false
+      if (scaleFilter !== 'all' && !(c.tags || []).some(t => t.toLowerCase() === scaleFilter)) return false
       if (!searchQuery.trim()) return true
       const q = searchQuery.toLowerCase()
       return (
         (c.title || '').toLowerCase().includes(q) ||
         (c.content || '').toLowerCase().includes(q) ||
-        (c.aspect_title || '').toLowerCase().includes(q) ||
-        (c.tags || []).some(t => t.toLowerCase().includes(q))
+        (c.aspect_title || '').toLowerCase().includes(q)
       )
     })
-    .sort((a, b) => {
-      if (sortBy === 'title') return (a.title || '').localeCompare(b.title || '')
-      if (sortBy === 'aspect') return (a.aspect_title || '').localeCompare(b.aspect_title || '')
-      return (a.display_order || 0) - (b.display_order || 0)
-    })
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
 
   return (
     <ProjectShell project={project} isTaskRunning={runningJob}>
@@ -654,9 +682,9 @@ export default function ContextPage() {
               </div>
             )}
 
-            {/* Sub-header: Context Cards (N) + Search + Sort + Grid/List Toggle */}
+            {/* Sub-header: Context Cards (N) + Search + Priority/Register/Scale Filters + Grid/List Toggle */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
-              <h2 style={{ margin: 0, fontSize: '15.5px', fontWeight: 700, color: '#4c1d95' }}>
+              <h2 style={{ margin: 0, fontSize: '15.5px', fontWeight: 700, color: '#4c1d95', borderBottom: '2px solid #6d28d9', paddingBottom: '4px' }}>
                 Context Cards ({filteredCards.length})
               </h2>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -671,13 +699,13 @@ export default function ContextPage() {
                     borderRadius: '8px',
                     border: '1px solid var(--border-color, #cbd5e1)',
                     fontSize: '12.5px',
-                    minWidth: '190px',
+                    minWidth: '175px',
                     opacity: runningJob ? 0.6 : 1,
                   }}
                 />
                 <select
-                  value={sortBy}
-                  onChange={e => setSortBy(e.target.value)}
+                  value={priorityFilter}
+                  onChange={e => setPriorityFilter(e.target.value)}
                   disabled={runningJob}
                   style={{
                     padding: '6px 10px',
@@ -688,9 +716,49 @@ export default function ContextPage() {
                     color: 'var(--text-main, #0f172a)',
                   }}
                 >
-                  <option value="relevance">Sort: Relevance</option>
-                  <option value="title">Sort: Title A-Z</option>
-                  <option value="aspect">Sort: Aspect</option>
+                  <option value="all">⚑ Priority: All</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                  <option value="unassigned">Unassigned</option>
+                </select>
+                <select
+                  value={registerFilter}
+                  onChange={e => setRegisterFilter(e.target.value)}
+                  disabled={runningJob}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color, #cbd5e1)',
+                    fontSize: '12px',
+                    background: 'var(--bg-surface, #ffffff)',
+                    color: 'var(--text-main, #0f172a)',
+                  }}
+                >
+                  <option value="all">Register: All</option>
+                  <option value="DOCUMENTED">Documented</option>
+                  <option value="PATTERN">Regional Pattern</option>
+                  <option value="UNKNOWN">Learn Locally</option>
+                  <option value="MIXED">Mixed Register</option>
+                </select>
+                <select
+                  value={scaleFilter}
+                  onChange={e => setScaleFilter(e.target.value)}
+                  disabled={runningJob}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color, #cbd5e1)',
+                    fontSize: '12px',
+                    background: 'var(--bg-surface, #ffffff)',
+                    color: 'var(--text-main, #0f172a)',
+                  }}
+                >
+                  <option value="all">Scale: All</option>
+                  <option value="site">Site</option>
+                  <option value="neighbourhood">Neighbourhood</option>
+                  <option value="city">City</option>
+                  <option value="region">Region</option>
                 </select>
                 <div style={{ display: 'inline-flex', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '8px', overflow: 'hidden' }}>
                   <button
@@ -728,12 +796,12 @@ export default function ContextPage() {
               </div>
             </div>
 
-            {/* Main Area: Cards Grid/List + Optional Right-Side Split Drawer */}
-            <div style={{ display: 'grid', gridTemplateColumns: splitParentCard ? 'minmax(0, 1fr) 360px' : '1fr', gap: '18px', alignItems: 'start' }}>
+            {/* Main Area: Cards Grid/List + Right-Side Manual Split Panel */}
+            <div style={{ display: 'grid', gridTemplateColumns: splitParentCard ? 'minmax(0, 1fr) 410px' : '1fr', gap: '18px', alignItems: 'start' }}>
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: layoutMode === 'list' ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
+                  gridTemplateColumns: (layoutMode === 'list' || splitParentCard) ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
                   gap: '16px',
                   alignItems: 'start',
                 }}
@@ -745,6 +813,11 @@ export default function ContextPage() {
                     busy={runningJob}
                     isUpdatingThisCard={runningJob && jobKind === 'card_modification' && targetCardId === card.id}
                     isSplittingThisCard={splitParentCard?.id === card.id}
+                    splitSentences={splitParentCard?.id === card.id ? splitSentences : []}
+                    splitSelectedIndices={splitParentCard?.id === card.id ? splitSelectedIndices : []}
+                    onToggleSplitSentence={toggleSplitSentence}
+                    onCancelSplit={() => setSplitParentCard(null)}
+                    onConfirmSplit={handleConfirmSplit}
                     onOpenDetail={c => setDetailCard(c)}
                     onModify={c => {
                       setModifyModalCard(c)
@@ -755,17 +828,16 @@ export default function ContextPage() {
                       setNoteModalCard(c)
                       setNoteText('')
                     }}
-                    onAddTag={c => {
-                      setTagModalCard(c)
-                      setTagText('')
+                    onSetPriority={c => {
+                      setPriorityModalCard(c)
+                      setSelectedCardPriority(c.priority || '')
                     }}
-                    onRemoveTag={handleRemoveTag}
                     onDelete={c => !deleteLoading && setDeleteTargetCard(c)}
                   />
                 ))}
               </div>
 
-              {/* Right-Side Split Panel (Matching Mockup) */}
+              {/* Right-Side Manual Split Card Panel (Zero AI) */}
               {splitParentCard && (
                 <aside
                   className="pov-box"
@@ -779,9 +851,9 @@ export default function ContextPage() {
                     boxShadow: '0 10px 28px rgba(15, 23, 42, 0.08)',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-main, #0f172a)' }}>
-                      Split into Smaller Cards (AI)
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <h3 style={{ margin: 0, fontSize: '15.5px', fontWeight: 700, color: 'var(--text-main, #0f172a)' }}>
+                      ✂ Split Card (Manual)
                     </h3>
                     <button
                       type="button"
@@ -792,63 +864,157 @@ export default function ContextPage() {
                       ×
                     </button>
                   </div>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', margin: '0 0 14px 0', lineHeight: 1.45 }}>
-                    REFLECT has identified distinct findings in this card. Select the points you want to create as individual cards.
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', margin: '0 0 14px 0' }}>
+                    Create new card(s) from the selected content. No AI is used.
                   </p>
 
-                  {splitPreviewLoading ? (
-                    <div style={{ padding: '28px 12px', textAlign: 'center' }}>
-                      <span className="bui-spinner-inline" style={{ width: '22px', height: '22px', borderWidth: '3px', borderColor: '#ddd6fe', borderTopColor: '#6d28d9' }} />
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-muted, #64748b)', marginTop: '10px' }}>
-                        Analyzing findings...
-                      </p>
-                    </div>
-                  ) : splitProposals.length === 0 ? (
-                    <p style={{ fontSize: '12.5px', color: 'var(--text-muted, #64748b)', padding: '12px 0' }}>
-                      No separate points were extracted from this card.
-                    </p>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px', maxHeight: '360px', overflowY: 'auto' }}>
-                      {splitProposals.map((prop, idx) => {
-                        const tid = prop.temp_id || `split_${idx}`
-                        const checked = splitSelectedIds.includes(tid)
-                        return (
-                          <label
-                            key={tid}
-                            style={{
-                              display: 'flex',
-                              gap: '10px',
-                              alignItems: 'flex-start',
-                              padding: '8px 10px',
-                              borderRadius: '8px',
-                              border: checked ? '1px solid #c4b5fd' : '1px solid transparent',
-                              background: checked ? '#f5f3ff' : 'transparent',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleSplitSelection(tid)}
-                              style={{ marginTop: '3px', accentColor: '#6d28d9' }}
-                            />
-                            <div>
-                              <strong style={{ display: 'block', fontSize: '12.5px', color: 'var(--text-main, #0f172a)', marginBottom: '2px' }}>
-                                {prop.title}
-                              </strong>
-                              <span style={{ fontSize: '11.5px', color: 'var(--text-muted, #64748b)', lineHeight: 1.4, display: 'block' }}>
-                                {prop.content}
-                              </span>
-                            </div>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted, #475569)', background: 'var(--bg-subtle, #f8fafc)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '8px', padding: '8px 10px', marginBottom: '14px', lineHeight: 1.4 }}>
-                    ℹ The selected points will be created as separate cards. The original parent card will be kept intact.
+                  {/* Selected Points */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <strong style={{ fontSize: '12px', color: 'var(--text-main, #0f172a)' }}>
+                      Selected Points ({splitSelectedIndices.length})
+                    </strong>
+                    {splitSelectedIndices.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSplitSelectedIndices([])}
+                        style={{ background: 'none', border: 'none', color: '#6d28d9', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        Clear All
+                      </button>
+                    )}
                   </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px', maxHeight: '150px', overflowY: 'auto' }}>
+                    {splitSelectedIndices.length === 0 ? (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', padding: '8px', border: '1px dashed var(--border-color, #cbd5e1)', borderRadius: '6px' }}>
+                        Select one or more sentences on the card to extract.
+                      </div>
+                    ) : (
+                      splitSelectedIndices.map(idx => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            gap: '8px',
+                            padding: '7px 9px',
+                            borderRadius: '6px',
+                            background: 'var(--bg-subtle, #f8fafc)',
+                            border: '1px solid var(--border-color, #e2e8f0)',
+                            fontSize: '11.5px',
+                            color: 'var(--text-main, #334155)',
+                          }}
+                        >
+                          <span style={{ lineHeight: 1.4 }}>{splitSentences[idx]}</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleSplitSentence(idx)}
+                            style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0, fontSize: '14px', lineHeight: 1 }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Create As: Separate Cards vs One Card */}
+                  <strong style={{ display: 'block', fontSize: '12px', marginBottom: '6px', color: 'var(--text-main, #0f172a)' }}>
+                    Create As
+                  </strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px' }}>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '8px',
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: splitCreateMode === 'separate' ? '1.5px solid #6d28d9' : '1px solid var(--border-color, #e2e8f0)',
+                        background: splitCreateMode === 'separate' ? '#f5f3ff' : 'var(--bg-surface, #ffffff)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="splitCreateMode"
+                        checked={splitCreateMode === 'separate'}
+                        onChange={() => setSplitCreateMode('separate')}
+                        style={{ marginTop: '3px', accentColor: '#6d28d9' }}
+                      />
+                      <div>
+                        <strong style={{ display: 'block', fontSize: '12px' }}>Separate Cards ({splitSelectedIndices.length})</strong>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)' }}>Create one card for each selected point.</span>
+                      </div>
+                    </label>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '8px',
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: splitCreateMode === 'combined' ? '1.5px solid #6d28d9' : '1px solid var(--border-color, #e2e8f0)',
+                        background: splitCreateMode === 'combined' ? '#f5f3ff' : 'var(--bg-surface, #ffffff)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="splitCreateMode"
+                        checked={splitCreateMode === 'combined'}
+                        onChange={() => setSplitCreateMode('combined')}
+                        style={{ marginTop: '3px', accentColor: '#6d28d9' }}
+                      />
+                      <div>
+                        <strong style={{ display: 'block', fontSize: '12px' }}>One Card</strong>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)' }}>Combine all selected points into a single card.</span>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Card Details: Priority + Optional Note */}
+                  <strong style={{ display: 'block', fontSize: '12px', marginBottom: '6px', color: 'var(--text-main, #0f172a)' }}>
+                    Priority (optional)
+                  </strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '12px' }}>
+                    {[
+                      { val: '', label: 'None', activeBg: '#334155', activeColor: '#ffffff' },
+                      { val: 'high', label: '⚑ High', activeBg: '#b91c1c', activeColor: '#ffffff' },
+                      { val: 'medium', label: '⚑ Med', activeBg: '#b45309', activeColor: '#ffffff' },
+                      { val: 'low', label: '⚑ Low', activeBg: '#047857', activeColor: '#ffffff' },
+                    ].map(opt => (
+                      <button
+                        key={opt.val || 'none'}
+                        type="button"
+                        onClick={() => setSplitPriority(opt.val)}
+                        style={{
+                          padding: '5px 4px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color, #cbd5e1)',
+                          background: splitPriority === opt.val ? opt.activeBg : 'var(--bg-surface, #ffffff)',
+                          color: splitPriority === opt.val ? opt.activeColor : 'var(--text-main, #334155)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '4px' }}>
+                    Note (optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    maxLength={500}
+                    value={splitNote}
+                    onChange={e => setSplitNote(e.target.value)}
+                    placeholder="Add a note for the new card(s)..."
+                    style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '12px', marginBottom: '12px' }}
+                  />
 
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                     <button
@@ -862,7 +1028,7 @@ export default function ContextPage() {
                     </button>
                     <button
                       type="button"
-                      disabled={splitPreviewLoading || splitConfirmLoading || splitSelectedIds.length === 0}
+                      disabled={splitConfirmLoading || splitSelectedIndices.length === 0}
                       onClick={handleConfirmSplit}
                       style={{
                         background: '#6d28d9',
@@ -872,11 +1038,15 @@ export default function ContextPage() {
                         padding: '7px 14px',
                         fontSize: '12px',
                         fontWeight: 600,
-                        cursor: (splitPreviewLoading || splitConfirmLoading || splitSelectedIds.length === 0) ? 'not-allowed' : 'pointer',
-                        opacity: (splitPreviewLoading || splitConfirmLoading || splitSelectedIds.length === 0) ? 0.55 : 1,
+                        cursor: (splitConfirmLoading || splitSelectedIndices.length === 0) ? 'not-allowed' : 'pointer',
+                        opacity: (splitConfirmLoading || splitSelectedIndices.length === 0) ? 0.55 : 1,
                       }}
                     >
-                      {splitConfirmLoading ? 'Creating...' : `Create (${splitSelectedIds.length}) Cards`}
+                      {splitConfirmLoading
+                        ? 'Creating...'
+                        : splitCreateMode === 'combined'
+                          ? 'Create 1 Card'
+                          : `Create ${splitSelectedIndices.length} Card${splitSelectedIndices.length === 1 ? '' : 's'}`}
                     </button>
                   </div>
                 </aside>
@@ -1069,28 +1239,44 @@ export default function ContextPage() {
           </div>
         )}
 
-        {/* ── ADD TAG MODAL (No AI) ─────────────────────────────────────────────────── */}
-        {tagModalCard && (
-          <div className="bui-modal-overlay" onClick={() => setTagModalCard(null)}>
-            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', padding: '22px' }}>
-              <h3 style={{ margin: '0 0 6px 0' }}>Add Tag</h3>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', margin: '0 0 12px 0' }}>
-                Metadata tag for &ldquo;{tagModalCard.title}&rdquo; (no AI call).
+        {/* ── SET PRIORITY MODAL (No AI) ───────────────────────────────────────────── */}
+        {priorityModalCard && (
+          <div className="bui-modal-overlay" onClick={() => setPriorityModalCard(null)}>
+            <div className="bui-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px', padding: '22px' }}>
+              <h3 style={{ margin: '0 0 6px 0' }}>Set Card Priority</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', margin: '0 0 14px 0' }}>
+                Assign manual priority for &ldquo;{priorityModalCard.title}&rdquo; (no AI call).
               </p>
-              <form onSubmit={handleSaveTag}>
-                <input
-                  type="text"
-                  required
-                  value={tagText}
-                  onChange={e => setTagText(e.target.value)}
-                  placeholder="e.g. Heritage, Climate, Material"
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '13px', marginBottom: '12px' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                  <button type="button" className="bui-btn bui-btn-outline" onClick={() => setTagModalCard(null)}>Cancel</button>
-                  <button type="submit" className="bui-btn bui-btn-primary">Add Tag</button>
-                </div>
-              </form>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                {[
+                  { val: 'high', label: '⚑ High — Critical contextual knowledge', color: '#b91c1c' },
+                  { val: 'medium', label: '⚑ Medium — Relevant project understanding', color: '#b45309' },
+                  { val: 'low', label: '⚑ Low — Supplementary / optional later', color: '#047857' },
+                  { val: '', label: 'No Priority (Unassigned)', color: '#475569' },
+                ].map(opt => (
+                  <button
+                    key={opt.val || 'none'}
+                    type="button"
+                    onClick={() => handleSavePriority(priorityModalCard, opt.val)}
+                    style={{
+                      textAlign: 'left',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: (priorityModalCard.priority || '') === opt.val ? `1.5px solid ${opt.color}` : '1px solid var(--border-color, #cbd5e1)',
+                      background: (priorityModalCard.priority || '') === opt.val ? 'var(--bg-subtle, #f8fafc)' : 'var(--bg-surface, #ffffff)',
+                      color: opt.color,
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button type="button" className="bui-btn bui-btn-outline" onClick={() => setPriorityModalCard(null)}>Close</button>
+              </div>
             </div>
           </div>
         )}
