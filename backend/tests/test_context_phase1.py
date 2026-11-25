@@ -293,7 +293,8 @@ class TestContextPhase1(unittest.TestCase):
             "tool_calls": [],
             "usage": {},
         }
-        mock_client.chat.side_effect = [tool_resp] * (MAX_MODEL_ROUNDS - 1) + [tool_resp, final_resp]
+        # 3 rounds * 4 tool calls hits MAX_TOOL_CALLS_PER_RUN (10) on round 3, then 1 final synthesis call
+        mock_client.chat.side_effect = [tool_resp] * 3 + [final_resp]
 
         with patch("context.agents.cultural_context.web_search") as mock_search:
             mock_search.return_value = {"success": False, "results": [], "error": "Empty"}

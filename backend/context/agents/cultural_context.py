@@ -167,11 +167,23 @@ class CulturalContextAgent(BaseKnowledgeSetAgent):
             tool_calls = resp.get("tool_calls") or []
 
             if not tool_calls:
-                logger.info(
-                    f"[CulturalAgent] Completed in {round_idx} round(s), "
-                    f"{tool_calls_executed} tool call(s), {pages_retrieved} page(s) read."
-                )
-                return _extract_json_block(resp["content"]), research_trace, resp
+                raw_content = (resp.get("content") or "").strip()
+                if raw_content:
+                    try:
+                        parsed_json = _extract_json_block(raw_content)
+                        logger.info(
+                            f"[CulturalAgent] Completed in {round_idx} round(s), "
+                            f"{tool_calls_executed} tool call(s), {pages_retrieved} page(s) read."
+                        )
+                        return parsed_json, research_trace, resp
+                    except ValueError:
+                        logger.warning(
+                            f"[CulturalAgent] Round {round_idx} returned non-JSON content "
+                            f"(len={len(raw_content)}, preview={raw_content[:200]!r}); forcing JSON synthesis."
+                        )
+                else:
+                    logger.warning(f"[CulturalAgent] Round {round_idx} returned empty content with no tool_calls; forcing JSON synthesis.")
+                break
 
             # Append assistant message containing tool_calls before appending tool results
             assistant_msg: Dict[str, Any] = {
@@ -202,10 +214,15 @@ class CulturalContextAgent(BaseKnowledgeSetAgent):
                     "content": json.dumps(tool_res, default=str),
                 })
 
-        # If loop exited due to budget/round cap without final text, force one final JSON synthesis call
+            # Stop issuing tool calls once budget is reached so we immediately synthesize with a user turn
+            if tool_calls_executed >= MAX_TOOL_CALLS_PER_RUN:
+                logger.info(f"[CulturalAgent] Tool call budget ({MAX_TOOL_CALLS_PER_RUN}) reached; proceeding to final JSON synthesis.")
+                break
+
+        # Force one clean final JSON synthesis turn with an explicit user message
         messages.append({
             "role": "user",
-            "content": "Research tool budget reached. Return the final valid JSON response now using only verified evidence gathered above (or honestly state gaps).",
+            "content": "You now have all retrieved web search and page results. Output ONLY the final valid JSON object matching the required schema now. Do not output any markdown prose outside the JSON.",
         })
         final_resp = self.client.chat(
             messages=messages,
@@ -216,7 +233,12 @@ class CulturalContextAgent(BaseKnowledgeSetAgent):
             reasoning_effort="high",
             response_format={"type": "json_object"},
         )
-        return _extract_json_block(final_resp["content"]), research_trace, final_resp
+        final_content = (final_resp.get("content") or "").strip()
+        try:
+            return _extract_json_block(final_content), research_trace, final_resp
+        except ValueError:
+            logger.error(f"[CulturalAgent] Final synthesis returned invalid JSON (len={len(final_content)}, preview={final_content[:300]!r})")
+            raise
 
     def run_initial_research(self, research_package: Dict[str, Any], retry_feedback: str = "") -> Dict[str, Any]:
         """MODE A — INITIAL_RESEARCH: Produce all 7 Cultural Context sub-aspects using live web tools."""

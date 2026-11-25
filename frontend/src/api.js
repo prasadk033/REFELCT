@@ -574,3 +574,11 @@ export async function deleteContextCard(projectId, cardId) {
   });
 }
 
+export async function createManualContextCard(projectId, knowledgeSetId = 'cultural_context', payload) {
+  return apiFetch(`/api/projects/${projectId}/context/${knowledgeSetId}/cards`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+

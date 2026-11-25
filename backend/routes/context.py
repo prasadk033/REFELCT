@@ -418,3 +418,49 @@ def delete_context_card(
     card.is_deleted = True
     db.commit()
     return None
+
+
+@router.post("/{project_id}/context/{knowledge_set_id}/cards", status_code=201)
+def create_manual_context_card(
+    project_id: str,
+    knowledge_set_id: str,
+    body: Dict[str, Any],
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Allow architect to manually add a Context Card without triggering AI."""
+    _get_owned_project(db, project_id, user.id)
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+    if not title or not content:
+        raise HTTPException(status_code=400, detail="Title and content are required.")
+
+    existing_count = (
+        db.query(ContextCard)
+        .filter(
+            ContextCard.project_id == project_id,
+            ContextCard.knowledge_set_id == knowledge_set_id,
+            ContextCard.is_deleted == False,
+        )
+        .count()
+    )
+    card = ContextCard(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        knowledge_set_id=knowledge_set_id,
+        knowledge_set_name="Cultural Context",
+        sub_aspect_key="architect_custom",
+        display_order=existing_count + 1,
+        title=title,
+        content=content,
+        research_register="DOCUMENTED",
+        confidence="ARCHITECT",
+        version=1,
+        architect_notes=[],
+        tags=[t.strip() for t in (body.get("tags") or []) if isinstance(t, str) and t.strip()],
+        is_deleted=False,
+    )
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+    return _serialize_card(card)
