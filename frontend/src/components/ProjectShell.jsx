@@ -11,11 +11,13 @@ export default function ProjectShell({ children, project, isTaskRunning = false 
   const projectId = project?.id
   const isBrief = location.pathname.includes('/brief')
   const isProgram = location.pathname.includes('/program')
-  const isOverview = !isBrief && !isProgram
+  const isContext = location.pathname.includes('/context')
+  const isOverview = !isBrief && !isProgram && !isContext
 
   let workspaceLabel = null
   if (isBrief) workspaceLabel = 'Brief Workspace'
   if (isProgram) workspaceLabel = 'Program Workspace'
+  if (isContext) workspaceLabel = 'Context Workspace'
 
   return (
     <div className="p-shell">
@@ -99,7 +101,11 @@ export default function ProjectShell({ children, project, isTaskRunning = false 
             <span className="p-nav-text">Program</span>
           </button>
 
-          <button className="p-nav-item locked" title="Coming soon">
+          <button
+            className={`p-nav-item ${isContext ? 'active' : ''}`}
+            onClick={() => projectId && navigate(`/projects/${projectId}/context`)}
+            title="Cultural Context Knowledge System (Phase 1)"
+          >
             <span className="p-nav-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="15" height="15">
                 <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />

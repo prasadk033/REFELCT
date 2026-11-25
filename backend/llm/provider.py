@@ -139,3 +139,90 @@ def get_llm_generator(**kwargs) -> LiteLLMGenerator:
     Factory function to create the configured LLM Generator.
     """
     return LiteLLMGenerator(**kwargs)
+
+
+class DeepSeekClient:
+    """
+    Dedicated client for the DeepSeek API (https://api.deepseek.com).
+    Supports OpenAI-compatible chat completions, reasoning_content,
+    native web tools (deepseek_web_search / deepseek_read_url), and tool calling.
+    Isolated from LiteLLMGenerator so Qwen workflows remain untouched.
+    """
+
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
+        timeout: float = 180.0,
+    ):
+        self.model = model or config.DEEPSEEK_MODEL
+        self.api_key = api_key or config.DEEPSEEK_API_KEY
+        self.api_base = (api_base or config.DEEPSEEK_API_BASE).rstrip("/")
+        self.timeout = timeout
+
+    def is_configured(self) -> bool:
+        return bool(self.api_key and self.api_key.strip())
+
+    def chat(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        temperature: float = 0.2,
+        max_tokens: int = 8192,
+        thinking: bool = True,
+        reasoning_effort: str = "high",
+        response_format: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Execute a chat completion request against DeepSeek API.
+        Returns normalized dict with 'content', 'reasoning_content', 'tool_calls', 'usage', and 'raw'.
+        """
+        import requests
+
+        if not self.is_configured():
+            raise RuntimeError("DEEPSEEK_API_KEY is not configured in environment.")
+
+        url = f"{self.api_base}/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if thinking:
+            payload["thinking"] = {"type": "enabled"}
+            payload["reasoning_effort"] = reasoning_effort
+        if tools:
+            payload["tools"] = tools
+            if tool_choice is not None:
+                payload["tool_choice"] = tool_choice
+        if response_format:
+            payload["response_format"] = response_format
+
+        resp = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+        if resp.status_code != 200:
+            raise RuntimeError(f"DeepSeek API error ({resp.status_code}): {resp.text[:500]}")
+
+        data = resp.json()
+        choice = (data.get("choices") or [{}])[0]
+        msg = choice.get("message") or {}
+        return {
+            "content": msg.get("content") or "",
+            "reasoning_content": msg.get("reasoning_content") or "",
+            "tool_calls": msg.get("tool_calls") or [],
+            "usage": data.get("usage") or {},
+            "model": data.get("model") or self.model,
+            "raw": data,
+        }
+
+
+def get_deepseek_client(**kwargs) -> DeepSeekClient:
+    """Factory function to create a configured DeepSeekClient."""
+    return DeepSeekClient(**kwargs)

@@ -56,6 +56,12 @@ class Config:
     )
     QWEN_API_BASE = os.getenv("QWEN_API_BASE", "")
 
+    # DeepSeek API (Context Knowledge System — Phase 1)
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_API_BASE = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
+    IMAGE_SEARCH_API_KEY = os.getenv("IMAGE_SEARCH_API_KEY", "")
+
     # PostgreSQL — LiteLLM proxy/dashboard persistence only
     DATABASE_URL = os.getenv(
         "DATABASE_URL",

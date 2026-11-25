@@ -61,6 +61,7 @@ from routes.activities import router as activities_router
 from routes.jobs import router as jobs_router
 from routes.program import router as program_router
 from routes.admin import router as admin_router
+from routes.context import router as context_router
 
 app.include_router(projects_router)
 app.include_router(sources_router)
@@ -70,6 +71,7 @@ app.include_router(activities_router)
 app.include_router(jobs_router)
 app.include_router(program_router)
 app.include_router(admin_router)
+app.include_router(context_router)
 
 
 

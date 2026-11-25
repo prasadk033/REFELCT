@@ -7,6 +7,7 @@ import GlobalOverviewPage from './pages/GlobalOverviewPage.jsx'
 import ProjectOverviewPage from './pages/ProjectOverviewPage.jsx'
 import BriefPage from './pages/BriefPage.jsx'
 import ProgramPage from './pages/ProgramPage.jsx'
+import ContextPage from './pages/ContextPage.jsx'
 import ExtractionReviewPage from './pages/ExtractionReviewPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
 import AdminPage from './pages/AdminPage.jsx'
@@ -63,6 +64,7 @@ function AppRoutes() {
       <Route path="/projects/:projectId/extract" element={<ProtectedRoute><ExtractionReviewPage /></ProtectedRoute>} />
       <Route path="/projects/:projectId/brief" element={<ProtectedRoute><BriefPage /></ProtectedRoute>} />
       <Route path="/projects/:projectId/program" element={<ProtectedRoute><ProgramPage /></ProtectedRoute>} />
+      <Route path="/projects/:projectId/context" element={<ProtectedRoute><ContextPage /></ProtectedRoute>} />
       <Route path="/brief" element={<ProtectedRoute><BriefPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

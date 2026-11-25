@@ -438,6 +438,8 @@ def init_db():
     """Create all tables if they don't exist and run safe migrations on SQLite & PostgreSQL."""
     from sqlalchemy import inspect, text
     try:
+        # Ensure isolated Context Knowledge System models are registered on Base.metadata
+        import context.models  # noqa: F401
         Base.metadata.create_all(bind=engine)
     except Exception as e:
         logger.warning(f"metadata.create_all notice: {e}")

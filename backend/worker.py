@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("reflect-worker")
 
-QUEUES_TO_LISTEN = ["briefs", "default"]
+QUEUES_TO_LISTEN = ["briefs", "default", "context"]
 
 
 def start_worker():

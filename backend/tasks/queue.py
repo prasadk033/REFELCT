@@ -65,3 +65,11 @@ def enqueue_extraction_job(project_id: str, source_ids: List[str], job_id: str, 
     )
     logger.info(f"Enqueued extraction job {job_id} to Redis queue 'default' (RQ Job ID: {job.id})")
     return job.id
+
+
+def enqueue_context_job(func, *args, **kwargs):
+    """Offload Context Knowledge System jobs to dedicated 'context' queue."""
+    q = get_queue("context")
+    job = q.enqueue(func, *args, job_timeout=900, result_ttl=3600, **kwargs)
+    logger.info(f"Enqueued context job to Redis queue 'context' (RQ Job ID: {job.id})")
+    return job.id

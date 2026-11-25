@@ -520,3 +520,57 @@ export async function getAdminAuditLogs(eventType = '', limit = 50, offset = 0) 
   return apiFetch(`/api/admin/audit-logs${qStr}`);
 }
 
+// ── Context Knowledge System (Phase 1: Cultural Context) ────────────────────
+
+export async function getProjectContext(projectId, knowledgeSetId = 'cultural_context') {
+  return apiFetch(`/api/projects/${projectId}/context?knowledge_set_id=${encodeURIComponent(knowledgeSetId)}`);
+}
+
+export async function generateProjectContext(projectId, knowledgeSetId = 'cultural_context', payload = {}) {
+  return apiFetch(`/api/projects/${projectId}/context/${knowledgeSetId}/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getContextStatus(projectId) {
+  return apiFetch(`/api/projects/${projectId}/context/status`);
+}
+
+export async function cancelContextJob(projectId) {
+  return apiFetch(`/api/projects/${projectId}/context/cancel`, {
+    method: 'POST',
+  });
+}
+
+export async function modifyContextCard(projectId, cardId, payload) {
+  return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}/modify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function addContextCardNote(projectId, cardId, note) {
+  return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}/notes`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note }),
+  });
+}
+
+export async function updateContextCardTags(projectId, cardId, tags) {
+  return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}/tags`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tags }),
+  });
+}
+
+export async function deleteContextCard(projectId, cardId) {
+  return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}`, {
+    method: 'DELETE',
+  });
+}
+
