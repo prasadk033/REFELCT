@@ -123,6 +123,134 @@ class TestContextPhase1(unittest.TestCase):
             # Dynamic card count (>7) rather than fixed 7
             self.assertEqual(len(cards), 10)
 
+    def test_ambiguous_location_stops_and_creates_single_clarification_card(self):
+        with patch("context.master_agent.get_llm_generator") as mock_qwen, \
+             patch("context.master_agent.CulturalContextAgent") as mock_agent_cls:
+            mock_qwen.return_value.run.return_value = {
+                "replies": ['{"city": "Hyderabad", "location_description": "Conflict between Bengaluru and Hyderabad", "confidence_status": "AMBIGUOUS", "unresolved_location_questions": ["Confirm Bengaluru vs Hyderabad"]}']
+            }
+            master = ContextMasterAgent(db=self.db)
+            run = master.run_cultural_context_generation(project_id=self.project_a.id)
+
+            self.assertEqual(run.status, "needs_location_confirmation")
+            self.assertEqual(run.location_confidence, "AMBIGUOUS")
+            self.assertEqual(run.attempt_count, 0)
+            mock_agent_cls.return_value.run_initial_research.assert_not_called()
+
+            cards = self.db.query(ContextCard).filter(
+                ContextCard.project_id == self.project_a.id, ContextCard.is_deleted == False
+            ).all()
+            self.assertEqual(len(cards), 1)
+            self.assertEqual(cards[0].title, "Confirm project site location")
+
+    def test_evaluator_enforces_title_limit_and_documented_url(self):
+        master = ContextMasterAgent(db=self.db)
+        bad_output = {
+            "cards": [
+                {
+                    "aspect_key": "place_identity",
+                    "title": "This title clearly has more than five words",
+                    "content": "Partly documented place.",
+                    "research_register": "DOCUMENTED",
+                    "sources": [],
+                }
+            ],
+            "research_trace": [],
+        }
+        decision, issues, _ = master.evaluate_research(bad_output, {"city": "Hyderabad"}, "Residential")
+        self.assertEqual(decision, "RETRY")
+        self.assertTrue(any("5 words" in i for i in issues))
+        self.assertTrue(any("lacks a source URL" in i for i in issues))
+
+    def test_manual_architect_cards_preserved_and_unknowns_synced(self):
+        from db import ProgramQuestion
+        manual_card = ContextCard(
+            id=str(uuid.uuid4()),
+            project_id=self.project_a.id,
+            run_id=None,
+            knowledge_set_id="cultural_context",
+            knowledge_set_name="Cultural Context",
+            sub_aspect_key="place_identity",
+            display_order=1,
+            title="Architect Site Note",
+            content="Custom architect observation preserved across runs.",
+            research_register="DOCUMENTED",
+            confidence="HIGH",
+            version=1,
+            tags=["site"],
+            is_deleted=False,
+        )
+        self.db.add(manual_card)
+        self.db.commit()
+
+        mock_output = {
+            "documentation_level": "PARTLY_DOCUMENTED",
+            "cards": [
+                {
+                    "aspect_key": "everyday_life",
+                    "title": "Street Evening Use",
+                    "content": "Ask local shopkeepers about evening street use.",
+                    "scale": "site",
+                    "research_register": "UNKNOWN",
+                    "confidence": "LOW",
+                    "learn_locally": {
+                        "what": "Evening street activity",
+                        "how": "Observe at 7pm",
+                        "who_to_ask": "Local shopkeepers",
+                        "question_type": "site_visit",
+                    },
+                    "sources": [],
+                }
+            ],
+            "limitations": [],
+            "local_verification_requirements": [],
+        }
+
+        with patch("context.master_agent.get_llm_generator") as mock_qwen, \
+             patch("context.master_agent.CulturalContextAgent") as mock_agent_cls, \
+             patch("context.master_agent.get_deepseek_client") as mock_ds:
+            mock_qwen.return_value.run.return_value = {
+                "replies": ['{"city": "Hyderabad", "location_description": "Hyderabad", "confidence_status": "CONFIRMED"}']
+            }
+            mock_agent_cls.return_value.run_initial_research.return_value = mock_output
+            mock_ds.return_value.chat.return_value = {"content": '{"decision": "ACCEPTED", "issues": [], "targeted_feedback": ""}'}
+
+            master = ContextMasterAgent(db=self.db)
+            master.run_cultural_context_generation(project_id=self.project_a.id)
+
+            # Manual card must remain active
+            kept = self.db.query(ContextCard).filter(ContextCard.id == manual_card.id).first()
+            self.assertFalse(kept.is_deleted)
+
+            # UNKNOWN card must sync to ProgramQuestion with [Site Visit]
+            pq = self.db.query(ProgramQuestion).filter(ProgramQuestion.project_id == self.project_a.id).first()
+            self.assertIsNotNone(pq)
+            self.assertIn("[Cultural Context · Site Visit · Street Evening Use]", pq.question)
+
+    def test_full_raw_documents_passed_without_truncation_and_chunked_when_huge(self):
+        from db import Source
+        long_text = ("A" * 15000) + " END_MARKER_MUST_NOT_BE_LOST"
+        src = Source(
+            id=str(uuid.uuid4()),
+            project_id=self.project_a.id,
+            file_name="Brief_document.pdf",
+            file_type="pdf",
+            storage_path="/tmp/brief.pdf",
+            extracted_text=long_text,
+        )
+        self.db.add(src)
+        self.db.commit()
+
+        master = ContextMasterAgent(db=self.db)
+        pkg = master.build_project_package(self.project_a, {"city": "Hyderabad"}, "CONFIRMED")
+        docs = pkg["UPLOADED_DOCUMENTS"]
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0]["coverage"], "full")
+        self.assertIn("END_MARKER_MUST_NOT_BE_LOST", docs[0]["content"])
+        # Verify chunker covers 100% of huge text
+        chunks = master._chunk_text("X" * 25000, chunk_size=12000, overlap=400)
+        self.assertEqual(len(chunks), 3)
+
     def test_card_split_preview_and_confirm_preserves_parent_card(self):
         parent = ContextCard(
             id=str(uuid.uuid4()),
@@ -348,6 +476,12 @@ class TestContextPhase1(unittest.TestCase):
             self.assertFalse(result["research_trace"][1]["success"])  # malformed args
             self.assertTrue(result["research_trace"][2]["success"])
             self.assertEqual(len(result["cards"]), 8)
+
+    def test_osm_geocode_blocks_ssrf_urls(self):
+        from services.osm_site_analysis import OSMSiteAnalysisService
+        svc = OSMSiteAnalysisService()
+        self.assertIsNone(svc.geocode_location("http://127.0.0.1:8000/internal"))
+        self.assertIsNone(svc.geocode_location("http://169.254.169.254/latest/meta-data/"))
 
     def test_tool_call_limit_enforced_and_forces_final_synthesis(self):
         mock_client = MagicMock()

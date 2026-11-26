@@ -28,22 +28,26 @@ class OSMSiteAnalysisService:
         self.geocode_url = config.OSM_GEOCODE_URL
         self.overpass_url = config.OSM_OVERPASS_URL
         self.user_agent = "REFLECT-Architecture-App/1.0"
-        
         self.ctx = ssl.create_default_context()
-        self.ctx.check_hostname = False
-        self.ctx.verify_mode = ssl.CERT_NONE
 
     def geocode_location(self, location_str: str) -> Optional[Tuple[float, float, str]]:
         """Resolves an address string or Google Maps URL to lat, lon, and formatted address."""
         
-        # Check if it's a URL (Google Maps or similar)
+        # Check if it's a URL (Google Maps or similar) — SSRF-validated
         if "http://" in location_str or "https://" in location_str:
             try:
+                from context.search_service import validate_safe_external_url, _safe_http_get
+                is_safe, reason = validate_safe_external_url(location_str.strip())
+                if not is_safe:
+                    logger.warning(f"[SSRF-BLOCK] Rejected OSM location URL '{location_str}': {reason}")
+                    return None
                 logger.info(f"Resolving URL: {location_str}")
-                req = urllib.request.Request(location_str)
-                req.add_header("User-Agent", self.user_agent)
-                response = urllib.request.urlopen(req, context=self.ctx, timeout=10)
-                resolved_url = response.geturl()
+                response = _safe_http_get(
+                    location_str.strip(),
+                    headers={"User-Agent": self.user_agent},
+                    timeout=10,
+                )
+                resolved_url = response.url or location_str
                 
                 # Look for @lat,lon
                 match = re.search(r"@(-?\d+\.\d+),(-?\d+\.\d+)", resolved_url)
@@ -58,7 +62,7 @@ class OSMSiteAnalysisService:
                     return lat, lon, location_str
             except Exception as e:
                 logger.warning(f"Failed to resolve URL '{location_str}': {e}")
-                # Fall through to attempt standard geocoding anyway (e.g. if the URL is just text)
+                return None
                 
         # Check if it's already coordinates (e.g. "45.307, 10.067")
         try:

@@ -590,3 +590,11 @@ export async function updateContextCardPriority(projectId, cardId, priority) {
   });
 }
 
+export async function confirmContextLocation(projectId, location) {
+  return apiFetch(`/api/projects/${projectId}/context/confirm-location`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ location }),
+  });
+}
+

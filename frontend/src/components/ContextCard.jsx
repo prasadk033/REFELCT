@@ -31,8 +31,10 @@ export default function ContextCard({
   onDelete,
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [showSources, setShowSources] = useState(false)
   const reg = REGISTER_STYLES[card.research_register] || REGISTER_STYLES.DOCUMENTED
   const prio = card.priority ? PRIORITY_STYLES[card.priority] : null
+  const scaleTag = (card.tags || []).find(t => ['site', 'neighbourhood', 'city', 'region'].includes((t || '').toLowerCase()))
   const verifiedImages = (card.images || []).filter(img => img.verified || img.is_architect_upload)
   const contentText = (card.content || '').trim()
   const isLong = contentText.length > 170
@@ -129,9 +131,28 @@ export default function ContextCard({
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11.5px', color: 'var(--text-muted, #64748b)' }}>
-              v{card.version} · {(card.sources || []).length} src
-            </span>
+            {(card.sources || []).length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowSources(prev => !prev)}
+                title="Show or hide source citations"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  fontSize: '11.5px',
+                  color: '#4f46e5',
+                  fontWeight: 600,
+                }}
+              >
+                v{card.version} · {card.sources.length} src {showSources ? '▴' : '▾'}
+              </button>
+            ) : (
+              <span style={{ fontSize: '11.5px', color: 'var(--text-muted, #64748b)' }}>
+                v{card.version} · 0 src
+              </span>
+            )}
             {!isSplittingThisCard && (
               <button
                 type="button"
@@ -250,6 +271,40 @@ export default function ContextCard({
             💬 {card.architect_notes.length} Architect Note{card.architect_notes.length > 1 ? 's' : ''}
           </div>
         )}
+
+        {showSources && (card.sources || []).length > 0 && !isSplittingThisCard && (
+          <div
+            style={{
+              marginTop: '10px',
+              padding: '8px 10px',
+              borderRadius: '8px',
+              background: 'var(--bg-subtle, #f8fafc)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}
+          >
+            {(card.sources || []).map((src, sIdx) => (
+              <div key={src.id || sIdx} style={{ fontSize: '11px', lineHeight: 1.4, color: 'var(--text-main, #334155)' }}>
+                <div style={{ fontWeight: 600 }}>
+                  {src.url ? (
+                    <a href={src.url} target="_blank" rel="noreferrer" style={{ color: '#4f46e5', textDecoration: 'underline' }}>
+                      {src.title || src.url}
+                    </a>
+                  ) : (
+                    <span>{src.title || 'Source'}</span>
+                  )}
+                </div>
+                {(src.author_or_org || src.published_date) && (
+                  <div style={{ color: 'var(--text-muted, #64748b)', fontSize: '10.5px' }}>
+                    {[src.author_or_org, src.published_date].filter(Boolean).join(' · ')}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Footer Row */}
@@ -265,7 +320,7 @@ export default function ContextCard({
         }}
       >
         <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)', fontWeight: 500 }}>
-          📍 {card.aspect_title || 'Cultural Context'}
+          📍 {card.aspect_title || 'Cultural Context'}{scaleTag ? ` · ${scaleTag}` : ''}
         </span>
 
         {isSplittingThisCard ? (

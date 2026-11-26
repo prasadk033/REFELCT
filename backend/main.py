@@ -113,30 +113,41 @@ _GEO_CACHE: dict[str, tuple[str, str]] = {}
 
 
 def _resolve_ip_location(ip: str) -> tuple[str, str]:
-    """Resolve IP address to (country, city) with in-memory caching."""
+    """Resolve IP address to (country, city) with bounded in-memory caching and IP validation."""
     if not ip or ip in ("127.0.0.1", "::1", "localhost", "Unknown"):
         return ("Localhost", "Internal")
-    if ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("172."):
+
+    import ipaddress
+    try:
+        ip_obj = ipaddress.ip_address(ip.strip())
+    except ValueError:
+        return ("Unknown", "Unknown")
+
+    if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_reserved:
         return ("Private Network", "Internal")
 
-    if ip in _GEO_CACHE:
-        return _GEO_CACHE[ip]
+    norm_ip = str(ip_obj)
+    if norm_ip in _GEO_CACHE:
+        return _GEO_CACHE[norm_ip]
+
+    if len(_GEO_CACHE) >= 2000:
+        _GEO_CACHE.clear()
 
     try:
         import httpx
         with httpx.Client(timeout=2.0) as client:
-            resp = client.get(f"http://ip-api.com/json/{ip}?fields=status,country,city")
+            resp = client.get(f"http://ip-api.com/json/{norm_ip}?fields=status,country,city")
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("status") == "success":
                     country = data.get("country") or "Unknown"
                     city = data.get("city") or "Unknown"
-                    _GEO_CACHE[ip] = (country, city)
+                    _GEO_CACHE[norm_ip] = (country, city)
                     return (country, city)
     except Exception as e:
-        logger.debug(f"IP geo lookup failed for {ip}: {e}")
+        logger.debug(f"IP geo lookup failed for {norm_ip}: {e}")
 
-    _GEO_CACHE[ip] = ("Unknown", "Unknown")
+    _GEO_CACHE[norm_ip] = ("Unknown", "Unknown")
     return ("Unknown", "Unknown")
 
 
@@ -152,8 +163,8 @@ def google_login(body: GoogleLoginRequest, request: Request):
     google_info = verify_google_token(body.token)
     if not google_info:
         # Record failed login attempt
+        db = SessionLocal()
         try:
-            db = SessionLocal()
             log_record = UserLoginHistory(
                 id=str(uuid.uuid4()),
                 user_id=None,
@@ -166,9 +177,11 @@ def google_login(body: GoogleLoginRequest, request: Request):
             )
             db.add(log_record)
             db.commit()
-            db.close()
         except Exception as e:
+            db.rollback()
             logger.warning(f"Failed to record failed login audit: {e}")
+        finally:
+            db.close()
 
         raise HTTPException(status_code=401, detail="Invalid Google token")
 
@@ -176,8 +189,8 @@ def google_login(body: GoogleLoginRequest, request: Request):
     access_token = create_jwt_token(user.id, user.email)
 
     # Record successful login event
+    db = SessionLocal()
     try:
-        db = SessionLocal()
         log_record = UserLoginHistory(
             id=str(uuid.uuid4()),
             user_id=user.id,
@@ -190,9 +203,11 @@ def google_login(body: GoogleLoginRequest, request: Request):
         )
         db.add(log_record)
         db.commit()
-        db.close()
     except Exception as e:
+        db.rollback()
         logger.warning(f"Failed to record successful login audit: {e}")
+    finally:
+        db.close()
 
     return AuthResponse(
         access_token=access_token,

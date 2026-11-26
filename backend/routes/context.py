@@ -223,6 +223,23 @@ def generate_context_knowledge(
     return {"job_id": job_id, "status": "queued", "knowledge_set_id": knowledge_set_id}
 
 
+@router.post("/{project_id}/context/confirm-location")
+def confirm_context_location(
+    project_id: str,
+    body: Dict[str, Any],
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Explicitly confirm project location when Context Master paused for ambiguity."""
+    _get_owned_project(db, project_id, user.id)
+    location_text = str(body.get("location") or "").strip()
+    if not location_text:
+        raise HTTPException(status_code=400, detail="location is required.")
+    master = ContextMasterAgent(db=db)
+    project = master.confirm_location(project_id, location_text)
+    return {"status": "confirmed", "location": project.location}
+
+
 @router.get("/{project_id}/context/status")
 def get_context_status(
     project_id: str,

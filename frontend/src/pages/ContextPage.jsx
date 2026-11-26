@@ -15,6 +15,7 @@ import {
   deleteContextCard,
   createManualContextCard,
   confirmSplitContextCard,
+  confirmContextLocation,
 } from '../api.js'
 
 /**
@@ -659,17 +660,98 @@ export default function ContextPage() {
               </div>
             )}
 
-            {/* Resolved Location Pill */}
+            {/* Resolved Location Pill / Ambiguity Confirmation Gate */}
             {latestRun?.resolved_location && (
-              <div className="pov-box" style={{ padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border-color, #e2e8f0)', marginBottom: '18px', fontSize: '12.5px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div
+                className="pov-box"
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  border: ['AMBIGUOUS', 'INSUFFICIENT'].includes(latestRun.location_confidence)
+                    ? '1.5px solid #f59e0b'
+                    : '1px solid var(--border-color, #e2e8f0)',
+                  background: ['AMBIGUOUS', 'INSUFFICIENT'].includes(latestRun.location_confidence)
+                    ? '#fffbeb'
+                    : 'var(--bg-surface, #ffffff)',
+                  marginBottom: '18px',
+                  fontSize: '12.5px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
                 <div>
                   <strong>📍 Resolved Location:</strong> {latestRun.resolved_location.location_description || project?.location}
                 </div>
-                <div>
-                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 9px', borderRadius: '8px', background: '#eff6ff', color: '#1d4ed8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '3px 9px',
+                      borderRadius: '8px',
+                      background: ['AMBIGUOUS', 'INSUFFICIENT'].includes(latestRun.location_confidence) ? '#fef3c7' : '#eff6ff',
+                      color: ['AMBIGUOUS', 'INSUFFICIENT'].includes(latestRun.location_confidence) ? '#92400e' : '#1d4ed8',
+                    }}
+                  >
                     {latestRun.location_confidence} · Attempts: {latestRun.attempt_count}/3
                   </span>
                 </div>
+                {['AMBIGUOUS', 'INSUFFICIENT'].includes(latestRun.location_confidence) && (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault()
+                      const val = e.target.elements.confirmedLoc.value.trim()
+                      if (!val || runningJob) return
+                      try {
+                        await confirmContextLocation(projectId, val)
+                        await handleStartGeneration()
+                      } catch (err) {
+                        setErrorMsg(err.message)
+                      }
+                    }}
+                    style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '4px' }}
+                  >
+                    <input
+                      name="confirmedLoc"
+                      type="text"
+                      defaultValue={
+                        [
+                          latestRun.resolved_location?.locality,
+                          latestRun.resolved_location?.city,
+                          latestRun.resolved_location?.country,
+                        ]
+                          .filter(Boolean)
+                          .join(', ') || project?.location || ''
+                      }
+                      placeholder="Confirm exact city, locality, and coordinates..."
+                      style={{
+                        flex: 1,
+                        minWidth: '240px',
+                        padding: '7px 11px',
+                        borderRadius: '8px',
+                        border: '1px solid #f59e0b',
+                        fontSize: '12.5px',
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={runningJob}
+                      style={{
+                        background: '#d97706',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '7px 14px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: runningJob ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      Confirm Location &amp; Research
+                    </button>
+                  </form>
+                )}
               </div>
             )}
 

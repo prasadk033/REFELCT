@@ -64,7 +64,11 @@ def run_context_generation_job(
         job = db.query(ContextJob).filter(ContextJob.id == job_id).first()
         if job:
             job.status = "completed"
-            job.current_step = "Cultural Context Cards Ready"
+            job.current_step = (
+                "Location confirmation required"
+                if run.status == "needs_location_confirmation"
+                else "Cultural Context Cards Ready"
+            )
             job.attempt_count = run.attempt_count
             db.commit()
     except Exception as exc:
