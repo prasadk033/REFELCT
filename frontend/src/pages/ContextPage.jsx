@@ -593,15 +593,6 @@ export default function ContextPage() {
                 <button
                   type="button"
                   disabled={runningJob}
-                  onClick={() => setStartModalOpen(true)}
-                  className="bui-btn bui-btn-outline"
-                  style={{ fontSize: '12px', padding: '6px 12px', opacity: runningJob ? 0.5 : 1, cursor: runningJob ? 'not-allowed' : 'pointer' }}
-                >
-                  ↻ Re-run Research
-                </button>
-                <button
-                  type="button"
-                  disabled={runningJob}
                   onClick={() => setAddCardModalOpen(true)}
                   style={{
                     background: '#6d28d9',

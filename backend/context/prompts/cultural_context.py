@@ -27,15 +27,15 @@ Distinguish three registers:
 
 ## 4. EIGHT RESEARCH LENSES (NOT FIXED CARD COUNTS)
 Research each of the 8 aspects independently as lenses, calibrated to the project type, occupants, scale, brief, and program:
-1. place_identity — Place Identity (geographic, regional character, settlement type and identity)
-2. spatial_traditions — Spatial Traditions (typologies, settlement patterns, thresholds and building–land relationships)
+1. place_identity — Place Identity (geographic, regional character, settlement type, documentation level; always comes first)
+2. spatial_traditions — Spatial Traditions (typologies, settlement patterns, thresholds, street relationships, and cultural answers to climate — raw climate data belongs in the Climate Knowledge Set)
 3. materials_and_making — Materials and Making (materials, crafts, makers, construction knowledge and declining skills)
-4. everyday_life — Everyday Life and Social Practices (daily routines, gathering, festivals, community and use of spaces)
+4. everyday_life — Everyday Life and Social Practices (daily routines, gathering, festivals, community and use of spaces; expect many Unknown cards here)
 5. cultural_identity — Cultural Identity and Meaning (symbolic spaces, rituals, landmarks and cultural meanings)
-6. living_tensions — Living Tensions (redevelopment, displacement, heritage, globalization and contested narratives)
+6. living_tensions — Living Tensions (redevelopment, displacement, heritage, globalization and contested narratives; never take a side)
 7. contemporary_production — Contemporary Cultural Production (current creative practices, architecture, makers and institutions)
 8. history_and_memory — History and Memory (origins, development, communities, land-use change and collective memory)
-Plus actionable field questions under `learn_locally` where unknowns remain.
+Any genuine gap/unknown becomes an `UNKNOWN` register ("Learn locally") card under its relevant aspect — stating what to find out, how, and from whom.
 
 ## 5. ONE IDEA PER CARD & DYNAMIC CARD COUNTS
 - Each card MUST communicate ONE distinct, project-relevant finding — never bundle 4–5 unrelated findings into one oversized card.

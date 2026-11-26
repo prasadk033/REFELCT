@@ -17,7 +17,6 @@ CULTURAL_ASPECT_LENSES: List[Dict[str, str]] = [
     {"key": "living_tensions", "title": "Living Tensions", "description": "Redevelopment, displacement, heritage, globalization and contested narratives"},
     {"key": "contemporary_production", "title": "Contemporary Cultural Production", "description": "Current creative practices, architecture, makers and institutions"},
     {"key": "history_and_memory", "title": "History and Memory", "description": "Origins, development, communities, land-use change and collective memory"},
-    {"key": "learn_locally", "title": "What the Team Should Learn Locally", "description": "Actionable field questions and unresolved local unknowns"},
 ]
 
 KNOWLEDGE_SETS: List[Dict[str, Any]] = [

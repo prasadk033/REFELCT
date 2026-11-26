@@ -258,23 +258,24 @@ class CulturalContextAgent(BaseKnowledgeSetAgent):
 Use `deepseek_web_search` and `deepseek_read_url` to verify location-specific architectural, historical, material, and cultural facts before writing your final answer.
 Never claim a search or page retrieval succeeded unless you actually called the tool and received a successful result.
 
-RESEARCH LENSES (8 aspects + learn_locally — use these as research lenses, NOT as 1-card-per-aspect buckets):
+RESEARCH LENSES (strictly 8 aspects — use these as research lenses, NOT as fixed card buckets or forced counts):
 {lenses_spec}
 
 DYNAMIC CARD RULES:
-- ONE IDEA PER CARD: Each distinct finding gets its own card. Never bundle 4-5 unrelated topics into one large card.
+- NO FIXED CARD COUNT: Do not force 7, 8, or any fixed total. One aspect may yield 5 cards, another 1, another only Unknown cards.
+- ONE IDEA PER CARD: Each distinct finding gets its own card with a finding-specific title (never generic bucket headings). Never bundle 4-5 unrelated topics into one large card.
 - CONCISE: Keep each card body ~40-70 words, architect-readable, and connected to the specific project (project type, occupants, program, scale, brief) without prescribing design.
-- DYNAMIC COUNT (ceilings, NOT targets): Well documented 25-40 cards; Partly documented 15-25 cards; Thinly documented 8-15 cards. Never pad or duplicate.
-- Generate actionable `learn_locally` cards for genuine gaps/unknowns.
+- DOCUMENTATION CEILINGS (ceilings, NOT targets): Well documented 25-40 cards; Partly documented 15-25 cards; Thinly documented 8-15 cards. Never pad or duplicate.
+- Unknowns become `UNKNOWN` register cards under their relevant aspect, stating what to find out, how, and from whom.
 
 Return a single valid JSON object with NO surrounding prose:
 {{
   "documentation_level": "WELL_DOCUMENTED | PARTLY_DOCUMENTED | THINLY_DOCUMENTED",
   "cards": [
     {{
-      "aspect_key": "one of the 9 keys above",
-      "title": "Short informative card title (one idea)",
-      "content": "Concise 40-70 word architectural finding (or short actionable question for learn_locally)",
+      "aspect_key": "one of the 8 aspect keys above",
+      "title": "Short informative finding title (one idea)",
+      "content": "Concise 40-70 word architectural finding (or actionable local-learning question for UNKNOWN register)",
       "scale": "site | neighbourhood | city | region",
       "research_register": "DOCUMENTED | PATTERN | UNKNOWN",
       "confidence": "HIGH | MEDIUM | LOW",

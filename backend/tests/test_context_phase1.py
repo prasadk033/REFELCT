@@ -72,7 +72,7 @@ class TestContextPhase1(unittest.TestCase):
             "living_tensions",
             "contemporary_production",
             "history_and_memory",
-            "learn_locally",
+            "everyday_life",
         ]
         mock_output = {
             "documentation_level": "PARTLY_DOCUMENTED",
@@ -82,7 +82,7 @@ class TestContextPhase1(unittest.TestCase):
                     "title": f"Finding {idx + 1} ({k})",
                     "content": f"Concise project-aware finding {idx + 1} for {k}.",
                     "scale": "city",
-                    "research_register": "DOCUMENTED",
+                    "research_register": "UNKNOWN" if idx == 9 else "DOCUMENTED",
                     "confidence": "MEDIUM",
                     "sources": [{"title": "Local Archive", "url": "https://example.org/doc"}],
                     "validated_images": [],
