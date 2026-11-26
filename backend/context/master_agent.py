@@ -208,7 +208,7 @@ LOCATION CLUES (DATA):
         Evaluate dynamic Cultural Context cards (one idea per card, 8 aspect lenses).
         Returns (decision: ACCEPTED|ACCEPTED_WITH_GAPS|RETRY, issues: list, targeted_feedback: str).
         """
-        cards_out = agent_output.get("cards") or agent_output.get("sub_aspects") or []
+        cards_out = agent_output.get("cards") or []
 
         issues: List[str] = []
         if not cards_out:
@@ -381,7 +381,7 @@ CARDS OUTPUT ({len(cards_out)} cards):
 
         ks_meta = get_knowledge_set("cultural_context")
         valid_lenses = {l["key"] for l in (ks_meta.get("aspect_lenses") or [])}
-        generated_cards = (best_output or {}).get("cards") or (best_output or {}).get("sub_aspects") or []
+        generated_cards = (best_output or {}).get("cards") or []
 
         seen_titles = set()
         for idx, item in enumerate(generated_cards, start=1):
@@ -393,7 +393,7 @@ CARDS OUTPUT ({len(cards_out)} cards):
                 continue
             seen_titles.add(title.lower())
 
-            aspect_key = (item.get("aspect_key") or item.get("sub_aspect_key") or "place_identity").strip()
+            aspect_key = (item.get("aspect_key") or "place_identity").strip()
             if aspect_key not in valid_lenses:
                 aspect_key = "place_identity"
 
@@ -552,41 +552,6 @@ CARDS OUTPUT ({len(cards_out)} cards):
         self.db.commit()
         self.db.refresh(card)
         return card
-
-    def propose_card_splits(self, project_id: str, card_id: str) -> List[Dict[str, Any]]:
-        """
-        MODE C Preview: Ask Cultural Context Agent to extract standalone card proposals
-        from a parent card without modifying the database.
-        """
-        card = (
-            self.db.query(ContextCard)
-            .filter(ContextCard.id == card_id, ContextCard.project_id == project_id, ContextCard.is_deleted == False)
-            .first()
-        )
-        if not card:
-            raise ValueError("Context card not found.")
-
-        card_data = {
-            "id": card.id,
-            "title": card.title,
-            "content": card.content,
-            "aspect_key": card.sub_aspect_key,
-            "confidence": card.confidence,
-            "sources": [
-                {
-                    "title": s.title,
-                    "author_or_org": s.author_or_org,
-                    "url": s.url,
-                    "published_date": s.published_date,
-                    "source_type": s.source_type,
-                    "supported_claim": s.supported_claim,
-                }
-                for s in (card.sources or [])
-            ],
-        }
-        agent = CulturalContextAgent()
-        res = agent.propose_card_splits(card_data)
-        return res.get("proposed_cards") or []
 
     def confirm_card_splits(
         self,

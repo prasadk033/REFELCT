@@ -560,14 +560,6 @@ export async function addContextCardNote(projectId, cardId, note) {
   });
 }
 
-export async function updateContextCardTags(projectId, cardId, tags) {
-  return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}/tags`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tags }),
-  });
-}
-
 export async function deleteContextCard(projectId, cardId) {
   return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}`, {
     method: 'DELETE',
@@ -579,12 +571,6 @@ export async function createManualContextCard(projectId, knowledgeSetId = 'cultu
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-  });
-}
-
-export async function previewSplitContextCard(projectId, cardId) {
-  return apiFetch(`/api/projects/${projectId}/context/cards/${cardId}/split/preview`, {
-    method: 'POST',
   });
 }
 

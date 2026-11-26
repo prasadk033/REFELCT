@@ -26,10 +26,6 @@ class ContextCardNoteRequest(BaseModel):
     note: str = Field(..., min_length=1, max_length=2000)
 
 
-class ContextCardTagsRequest(BaseModel):
-    tags: List[str] = Field(default_factory=list)
-
-
 class ContextSourceOut(BaseModel):
     id: str
     title: str

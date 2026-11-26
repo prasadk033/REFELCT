@@ -141,68 +141,50 @@ class TestContextPhase1(unittest.TestCase):
         self.db.add(parent)
         self.db.commit()
 
-        with patch("context.master_agent.CulturalContextAgent") as mock_agent_cls:
-            mock_agent = MagicMock()
-            mock_agent.propose_card_splits.return_value = {
-                "proposed_cards": [
-                    {
-                        "temp_id": "split_1",
-                        "title": "Hyderabad Granite Tradition",
-                        "content": "Granite is quarried locally and worked by stone yards.",
-                        "aspect_key": "materials_and_making",
-                        "research_register": "DOCUMENTED",
-                        "sources": [{"title": "Stone Survey", "url": "https://example.org/stone"}],
-                    },
-                    {
-                        "temp_id": "split_2",
-                        "title": "Lime-Surkhi Plaster",
-                        "content": "Traditional breathable lime mortars remain regionally known.",
-                        "aspect_key": "materials_and_making",
-                        "research_register": "PATTERN",
-                        "sources": [],
-                    },
-                ]
-            }
-            mock_agent_cls.return_value = mock_agent
+        master = ContextMasterAgent(db=self.db)
 
-            master = ContextMasterAgent(db=self.db)
-            proposals = master.propose_card_splits(self.project_a.id, parent.id)
-            self.assertEqual(len(proposals), 2)
+        # Confirm only 1 selected split point in separate mode
+        created = master.confirm_card_splits(
+            self.project_a.id,
+            parent.id,
+            [
+                {
+                    "title": "Hyderabad Granite Tradition",
+                    "content": "Granite is quarried locally and worked by stone yards.",
+                    "aspect_key": "materials_and_making",
+                    "research_register": "DOCUMENTED",
+                    "sources": [{"title": "Stone Survey", "url": "https://example.org/stone"}],
+                }
+            ],
+            create_mode="separate",
+            priority="high",
+        )
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].title, "Hyderabad Granite Tradition")
+        self.assertEqual(created[0].priority, "high")
 
-            # Preview must NOT mutate DB
-            count_after_preview = self.db.query(ContextCard).filter(
-                ContextCard.project_id == self.project_a.id, ContextCard.is_deleted == False
-            ).count()
-            self.assertEqual(count_after_preview, 1)
+        # Confirm combined mode (2 points -> 1 combined card with priority + note)
+        combined = master.confirm_card_splits(
+            self.project_a.id,
+            parent.id,
+            [
+                {"content": "Granite is quarried locally."},
+                {"content": "Traditional lime mortars remain known."},
+            ],
+            create_mode="combined",
+            priority="medium",
+            note="Check stone yards near Jubilee Hills.",
+        )
+        self.assertEqual(len(combined), 1)
+        self.assertIn("Granite is quarried locally.", combined[0].content)
+        self.assertIn("Traditional lime mortars remain known.", combined[0].content)
+        self.assertEqual(combined[0].priority, "medium")
+        self.assertEqual(len(combined[0].architect_notes), 1)
 
-            # Confirm only 1 selected split card
-            created = master.confirm_card_splits(self.project_a.id, parent.id, [proposals[0]], create_mode="separate", priority="high")
-            self.assertEqual(len(created), 1)
-            self.assertEqual(created[0].title, "Hyderabad Granite Tradition")
-            self.assertEqual(created[0].priority, "high")
-
-            # Confirm combined mode (2 points -> 1 combined card with priority + note)
-            combined = master.confirm_card_splits(
-                self.project_a.id,
-                parent.id,
-                [
-                    {"content": "Granite is quarried locally."},
-                    {"content": "Traditional lime mortars remain known."},
-                ],
-                create_mode="combined",
-                priority="medium",
-                note="Check stone yards near Jubilee Hills.",
-            )
-            self.assertEqual(len(combined), 1)
-            self.assertIn("Granite is quarried locally.", combined[0].content)
-            self.assertIn("Traditional lime mortars remain known.", combined[0].content)
-            self.assertEqual(combined[0].priority, "medium")
-            self.assertEqual(len(combined[0].architect_notes), 1)
-
-            # Parent card must still be preserved intact
-            parent_check = self.db.query(ContextCard).filter(ContextCard.id == parent.id).first()
-            self.assertFalse(parent_check.is_deleted)
-            self.assertEqual(parent_check.title, "Materials and making")
+        # Parent card must still be preserved intact
+        parent_check = self.db.query(ContextCard).filter(ContextCard.id == parent.id).first()
+        self.assertFalse(parent_check.is_deleted)
+        self.assertEqual(parent_check.title, "Materials and making")
 
     def test_card_modification_preserves_original_on_failure(self):
         card = ContextCard(
@@ -379,7 +361,7 @@ class TestContextPhase1(unittest.TestCase):
             "usage": {},
         }
         final_resp = {
-            "content": '{"sub_aspects": [], "limitations": ["Budget reached"], "local_verification_requirements": []}',
+            "content": '{"cards": [], "limitations": ["Budget reached"], "local_verification_requirements": []}',
             "tool_calls": [],
             "usage": {},
         }

@@ -15,7 +15,6 @@ from context.schemas import (
     ContextGenerateRequest,
     ContextCardModifyRequest,
     ContextCardNoteRequest,
-    ContextCardTagsRequest,
 )
 from context.registry import KNOWLEDGE_SETS, CULTURAL_ASPECT_LENSES, is_knowledge_set_enabled
 from context.master_agent import ContextMasterAgent
@@ -377,31 +376,6 @@ def add_context_card_note(
     return _serialize_card(card)
 
 
-@router.patch("/{project_id}/context/cards/{card_id}/tags")
-def update_context_card_tags(
-    project_id: str,
-    card_id: str,
-    body: ContextCardTagsRequest,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Architect action outside AI research: update card tags without triggering AI."""
-    _get_owned_project(db, project_id, user.id)
-    card = (
-        db.query(ContextCard)
-        .filter(ContextCard.id == card_id, ContextCard.project_id == project_id, ContextCard.is_deleted == False)
-        .first()
-    )
-    if not card:
-        raise HTTPException(status_code=404, detail="Context card not found")
-
-    clean_tags = [t.strip() for t in body.tags if t and t.strip()]
-    card.tags = list(dict.fromkeys(clean_tags))
-    db.commit()
-    db.refresh(card)
-    return _serialize_card(card)
-
-
 @router.delete("/{project_id}/context/cards/{card_id}", status_code=204)
 def delete_context_card(
     project_id: str,
@@ -468,28 +442,6 @@ def create_manual_context_card(
     db.commit()
     db.refresh(card)
     return _serialize_card(card)
-
-
-@router.post("/{project_id}/context/cards/{card_id}/split/preview")
-def preview_split_context_card(
-    project_id: str,
-    card_id: str,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """MODE C Preview: Extract selectable standalone card proposals from a parent card."""
-    _get_owned_project(db, project_id, user.id)
-    if not config.DEEPSEEK_API_KEY:
-        raise HTTPException(status_code=503, detail="DeepSeek API key is not configured on the server.")
-    try:
-        master = ContextMasterAgent(db=db)
-        proposed = master.propose_card_splits(project_id, card_id)
-        return {"parent_card_id": card_id, "proposed_cards": proposed}
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        logger.error(f"Card split preview failed: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Split preview failed: {exc}")
 
 
 @router.post("/{project_id}/context/cards/{card_id}/split/confirm", status_code=201)
