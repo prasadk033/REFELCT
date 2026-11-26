@@ -483,6 +483,19 @@ class TestContextPhase1(unittest.TestCase):
         self.assertIsNone(svc.geocode_location("http://127.0.0.1:8000/internal"))
         self.assertIsNone(svc.geocode_location("http://169.254.169.254/latest/meta-data/"))
 
+        with patch("context.search_service.socket.getaddrinfo") as mock_dns, \
+             patch("context.search_service.requests.request") as mock_req:
+            mock_dns.return_value = [(2, 1, 6, "", ("142.250.190.78", 0))]
+            redir = MagicMock()
+            redir.status_code = 302
+            redir.headers = {"Location": "https://www.google.com/maps/@17.430124,78.407352,17z"}
+            final = MagicMock()
+            final.status_code = 200
+            final.headers = {}
+            mock_req.side_effect = [redir, final]
+            coords = svc.geocode_location("https://maps.app.goo.gl/testpin")
+            self.assertEqual(coords[:2], (17.430124, 78.407352))
+
     def test_tool_call_limit_enforced_and_forces_final_synthesis(self):
         mock_client = MagicMock()
         # Return tool calls on every round up to MAX_MODEL_ROUNDS, then final JSON

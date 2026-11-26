@@ -42,12 +42,13 @@ class OSMSiteAnalysisService:
                     logger.warning(f"[SSRF-BLOCK] Rejected OSM location URL '{location_str}': {reason}")
                     return None
                 logger.info(f"Resolving URL: {location_str}")
-                response = _safe_http_get(
-                    location_str.strip(),
-                    headers={"User-Agent": self.user_agent},
-                    timeout=10,
-                )
-                resolved_url = response.url or location_str
+                response, resolved_url, err = _safe_http_get(location_str.strip(), timeout=10)
+                if response is not None:
+                    response.close()
+                if err:
+                    logger.warning(f"Failed to resolve URL '{location_str}': {err}")
+                    return None
+                resolved_url = resolved_url or location_str
                 
                 # Look for @lat,lon
                 match = re.search(r"@(-?\d+\.\d+),(-?\d+\.\d+)", resolved_url)
