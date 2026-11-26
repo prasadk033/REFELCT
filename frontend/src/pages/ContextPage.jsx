@@ -1240,7 +1240,7 @@ export default function ContextPage() {
                     Cancel
                   </button>
                   <button type="submit" style={{ background: '#5b21b6', color: '#ffffff', border: 'none', borderRadius: '8px', padding: '8px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                    ✈ Send to AI
+                    ✈ Modify
                   </button>
                 </div>
               </form>
