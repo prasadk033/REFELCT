@@ -251,6 +251,26 @@ class TestContextPhase1(unittest.TestCase):
         chunks = master._chunk_text("X" * 25000, chunk_size=12000, overlap=400)
         self.assertEqual(len(chunks), 3)
 
+        # Verify resolve_location batches >12,000 chars so Qwen 16k ctx never overflows
+        loc_src = Source(
+            id=str(uuid.uuid4()),
+            project_id=self.project_a.id,
+            file_name="Site_Notes.txt",
+            file_type="txt",
+            storage_path="/tmp/site.txt",
+            extracted_text=("location Pavia " * 1200),
+        )
+        with patch("context.master_agent.get_llm_generator") as mock_qwen:
+            mock_qwen.return_value.run.side_effect = [
+                {"replies": ["- Location clue: Pavia, Italy"]},
+                {"replies": ["- Location clue: Cascina Maestà"]},
+                {"replies": ['{"city": "Pavia", "country": "Italy", "location_description": "Pavia", "confidence_status": "CONFIRMED"}']},
+            ]
+            loc, conf = master.resolve_location(self.project_a, [loc_src], [])
+            self.assertEqual(conf, "CONFIRMED")
+            self.assertEqual(loc["city"], "Pavia")
+            self.assertEqual(mock_qwen.return_value.run.call_count, 3)
+
     def test_card_split_preview_and_confirm_preserves_parent_card(self):
         parent = ContextCard(
             id=str(uuid.uuid4()),

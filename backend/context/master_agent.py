@@ -117,18 +117,59 @@ class ContextMasterAgent:
             if (s.file_type or "").lower() in image_exts or not s.extracted_text:
                 continue
             txt = s.extracted_text.strip()
-            # Scan all chunks for location clues (city, coordinates, links, addresses)
             chunks = self._chunk_text(txt, chunk_size=8000, overlap=300)
             for idx, ch in enumerate(chunks, start=1):
                 if len(chunks) == 1 or any(
                     k in ch.lower()
-                    for k in ("location", "site", "city", "address", "district", "region", "plot", "maps.app", "google.com/maps", "http", "lat", "lon", "hyderabad", "bengaluru", "mumbai", "delhi")
+                    for k in ("location", "site", "city", "address", "district", "region", "plot", "maps.app", "google.com/maps", "http", "lat", "lon")
                 ):
                     doc_location_excerpts.append({
                         "file_name": s.file_name,
                         "chunk": f"{idx}/{len(chunks)}",
-                        "excerpt": ch[:4000],
+                        "excerpt": ch,
                     })
+
+        brief_loc_cards = [
+            {"title": c.title, "content": c.content[:600]}
+            for c in cards[:100]
+            if any(k in (c.title + " " + c.content).lower() for k in ("location", "site", "city", "address", "district", "region", "plot"))
+        ][:15]
+
+        # If raw document clues are large, map-reduce them in <=12,000-char batches so Qwen (16k ctx) never overflows
+        if sum(len(d["excerpt"]) for d in doc_location_excerpts) > 12000:
+            extracted_clues: List[str] = []
+            batch: List[Dict[str, Any]] = []
+            batch_chars = 0
+            qwen = get_llm_generator()
+
+            def _flush_batch(items: List[Dict[str, Any]]):
+                if not items:
+                    return
+                b_prompt = (
+                    "Extract ONLY location clues (cities, addresses, coordinates, Google Maps links, site names, contradictions) "
+                    "from these document excerpts as concise bullet lines. Do not omit any location clue.\n\n"
+                    + json.dumps(items, default=str)
+                )
+                try:
+                    b_res = qwen.run(b_prompt, max_tokens=600, temperature=0.1)
+                    txt_out = (b_res["replies"][0] or "").strip()
+                    if txt_out:
+                        extracted_clues.append(txt_out[:2500])
+                except Exception as b_exc:
+                    logger.warning(f"Location clue batch extraction warning: {b_exc}")
+
+            for item in doc_location_excerpts:
+                item_len = len(item["excerpt"])
+                if batch and batch_chars + item_len > 12000:
+                    _flush_batch(batch)
+                    batch = []
+                    batch_chars = 0
+                batch.append({"file_name": item["file_name"], "chunk": item["chunk"], "excerpt": item["excerpt"][:12000]})
+                batch_chars += item_len
+            _flush_batch(batch)
+            doc_clues_for_prompt: Any = extracted_clues
+        else:
+            doc_clues_for_prompt = doc_location_excerpts
 
         location_clues = {
             "project_location_field": project.location,
@@ -139,12 +180,8 @@ class ContextMasterAgent:
                 if osm_cache
                 else None
             ),
-            "brief_location_cards": [
-                {"title": c.title, "content": c.content[:600]}
-                for c in cards[:100]
-                if any(k in (c.title + " " + c.content).lower() for k in ("location", "site", "city", "address", "district", "region", "plot"))
-            ][:15],
-            "raw_document_location_clues": doc_location_excerpts[:15],
+            "brief_location_cards": brief_loc_cards,
+            "raw_document_location_clues": doc_clues_for_prompt,
             "architect_local_knowledge": architect_local_knowledge or "",
         }
 
